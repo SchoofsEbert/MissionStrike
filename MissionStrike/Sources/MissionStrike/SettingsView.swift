@@ -8,8 +8,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 15) {
-                if let imagePath = Bundle.module.path(forResource: "AppIcon", ofType: "icns"),
-                   let nsImage = NSImage(contentsOfFile: imagePath) {
+                if let nsImage = NSApplication.shared.applicationIconImage {
                     Image(nsImage: nsImage)
                         .resizable()
                         .scaledToFit()
