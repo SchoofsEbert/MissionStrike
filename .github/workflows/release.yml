@@ -1,0 +1,53 @@
+name: Build and Release MissionStrike
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Swift
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: '6'
+
+    - name: Build Executable
+      run: |
+        cd MissionStrike
+        swift build -c release
+
+    - name: Create macOS App Bundle
+      run: |
+        cd MissionStrike
+        APP_DIR="MissionStrike.app"
+        CONTENTS_DIR="$APP_DIR/Contents"
+        MACOS_DIR="$CONTENTS_DIR/MacOS"
+        
+        # Create structure
+        mkdir -p "$MACOS_DIR"
+        mkdir -p "$CONTENTS_DIR/Resources"
+        
+        # Copy release executable
+        cp ".build/release/MissionStrike" "$MACOS_DIR/"
+        
+        # Copy Info.plist
+        cp "Info.plist" "$CONTENTS_DIR/"
+
+    - name: Zip the Application
+      run: |
+        cd MissionStrike
+        zip -r MissionStrike.app.zip MissionStrike.app
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: MissionStrike/MissionStrike.app.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
