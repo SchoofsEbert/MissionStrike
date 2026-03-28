@@ -40,6 +40,8 @@ Because this app intercepts mouse clicks and needs to ask the system to close un
 
 *If you accidentally denied the prompt, simply navigate to the Accessibility settings manually, hit the `+` button, and add `MissionStrike.app` from your Applications folder.*
 
+> ⚠️ **Troubleshooting:** If the app is running but clicks are not being intercepted (and the switch in Settings is `ON`), macOS might have cached an older signature. Select `MissionStrike.app` in the Accessibility window, click the `-` (minus) button to remove it completely, then manually click `+` and re-add the app from your Applications folder.
+
 ## Building from Source
 
 If you prefer to build the project yourself (requires Xcode or the Swift Command Line tools):
@@ -62,4 +64,3 @@ If you prefer to build the project yourself (requires Xcode or the Swift Command
 4. MissionStrike climbs the Accessibility tree (`AXUIElement`) corresponding to that window and triggers a programmatic `AXPress` on its native Close button.
 
 Enjoy a cleaner Mission Control experience!
-
