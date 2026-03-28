@@ -4,6 +4,7 @@ import ApplicationServices
 
 struct SettingsView: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+    @AppStorage("enableSpaceClosing") private var enableSpaceClosing = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
 
@@ -40,6 +41,8 @@ struct SettingsView: View {
             }
 
             Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+
+            Toggle("Enable Closing Spaces", isOn: $enableSpaceClosing)
 
             Toggle("Start at Login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { newValue in

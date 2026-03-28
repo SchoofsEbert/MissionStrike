@@ -83,11 +83,14 @@ class MissionControlManager {
         }
 
         if inSpacesBar {
-            var actionNames: CFArray?
-            if AXUIElementCopyActionNames(element, &actionNames) == .success, let actions = actionNames as? [String] {
-                if actions.contains("AXRemoveDesktop") {
-                    AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
-                    print("Closed Space via AXRemoveDesktop!")
+            let enableSpaceClosing = UserDefaults.standard.object(forKey: "enableSpaceClosing") as? Bool ?? true
+            if enableSpaceClosing {
+                var actionNames: CFArray?
+                if AXUIElementCopyActionNames(element, &actionNames) == .success, let actions = actionNames as? [String] {
+                    if actions.contains("AXRemoveDesktop") {
+                        AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
+                        print("Closed Space via AXRemoveDesktop!")
+                    }
                 }
             }
             return
