@@ -87,4 +87,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Ideally, show an alert, but checking prompts the OS dialog automatically.
         }
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Task { @MainActor in
+            self.openSettingsWindow()
+        }
+        return true
+    }
 }
