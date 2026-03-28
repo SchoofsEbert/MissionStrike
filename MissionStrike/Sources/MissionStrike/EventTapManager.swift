@@ -39,13 +39,18 @@ private func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: 
     let isOptionLeftClick = (type == .leftMouseDown && event.flags.contains(.maskAlternate))
 
     if isMiddleClick || isOptionLeftClick {
-        let location = event.location
-        Task { @MainActor in
-            MissionControlManager.shared.handleMouseEvent(location: location, isMiddle: isMiddleClick)
-        }
+        // Run check synchronously to deciding whether to swallow the event
+        let isActive = MissionControlActiveChecker.isActive()
 
-        // Return nil to completely intercept the event (blocks default action)
-        return nil
+        if isActive {
+            let location = event.location
+            Task { @MainActor in
+                MissionControlManager.shared.handleMouseEvent(location: location, isMiddle: isMiddleClick)
+            }
+
+            // Return nil to completely intercept the event (blocks default action)
+            return nil
+        }
     }
 
     return Unmanaged.passRetained(event)

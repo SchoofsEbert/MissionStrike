@@ -6,9 +6,39 @@ import ApplicationServices
 @discardableResult
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: inout CGWindowID) -> AXError
 
+class MissionControlActiveChecker {
+    static func isActive() -> Bool {
+        let options = CGWindowListOption.optionOnScreenOnly
+        guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+
+        for info in windowListInfo {
+            let owner = info[kCGWindowOwnerName as String] as? String ?? ""
+            let layer = info[kCGWindowLayer as String] as? Int ?? 0
+
+            // Mission Control creates full-screen overlay windows at layer 18 and 20 owned by the Dock.
+            if owner == "Dock" && (layer == 18 || layer == 20) {
+                if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                   let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) {
+                    // Check if it's a large overlay (likely full screen)
+                    if bounds.width > 800 && bounds.height > 600 {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+}
+
 @MainActor
 class MissionControlManager {
     static let shared = MissionControlManager()
+
+    func isMissionControlActive() -> Bool {
+        return MissionControlActiveChecker.isActive()
+    }
 
     func handleMouseEvent(location: CGPoint, isMiddle: Bool) {
         closeWindowAt(location: location)
