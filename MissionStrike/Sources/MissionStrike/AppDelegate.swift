@@ -3,6 +3,19 @@ import CoreGraphics
 import ApplicationServices
 import SwiftUI
 
+extension NSImage {
+    func resized(to newSize: NSSize) -> NSImage {
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        self.draw(in: NSRect(x: 0, y: 0, width: newSize.width, height: newSize.height),
+                  from: NSRect(x: 0, y: 0, width: self.size.width, height: self.size.height),
+                  operation: .sourceOver,
+                  fraction: 1.0)
+        newImage.unlockFocus()
+        return newImage
+    }
+}
+
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
@@ -38,8 +51,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if statusItem == nil {
                 statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
                 if let button = statusItem?.button {
-                    if let image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "MissionStrike") {
-                        button.image = image
+                    if let originalImage = NSApplication.shared.applicationIconImage {
+                        let resizedImage = originalImage.resized(to: NSSize(width: 18, height: 18))
+                        resizedImage.isTemplate = false
+                        button.image = resizedImage
                     } else {
                         button.title = "MS"
                     }
