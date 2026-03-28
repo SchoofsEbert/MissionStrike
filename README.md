@@ -12,8 +12,9 @@ Simply enter Mission Control and middle-click on any window to close it, without
 
 - 🖱️ Middle-click to quickly close windows in Mission Control.
 - ⌨️ Alternatively, use `Option` + `Left Click`.
+- 🚀 **New:** Close virtual desktops (Spaces) directly by middle-clicking (or Option + Left Click) the space thumbnail in the Spaces Bar. No more waiting for the close button to appear!
 - ⚙️ Runs silently in the background with a minimal footprint.
-- 🎛️ Simple Settings menu to toggle "Launch at Login" and hide the menu bar icon.
+- 🎛️ Simple Settings menu to toggle Space closing, Launch at Login, and hide the menu bar icon.
 - 🧠 Powered by global Event Taps and macOS Accessibility APIs.
 
 ## Installation
@@ -60,7 +61,8 @@ If you prefer to build the project yourself (requires Xcode or the Swift Command
 ## How it Works
 1. A global event tap (`CGEventTap`) listens specifically for middle clicks or option-left-clicks.
 2. When triggered, the app queries macOS CoreGraphics (`checkCGWindows`) to analyze the physical geometry of windows sitting exactly under your cursor.
-3. The underlying process ID (PID) and window identity are extracted.
-4. MissionStrike climbs the Accessibility tree (`AXUIElement`) corresponding to that window and triggers a programmatic `AXPress` on its native Close button.
+3. If the click lands on the Spaces Bar, the app identifies the Space thumbnail and triggers an `AXRemoveDesktop` action immediately.
+4. Otherwise, the underlying process ID (PID) and window identity are extracted.
+5. MissionStrike climbs the Accessibility tree (`AXUIElement`) corresponding to that window and triggers a programmatic `AXPress` on its native Close button.
 
 Enjoy a cleaner Mission Control experience!
