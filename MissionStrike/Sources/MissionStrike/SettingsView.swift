@@ -1,9 +1,13 @@
 import SwiftUI
 import ServiceManagement
+import ApplicationServices
 
 struct SettingsView: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var isAccessibilityEnabled = AXIsProcessTrusted()
+
+    let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -17,6 +21,22 @@ struct SettingsView: View {
 
                 Text("MissionStrike Settings")
                     .font(.headline)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Image(systemName: isAccessibilityEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(isAccessibilityEnabled ? .green : .orange)
+                    Text("Accessibility Permissions")
+                }
+
+                if !isAccessibilityEnabled {
+                    Button("Open System Settings") {
+                        let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
+                        AXIsProcessTrustedWithOptions(options)
+                    }
+                    .font(.caption)
+                }
             }
 
             Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
@@ -44,7 +64,10 @@ struct SettingsView: View {
 
             Spacer()
         }
+        .onReceive(timer) { _ in
+            isAccessibilityEnabled = AXIsProcessTrusted()
+        }
         .padding()
-        .frame(width: 300, height: 250)
+        .frame(width: 320, height: 300)
     }
 }
