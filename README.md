@@ -23,7 +23,11 @@ You can download and install the app seamlessly using the pre-compiled releases.
 1. Go to the [Releases](https://github.com/YOUR_GITHUB_USERNAME/MISSIONSTRIKE_REPOSITORY/releases) page.
 2. Download the latest `MissionStrike.app.zip`.
 3. Unzip the file and move `MissionStrike.app` into your `Applications` folder.
-4. Launch the app.
+4. Because this app is not signed with a paid Apple Developer account, macOS will likely mark it as "damaged". To fix this, open Terminal and run:
+   ```bash
+   xattr -cr /Applications/MissionStrike.app
+   ```
+5. Launch the app.
 
 ### Initial Setup & Permissions
 

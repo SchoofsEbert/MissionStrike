@@ -42,6 +42,9 @@ jobs:
         
         # Copy Info.plist
         cp "Info.plist" "$CONTENTS_DIR/"
+        
+        # Ad-hoc sign the app bundle to prevent "is damaged" error
+        codesign --force --deep --sign - "$APP_DIR"
 
     - name: Zip the Application
       run: |
