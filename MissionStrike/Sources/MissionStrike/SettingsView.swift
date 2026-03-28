@@ -7,8 +7,18 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("MissionStrike Settings")
-                .font(.headline)
+            HStack(spacing: 15) {
+                if let imagePath = Bundle.module.path(forResource: "AppIcon", ofType: "icns"),
+                   let nsImage = NSImage(contentsOfFile: imagePath) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 48, height: 48)
+                }
+
+                Text("MissionStrike Settings")
+                    .font(.headline)
+            }
 
             Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
 
