@@ -12,8 +12,10 @@ Develop **MissionStrike**, a macOS utility that intercepts middle mouse clicks t
 7. Create a minimal settings page (Window) allowing users to configure preferences, including the ability to show or hide the menu bar icon.
 8. Handle app launch events so that launching the app from the Applications folder or Launchpad opens the settings page instead of just running invisibly.
 9. Add a setting to launch the app automatically at login (e.g., using `SMAppService` for modern macOS).
+10. Add capability to close a virtual desktop (Space) directly with a middle click or Option+Left click without having to wait for the hover delay for the white cross to appear.
 
 ### Further Considerations
 1. Mission Control is managed by the Dock; extracting the actual window ID from the Dock's `AXUIElement` proxy might require exploring private attributes or fallback simulation (e.g., left-clicking to focus, then sending Cmd+W).
-2. The alternative trigger for users without a middle mouse button is Option + Left Click.
+2. The alternative trigger for users without a middle mouse button is Option + Left Click (this applies to closing both windows and spaces).
 3. No additional visual or audio feedback is needed upon closing a window, as the window disappearing from Mission Control provides sufficient feedback.
+4. Bypassing the native hover delay for closing spaces will likely require programmatically finding and triggering the hidden accessibility close button or forcibly sending the close action to the Space element itself.

@@ -69,6 +69,30 @@ class MissionControlManager {
     }
 
     private func attemptToClose(element: AXUIElement, at location: CGPoint) {
+        var current: AXUIElement? = element
+        var inSpacesBar = false
+        while let elem = current {
+            var title: CFTypeRef?
+            AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &title)
+
+            if let t = title as? String, t == "Spaces Bar" {
+                inSpacesBar = true
+                break
+            }
+            current = getParent(of: elem)
+        }
+
+        if inSpacesBar {
+            var actionNames: CFArray?
+            if AXUIElementCopyActionNames(element, &actionNames) == .success, let actions = actionNames as? [String] {
+                if actions.contains("AXRemoveDesktop") {
+                    AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
+                    print("Closed Space via AXRemoveDesktop!")
+                }
+            }
+            return
+        }
+
         // 1. Walk up the tree to find the precise accessibility window that was clicked
         if let window = findEnclosingWindow(for: element) {
             var closeButtonRef: CFTypeRef?
