@@ -43,6 +43,9 @@ jobs:
         # Copy Info.plist
         cp "Info.plist" "$CONTENTS_DIR/"
         
+        # Copy App Icon
+        cp "AppIcon.icns" "$CONTENTS_DIR/Resources/"
+        
         # Ad-hoc sign the app bundle to prevent "is damaged" error
         codesign --force --deep --sign - "$APP_DIR"
 

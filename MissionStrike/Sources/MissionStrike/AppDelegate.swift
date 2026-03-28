@@ -38,7 +38,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if statusItem == nil {
                 statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
                 if let button = statusItem?.button {
-                    button.title = "MS"
+                    if let image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "MissionStrike") {
+                        button.image = image
+                    } else {
+                        button.title = "MS"
+                    }
                     button.toolTip = "MissionStrike: Settings..."
                 }
 
