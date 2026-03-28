@@ -1,8 +1,0 @@
---- Sources/MissionStrike/AppDelegate.swift
-+++ Sources/MissionStrike/AppDelegate.swift
-@@ -10,6 +10,7 @@
-     var settingsWindow: NSWindow?
-     func applicationDidFinishLaunching(_ aNotification: Notification) {
-+        print("applicationDidFinishLaunching called!")
-         UserDefaults.standard.register(defaults: ["showMenuBarIcon": true])
-         UserDefaults.standard.addObserver(self, forKeyPath: "showMenuBarIcon", options: [.new, .initial], context: nil)
