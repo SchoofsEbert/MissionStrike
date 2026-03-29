@@ -1,8 +1,12 @@
-# MissionStrike
+<p align="center">
+  <img src="MissionStrike/AppIcon.png" width="128" height="128" alt="MissionStrike Icon">
+</p>
 
-**MissionStrike** is a lightweight, background macOS utility that solves a simple personal frustration: **Closing windows directly from Mission Control**. 
+<h1 align="center">MissionStrike</h1>
 
-Simply enter Mission Control and middle-click on any window to close it, without having to focus it first or lose your Mission Control overview. Don't have a middle mouse button? Hold `Option` and `Left Click` instead!
+<p align="center">
+  <strong>A lightweight macOS utility that lets you close, minimize, and manage windows directly from Mission Control.</strong>
+</p>
 
 ---
 
@@ -10,12 +14,16 @@ Simply enter Mission Control and middle-click on any window to close it, without
 
 ## Features
 
-- 🖱️ Middle-click to quickly close windows in Mission Control.
-- ⌨️ Alternatively, use `Option` + `Left Click`.
-- 🚀 **New:** Close virtual desktops (Spaces) directly by middle-clicking (or Option + Left Click) the space thumbnail in the Spaces Bar. No more waiting for the close button to appear!
-- ⚙️ Runs silently in the background with a minimal footprint.
-- 🎛️ Simple Settings menu to toggle Space closing, Launch at Login, and hide the menu bar icon.
-- 🧠 Powered by global Event Taps and macOS Accessibility APIs.
+- 🖱️ **Middle-click** to close windows in Mission Control.
+- ⌨️ **Option + Left Click** as an alternative (configurable modifier key).
+- 🗂️ **Close Spaces** — click a Space thumbnail in the Spaces Bar to remove it instantly.
+- 📦 **⌘ Cmd + Click** — close *all* windows of an app at once.
+- ➖ **⇧ Shift + Click** — minimize a window to the Dock instead of closing it.
+- 🎛️ **Customizable triggers** — choose your preferred modifier key or disable triggers in Settings.
+- 🔄 **Auto-update checker** — notifies you when a new release is available on GitHub.
+- 🛡️ **Resilient event tap** — auto-recovers if macOS disables it, with App Nap prevention.
+- ⚙️ Runs silently in the background with a minimal menu bar presence.
+- 🧭 **Onboarding walkthrough** on first launch to guide you through setup.
 
 ## Installation
 
@@ -59,10 +67,14 @@ If you prefer to build the project yourself (requires Xcode or the Swift Command
 3. To package it into a `.app` bundle manually, you can use the provided GitHub Actions workflow as a reference or wrap the executable generated in `.build/release/MissionStrike` into a standard macOS app directory structure.
 
 ## How it Works
-1. A global event tap (`CGEventTap`) listens specifically for middle clicks or option-left-clicks.
-2. When triggered, the app queries macOS CoreGraphics (`checkCGWindows`) to analyze the physical geometry of windows sitting exactly under your cursor.
-3. If the click lands on the Spaces Bar, the app identifies the Space thumbnail and triggers an `AXRemoveDesktop` action immediately.
-4. Otherwise, the underlying process ID (PID) and window identity are extracted.
-5. MissionStrike climbs the Accessibility tree (`AXUIElement`) corresponding to that window and triggers a programmatic `AXPress` on its native Close button.
+
+1. A global event tap (`CGEventTap`) listens for middle-clicks and modifier+left-clicks (configurable).
+2. When triggered in Mission Control, modifier keys determine the action:
+   - **No modifier** → close the window under the cursor.
+   - **⇧ Shift** → minimize the window to the Dock.
+   - **⌘ Command** → close all windows belonging to that app.
+3. If the click lands on the **Spaces Bar**, the app identifies the Space thumbnail and triggers an `AXRemoveDesktop` action immediately.
+4. Otherwise, the underlying process ID (PID) and window identity are extracted via CoreGraphics.
+5. MissionStrike climbs the Accessibility tree (`AXUIElement`) to find the target window and performs the action programmatically.
 
 Enjoy a cleaner Mission Control experience!
