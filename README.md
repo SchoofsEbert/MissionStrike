@@ -20,7 +20,7 @@
 - 📦 **⌘ Cmd + Click** — close *all* windows of an app at once.
 - ➖ **⇧ Shift + Click** — minimize a window to the Dock instead of closing it.
 - 🎛️ **Customizable triggers** — choose your preferred modifier key or disable triggers in Settings.
-- 🔄 **Auto-update checker** — notifies you when a new release is available on GitHub.
+- 🔄 **One-click auto-updates** — when a new version is available, install it directly from the app with a single click. No manual downloading or terminal commands needed.
 - 🛡️ **Resilient event tap** — auto-recovers if macOS disables it, with App Nap prevention.
 - ⚙️ Runs silently in the background with a minimal menu bar presence.
 - 🧭 **Onboarding walkthrough** on first launch to guide you through setup.
@@ -64,6 +64,25 @@ Because this app intercepts mouse clicks and needs to ask the system to close un
 *If you accidentally denied the prompt, simply navigate to the Accessibility settings manually, hit the `+` button, and add `MissionStrike.app` from your Applications folder.*
 
 > ⚠️ **Troubleshooting:** If the app is running but clicks are not being intercepted (and the switch in Settings is `ON`), macOS might have cached an older signature. Select `MissionStrike.app` in the Accessibility window, click the `-` (minus) button to remove it completely, then manually click `+` and re-add the app from your Applications folder.
+
+## Updating
+
+MissionStrike checks for updates automatically once every 24 hours and can also be triggered manually via **Check for Updates…** in the menu bar.
+
+When a new version is available, you'll see an alert with three options:
+
+| Option | What it does |
+|---|---|
+| **Install & Relaunch** | Downloads the update, removes the macOS quarantine flag, replaces the app, and relaunches — fully automatic, no Terminal required. |
+| **View Release** | Opens the GitHub release page so you can read the release notes or download manually. |
+| **Later** | Dismisses the alert. You'll be reminded on the next check. |
+
+If the automatic install fails for any reason, you'll be offered a link to download the update manually.
+
+> 💡 **Tip:** You can also re-run the install script at any time to update to the latest version:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
+> ```
 
 ## Building from Source
 

@@ -54,7 +54,7 @@ final class UpdateChecker {
     private let currentVersion: String = {
         Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.0.1"
+        ) as? String ?? "2.1.0"
     }()
 
     // MARK: - Public API
