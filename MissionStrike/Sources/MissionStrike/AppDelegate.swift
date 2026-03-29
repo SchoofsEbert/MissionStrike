@@ -50,6 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
+    var aboutWindow: NSWindow?
     private var kvoObservation: NSKeyValueObservation?
     private var accessibilityObserver: Any?
     private var eventTapObserver: Any?
@@ -171,6 +172,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 let menu = NSMenu()
+                menu.addItem(NSMenuItem(title: "About MissionStrike", action: #selector(openAboutWindow), keyEquivalent: ""))
+                menu.addItem(NSMenuItem.separator())
                 menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettingsWindow), keyEquivalent: ","))
                 menu.addItem(NSMenuItem.separator())
                 menu.addItem(NSMenuItem(title: "Quit MissionStrike", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -235,6 +238,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         onboardingWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    @objc func openAboutWindow() {
+        if aboutWindow == nil {
+            let view = AboutView()
+            let hostingController = NSHostingController(rootView: view)
+
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 280, height: 300),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.center()
+            window.title = "About MissionStrike"
+            window.contentViewController = hostingController
+            window.isReleasedWhenClosed = false
+            self.aboutWindow = window
+        }
+
+        aboutWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 

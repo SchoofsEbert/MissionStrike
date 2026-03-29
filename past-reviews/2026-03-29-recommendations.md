@@ -29,9 +29,9 @@ Navigation uses Back/Continue buttons with page indicator dots. "Get Started" on
 
 `AppDelegate` now observes the `com.apple.accessibility.api` distributed notification. When the accessibility state transitions from `true → false`, MissionStrike stops the event tap, updates the menu bar icon to inactive, and delivers a macOS notification via `UNUserNotificationCenter` titled "MissionStrike Disabled" with instructions to re-enable permissions. Notification permission is requested at launch.
 
-### 5. "About" & Version Info in the Menu
+### 5. ✅ ADDRESSED — "About" & Version Info in the Menu
 
-The status bar menu only has "Settings" and "Quit." Adding an "About MissionStrike" item that shows the version number (`CFBundleShortVersionString`) and a link to the GitHub page would be a small but polished touch.
+The status bar menu now includes an "About MissionStrike" item at the top. It opens a dedicated About window showing the app icon, name, version number (read from `CFBundleShortVersionString`/`CFBundleVersion` with a fallback for `swift run`), a brief description, a clickable link to the GitHub repository, and a copyright line. Implemented in `AboutView.swift`, wired through `AppDelegate.openAboutWindow()`.
 
 ### 6. Tooltip on Hover (Future macOS API)
 
