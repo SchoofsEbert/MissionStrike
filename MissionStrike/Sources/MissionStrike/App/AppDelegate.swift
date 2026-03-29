@@ -350,7 +350,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shows a user-visible alert when `CGEvent.tapCreate` fails.
     /// This can happen on Apple Silicon Macs with certain security configurations
     /// (e.g., MDM-managed devices) even when Accessibility permissions are granted.
+    ///
+    /// If Accessibility is not yet granted, the failure is expected and the
+    /// onboarding / permission flow will guide the user. Once permissions are
+    /// enabled, `handleAccessibilityChange()` retries `start()` automatically,
+    /// so we only surface this alert for the true edge case.
     private func showEventTapFailureAlert() {
+        // Don't alarm the user during onboarding — the tap is expected to fail
+        // until Accessibility permissions are granted.
+        guard AXIsProcessTrusted() else { return }
+
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "MissionStrike Could Not Start"
