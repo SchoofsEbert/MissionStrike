@@ -1,28 +1,55 @@
 import Cocoa
 import CoreGraphics
 import ApplicationServices
+import os.log
 
+// MARK: - Private API Declaration
+// WARNING: _AXUIElementGetWindow is an undocumented Apple-private API.
+// It maps an AXUIElement window to its CGWindowID. This is used as a fallback
+// when the Accessibility tree alone cannot identify the correct window.
+// Risk: may break in future macOS versions; guarantees App Store rejection.
+// The fallback path degrades gracefully if this function fails.
 @_silgen_name("_AXUIElementGetWindow")
 @discardableResult
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: inout CGWindowID) -> AXError
 
-class MissionControlActiveChecker {
+private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "MissionControl")
+
+// MARK: - Mission Control Detection
+
+/// Checks whether Mission Control is currently active by inspecting Dock-owned overlay windows.
+///
+/// Thread safety: All calls within this class use CoreGraphics APIs that are thread-safe.
+/// This class is intentionally `nonisolated` / not actor-isolated so it can be called
+/// synchronously from the event tap callback (which runs on the run loop thread).
+final class MissionControlActiveChecker: Sendable {
+
+    // Dock overlay window layers observed during Mission Control (macOS 13–15).
+    private static let missionControlOverlayLayers: Set<Int> = [18, 20]
+
+    // Minimum fraction of the main screen that a Dock overlay must cover
+    // to be considered a Mission Control overlay (avoids false positives on small Dock windows).
+    private static let minimumScreenCoverageFraction: CGFloat = 0.5
+
     static func isActive() -> Bool {
         let options = CGWindowListOption.optionOnScreenOnly
         guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
 
+        let mainScreenSize = NSScreen.main?.frame.size ?? NSSize(width: 1920, height: 1080)
+        let minWidth = mainScreenSize.width * minimumScreenCoverageFraction
+        let minHeight = mainScreenSize.height * minimumScreenCoverageFraction
+
         for info in windowListInfo {
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let layer = info[kCGWindowLayer as String] as? Int ?? 0
 
-            // Mission Control creates full-screen overlay windows at layer 18 and 20 owned by the Dock.
-            if owner == "Dock" && (layer == 18 || layer == 20) {
+            // Mission Control creates full-screen overlay windows at specific layers, owned by the Dock.
+            if owner == "Dock" && missionControlOverlayLayers.contains(layer) {
                 if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
                    let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) {
-                    // Check if it's a large overlay (likely full screen)
-                    if bounds.width > 800 && bounds.height > 600 {
+                    if bounds.width > minWidth && bounds.height > minHeight {
                         return true
                     }
                 }
@@ -32,15 +59,14 @@ class MissionControlActiveChecker {
     }
 }
 
+// MARK: - Mission Control Manager
+
 @MainActor
 class MissionControlManager {
     static let shared = MissionControlManager()
+    private init() {}
 
-    func isMissionControlActive() -> Bool {
-        return MissionControlActiveChecker.isActive()
-    }
-
-    func handleMouseEvent(location: CGPoint, isMiddle: Bool) {
+    func handleMouseEvent(location: CGPoint) {
         closeWindowAt(location: location)
     }
 
@@ -83,13 +109,17 @@ class MissionControlManager {
         }
 
         if inSpacesBar {
-            let enableSpaceClosing = UserDefaults.standard.object(forKey: "enableSpaceClosing") as? Bool ?? true
+            let enableSpaceClosing = UserDefaults.standard.bool(forKey: "enableSpaceClosing")
             if enableSpaceClosing {
                 var actionNames: CFArray?
                 if AXUIElementCopyActionNames(element, &actionNames) == .success, let actions = actionNames as? [String] {
                     if actions.contains("AXRemoveDesktop") {
-                        AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
-                        print("Closed Space via AXRemoveDesktop!")
+                        let closeResult = AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
+                        if closeResult == .success {
+                            logger.info("Closed Space via AXRemoveDesktop.")
+                        } else {
+                            logger.warning("AXRemoveDesktop failed with error: \(closeResult.rawValue)")
+                        }
                     }
                 }
             }
@@ -99,17 +129,27 @@ class MissionControlManager {
         // 1. Walk up the tree to find the precise accessibility window that was clicked
         if let window = findEnclosingWindow(for: element) {
             var closeButtonRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success {
-                AXUIElementPerformAction(closeButtonRef as! AXUIElement, kAXPressAction as CFString)
-                print("Closed window by tracing parents to AXWindow's Close Button!")
+            if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+               let closeButtonRef {
+                let closeButton = closeButtonRef as! AXUIElement
+                let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+                if closeResult == .success {
+                    logger.info("Closed window via AXWindow's Close Button.")
+                } else {
+                    logger.warning("AXPress on close button failed with error: \(closeResult.rawValue)")
+                }
                 return
             }
 
             var actionNames: CFArray?
             if AXUIElementCopyActionNames(window, &actionNames) == .success, let actions = actionNames as? [String] {
                 if actions.contains("AXClose") {
-                    AXUIElementPerformAction(window, "AXClose" as CFString)
-                    print("Closed window by tracing parents to AXWindow's AXClose action!")
+                    let closeResult = AXUIElementPerformAction(window, "AXClose" as CFString)
+                    if closeResult == .success {
+                        logger.info("Closed window via AXWindow's AXClose action.")
+                    } else {
+                        logger.warning("AXClose action failed with error: \(closeResult.rawValue)")
+                    }
                     return
                 }
             }
@@ -119,17 +159,18 @@ class MissionControlManager {
         var pid: pid_t = 0
         if AXUIElementGetPid(element, &pid) == .success {
             if let cgHit = findTargetCGWindow(at: location) {
-                print("Target identified via CGWindow mapping: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
+                logger.info("Target identified via CGWindow mapping: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
                 closeWindowByWindowID(pid: cgHit.pid, targetWindowID: cgHit.windowID)
                 return
             }
-            print("Could not reliably determine which window to close.")
+            logger.warning("Could not reliably determine which window to close.")
         }
     }
 
     private func getParent(of element: AXUIElement) -> AXUIElement? {
         var parentRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success {
+        if AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
+           let parentRef {
             return (parentRef as! AXUIElement)
         }
         return nil
@@ -141,7 +182,7 @@ class MissionControlManager {
             return nil
         }
 
-        let ignoredOwners = ["Dock", "Finder", "Window Server", "Wallpaper"]
+        let ignoredOwners: Set<String> = ["Dock", "Window Server", "Wallpaper"]
 
         for info in windowListInfo {
             if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
@@ -172,17 +213,23 @@ class MissionControlManager {
                 var cgWindowID: CGWindowID = 0
                 if _AXUIElementGetWindow(window, &cgWindowID) == .success {
                     if cgWindowID == targetWindowID {
-                         var targetCloseBtn: CFTypeRef?
-                         if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &targetCloseBtn) == .success {
-                             AXUIElementPerformAction(targetCloseBtn as! AXUIElement, kAXPressAction as CFString)
-                             print("Successfully pressed close button on exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid)")
-                             return
-                         }
+                        var targetCloseBtn: CFTypeRef?
+                        if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &targetCloseBtn) == .success,
+                           let targetCloseBtn {
+                            let closeButton = targetCloseBtn as! AXUIElement
+                            let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+                            if closeResult == .success {
+                                logger.info("Closed exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid).")
+                            } else {
+                                logger.warning("AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)")
+                            }
+                            return
+                        }
                     }
                 }
             }
 
-            print("Could not find a close button for the target window ID (\(targetWindowID)).")
+            logger.warning("Could not find a close button for the target window ID (\(targetWindowID)).")
         }
     }
 }

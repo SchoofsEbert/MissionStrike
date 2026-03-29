@@ -2,17 +2,25 @@ import Cocoa
 import CoreGraphics
 import ApplicationServices
 import SwiftUI
+import os.log
+
+private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "AppDelegate")
+
+extension UserDefaults {
+    @objc dynamic var showMenuBarIcon: Bool {
+        return bool(forKey: "showMenuBarIcon")
+    }
+}
 
 extension NSImage {
     func resized(to newSize: NSSize) -> NSImage {
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        self.draw(in: NSRect(x: 0, y: 0, width: newSize.width, height: newSize.height),
-                  from: NSRect(x: 0, y: 0, width: self.size.width, height: self.size.height),
-                  operation: .sourceOver,
-                  fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
+        return NSImage(size: newSize, flipped: false) { rect in
+            self.draw(in: rect,
+                      from: NSRect(origin: .zero, size: self.size),
+                      operation: .sourceOver,
+                      fraction: 1.0)
+            return true
+        }
     }
 }
 
@@ -20,11 +28,21 @@ extension NSImage {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow?
+    private var kvoObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        UserDefaults.standard.register(defaults: ["showMenuBarIcon": true])
+        // Register all UserDefaults defaults in one place
+        UserDefaults.standard.register(defaults: [
+            "showMenuBarIcon": true,
+            "enableSpaceClosing": true
+        ])
 
-        UserDefaults.standard.addObserver(self, forKeyPath: "showMenuBarIcon", options: [.new, .initial], context: nil)
+        // Observe menu bar icon preference using modern block-based KVO (auto-removes on dealloc)
+        kvoObservation = UserDefaults.standard.observe(\.showMenuBarIcon, options: [.new, .initial]) { [weak self] _, _ in
+            Task { @MainActor in
+                self?.setupMenuBarItem()
+            }
+        }
 
         // Request Accessibility permissions if needed
         checkAccessibilityPermissions()
@@ -32,15 +50,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Event Tap
         EventTapManager.shared.start()
 
-        // Open settings on launch
-        openSettingsWindow()
-    }
-
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "showMenuBarIcon" {
-            Task { @MainActor in
-                self.setupMenuBarItem()
-            }
+        // Only show settings window on first launch, not on subsequent auto-starts (e.g., Login Items)
+        let hasLaunchedBefore = UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
+        if !hasLaunchedBefore {
+            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+            openSettingsWindow()
         }
     }
 
@@ -94,7 +108,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         settingsWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     private func checkAccessibilityPermissions() {
@@ -102,15 +116,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let accessEnabled = AXIsProcessTrustedWithOptions(options)
 
         if !accessEnabled {
-            print("Access Not Enabled. Please enable in System Settings -> Privacy & Security -> Accessibility.")
-            // Ideally, show an alert, but checking prompts the OS dialog automatically.
+            logger.warning("Accessibility not enabled. Please enable in System Settings -> Privacy & Security -> Accessibility.")
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        Task { @MainActor in
-            self.openSettingsWindow()
-        }
+        openSettingsWindow()
         return true
     }
 }

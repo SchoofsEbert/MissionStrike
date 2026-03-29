@@ -21,7 +21,7 @@ Simply enter Mission Control and middle-click on any window to close it, without
 
 You can download and install the app seamlessly using the pre-compiled releases.
 
-1. Go to the [Releases](https://github.com/YOUR_GITHUB_USERNAME/MISSIONSTRIKE_REPOSITORY/releases) page.
+1. Go to the [Releases](https://github.com/SchoofsEbert/MissionStrike/releases) page.
 2. Download the latest `MissionStrike.app.zip`.
 3. Unzip the file and move `MissionStrike.app` into your `Applications` folder.
 4. Because this app is not signed with a paid Apple Developer account, macOS will likely mark it as "damaged". To fix this, open Terminal and run:
@@ -37,7 +37,7 @@ Because this app intercepts mouse clicks and needs to ask the system to close un
 1. Upon first launch, macOS will likely prompt you about Accessibility permissions.
 2. Open **System Settings** > **Privacy & Security** > **Accessibility**.
 3. Toggle the switch next to **MissionStrike** to ON.
-4. Re-launch the app (or use the menu bar icon to access Settings).
+4. The app will automatically detect the permission change and start working — no re-launch needed!
 
 *If you accidentally denied the prompt, simply navigate to the Accessibility settings manually, hit the `+` button, and add `MissionStrike.app` from your Applications folder.*
 
@@ -49,8 +49,8 @@ If you prefer to build the project yourself (requires Xcode or the Swift Command
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/YOUR_GITHUB_USERNAME/MISSIONSTRIKE_REPOSITORY.git
-   cd MISSIONSTRIKE_REPOSITORY/MissionStrike
+   git clone https://github.com/SchoofsEbert/MissionStrike.git
+   cd MissionStrike/MissionStrike
    ```
 2. Build the project:
    ```bash
