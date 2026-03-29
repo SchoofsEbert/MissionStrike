@@ -128,7 +128,7 @@ struct SettingsView: View {
         } header: {
             Text("Trigger Bindings")
         } footer: {
-            Text("Choose how to trigger actions in Mission Control.\nCommand and Shift are reserved as action modifiers.")
+            Text("Choose how to trigger actions in Mission Control. Command and Shift are reserved as action modifiers.")
         }
     }
 
@@ -169,7 +169,7 @@ struct SettingsView: View {
         } header: {
             Text("Spaces")
         } footer: {
-            Text("When enabled, clicking a Space in the top bar\nremoves it instantly — no hover delay.")
+            Text("When enabled, clicking a Space in the top bar removes it instantly — no hover delay.")
         }
     }
 
