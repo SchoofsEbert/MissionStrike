@@ -320,7 +320,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let hostingController = NSHostingController(rootView: view)
 
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 400, height: 520),
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false

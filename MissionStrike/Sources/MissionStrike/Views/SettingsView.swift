@@ -59,30 +59,37 @@ struct SettingsView: View {
                         Text(modifier.displayName).tag(modifier.rawValue)
                     }
                 }
+                .pickerStyle(.menu)
             } header: {
                 Text("Trigger Bindings")
             } footer: {
-                Text("Choose how to trigger actions in Mission Control. "
-                     + "Command and Shift are reserved as action modifiers.")
+                Text("Choose how to trigger actions in Mission Control.\nCommand and Shift are reserved as action modifiers.")
             }
 
             // MARK: - Actions Reference
-            Section("Actions in Mission Control") {
-                actionRow(
-                    keys: "Click",
-                    description: "Close window",
-                    icon: "xmark.circle"
-                )
-                actionRow(
-                    keys: "⇧ Shift + Click",
-                    description: "Minimize to Dock",
-                    icon: "minus.circle"
-                )
-                actionRow(
-                    keys: "⌘ Cmd + Click",
-                    description: "Close all app windows",
-                    icon: "xmark.circle.fill"
-                )
+            Section {
+                VStack(spacing: 0) {
+                    actionRow(
+                        keys: "Click",
+                        description: "Close window",
+                        icon: "xmark.circle"
+                    )
+                    Divider().padding(.vertical, 6)
+                    actionRow(
+                        keys: "⇧ Shift + Click",
+                        description: "Minimize to Dock",
+                        icon: "minus.circle"
+                    )
+                    Divider().padding(.vertical, 6)
+                    actionRow(
+                        keys: "⌘ Cmd + Click",
+                        description: "Close all app windows",
+                        icon: "xmark.circle.fill"
+                    )
+                }
+                .padding(.vertical, 2)
+            } header: {
+                Text("Actions in Mission Control")
             }
 
             // MARK: - Spaces
@@ -91,8 +98,7 @@ struct SettingsView: View {
             } header: {
                 Text("Spaces")
             } footer: {
-                Text("When enabled, clicking a Space in the top bar "
-                     + "removes it instantly — no hover delay.")
+                Text("When enabled, clicking a Space in the top bar\nremoves it instantly — no hover delay.")
             }
 
             // MARK: - General
@@ -106,13 +112,14 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .onAppear {
             refreshAccessibilityStatus()
         }
         .onReceive(accessibilityChanged) { _ in
             refreshAccessibilityStatus()
         }
-        .frame(width: 400, height: 520)
+        .frame(width: 420, height: 560)
     }
 
     // MARK: - Action Row
