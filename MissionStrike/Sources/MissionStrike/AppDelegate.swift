@@ -56,7 +56,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTapObserver: Any?
     private var wasAccessibilityEnabled = AXIsProcessTrusted()
 
+    /// Prevents App Nap from throttling the event tap run loop.
+    private var appNapActivity: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // Prevent App Nap — the event tap must respond to clicks in real time,
+        // even when MissionStrike has no visible windows.
+        appNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled],
+            reason: "Event tap must remain responsive for Mission Control clicks"
+        )
+
         // Register all UserDefaults defaults in one place
         UserDefaults.standard.register(defaults: [
             "showMenuBarIcon": true,

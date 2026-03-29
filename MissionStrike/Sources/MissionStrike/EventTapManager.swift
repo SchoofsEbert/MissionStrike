@@ -17,6 +17,10 @@ class EventTapManager {
     private var eventTapPort: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
+    /// Heap-allocated storage for the mach port pointer, passed to the
+    /// callback via `refcon` so it can re-enable the tap on timeout.
+    private var tapPortPointer: UnsafeMutablePointer<CFMachPort?>?
+
     /// Whether the event tap is currently active and listening.
     var isRunning: Bool { eventTapPort != nil }
 
@@ -24,7 +28,13 @@ class EventTapManager {
         // Don't recreate if already running
         guard !isRunning else { return }
 
-        let eventMask = (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.leftMouseDown.rawValue)
+        // Allocate stable storage for the port pointer before creating the tap
+        let pointer = UnsafeMutablePointer<CFMachPort?>.allocate(capacity: 1)
+        pointer.initialize(to: nil)
+        self.tapPortPointer = pointer
+
+        let eventMask = (1 << CGEventType.otherMouseDown.rawValue)
+            | (1 << CGEventType.leftMouseDown.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -32,13 +42,19 @@ class EventTapManager {
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),
             callback: eventTapCallback,
-            userInfo: nil
+            userInfo: UnsafeMutableRawPointer(pointer)
         ) else {
             logger.error("Failed to create event tap. Make sure Accessibility permissions are enabled.")
+            pointer.deinitialize(count: 1)
+            pointer.deallocate()
+            self.tapPortPointer = nil
             return
         }
 
+        // Store the port in both the instance property and the heap pointer
         self.eventTapPort = tap
+        pointer.pointee = tap
+
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
 
         if let runLoopSource = runLoopSource {
@@ -58,6 +74,11 @@ class EventTapManager {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
             self.eventTapPort = nil
+        }
+        if let pointer = tapPortPointer {
+            pointer.deinitialize(count: 1)
+            pointer.deallocate()
+            self.tapPortPointer = nil
         }
         logger.info("Event tap stopped.")
         NotificationCenter.default.post(name: .eventTapStateChanged, object: nil)
@@ -80,6 +101,17 @@ private func eventTapCallback(
     event: CGEvent,
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
+    // Watchdog: macOS disables the tap if the callback takes too long.
+    // Re-enable it immediately to recover without requiring a relaunch.
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let refcon,
+           let tap = refcon.assumingMemoryBound(to: CFMachPort?.self).pointee {
+            CGEvent.tapEnable(tap: tap, enable: true)
+            logger.warning("Event tap was disabled by macOS — re-enabled automatically.")
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
     let isMiddleClick = (type == .otherMouseDown && event.getIntegerValueField(.mouseEventButtonNumber) == 2)
     let isOptionLeftClick = (type == .leftMouseDown && event.flags.contains(.maskAlternate))
 

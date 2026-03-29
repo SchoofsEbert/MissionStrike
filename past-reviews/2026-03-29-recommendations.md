@@ -41,22 +41,9 @@ If Apple ever exposes hover events in Mission Control through the Accessibility 
 
 ## 🏗️ Codebase & Architecture
 
-### 7. Event Tap Watchdog / Auto-Recovery
+### 7. ✅ ADDRESSED — Event Tap Watchdog / Auto-Recovery
 
-macOS can silently disable an event tap if the system becomes resource-constrained or if the tap takes too long to process. The callback receives a `tapDisabledByTimeout` event type in this case. Currently, `eventTapCallback` does not handle this — if the tap is disabled, MissionStrike silently stops working until relaunch.
-
-**Recommendation:** Check for `type == .tapDisabledByTimeout` in the callback and re-enable the tap:
-
-```swift
-if type == .tapDisabledByTimeout {
-    if let tap = refcon?.assumingMemoryBound(to: CFMachPort.self).pointee {
-        CGEvent.tapEnable(tap: tap, enable: true)
-    }
-    return Unmanaged.passUnretained(event)
-}
-```
-
-Pass the `eventTapPort` via `refcon` (the `userInfo` pointer) to make this work.
+The event tap callback now handles `tapDisabledByTimeout` and `tapDisabledByUserInput`. When macOS disables the tap (e.g., due to resource pressure or the callback taking too long), the callback immediately re-enables it via `CGEvent.tapEnable(tap:enable:)` and logs a warning. The mach port is passed to the callback through the `userInfo`/`refcon` pointer using a heap-allocated `UnsafeMutablePointer<CFMachPort?>`, which is properly allocated in `start()` and deallocated in `stop()`. No relaunch required for recovery.
 
 ### 8. Protocol-Based Abstractions for Testability
 
@@ -146,9 +133,9 @@ The event tap callback now implements a 300ms timestamp-based debounce using `ma
 
 `CGEvent.location` returns coordinates in the global display coordinate space, while `CGWindowListCopyWindowInfo` bounds use the same space — but Retina scaling and display arrangement offsets can cause subtle mismatches. Verifying correct behavior on mixed-DPI multi-monitor setups would prevent hard-to-reproduce bugs.
 
-### 28. Handle App Nap
+### 28. ✅ ADDRESSED — Handle App Nap
 
-As a background utility with no visible windows (most of the time), macOS may aggressively apply App Nap, potentially delaying event tap processing. Consider setting `ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Event tap listening")` to prevent App Nap from throttling the run loop.
+`AppDelegate.applicationDidFinishLaunching` now calls `ProcessInfo.processInfo.beginActivity(options:reason:)` with `.userInitiated` and `.idleSystemSleepDisabled` flags. This prevents macOS from applying App Nap to MissionStrike, ensuring the event tap run loop remains responsive even when the app has no visible windows. The activity token is stored for the lifetime of the app.
 
 ---
 
