@@ -151,6 +151,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Accessibility State
 
+    /// Key used to remember that accessibility was previously granted.
+    private static let accessibilityWasGrantedKey = "accessibilityWasGranted"
+
     private func handleAccessibilityChange() {
         let isNowEnabled = AXIsProcessTrusted()
 
@@ -158,10 +161,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Permission was revoked
             logger.warning("Accessibility permissions revoked.")
             EventTapManager.shared.stop()
+            UserDefaults.standard.set(false, forKey: Self.accessibilityWasGrantedKey)
             sendPermissionLostNotification()
         } else if !wasAccessibilityEnabled && isNowEnabled {
             // Permission was granted
             logger.info("Accessibility permissions granted.")
+            UserDefaults.standard.set(true, forKey: Self.accessibilityWasGrantedKey)
             EventTapManager.shared.start()
         }
 
@@ -337,11 +342,90 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkAccessibilityPermissions() {
-        let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+        let accessEnabled = AXIsProcessTrusted()
+        let previouslyGranted = UserDefaults.standard.bool(forKey: Self.accessibilityWasGrantedKey)
 
-        if !accessEnabled {
-            logger.warning("Accessibility not enabled. Please enable in System Settings -> Privacy & Security -> Accessibility.")
+        if accessEnabled {
+            // All good — remember the grant
+            UserDefaults.standard.set(true, forKey: Self.accessibilityWasGrantedKey)
+            return
+        }
+
+        if previouslyGranted {
+            // Accessibility was granted before but is now invalid — likely a post-update
+            // signature change. Show a specific, friendly alert instead of the generic prompt.
+            logger.warning("Accessibility previously granted but now invalid — likely post-update.")
+            showPostUpdateAccessibilityAlert()
+        } else {
+            // First time — use the standard system prompt
+            let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
+            _ = AXIsProcessTrustedWithOptions(options)
+            logger.warning("Accessibility not enabled. Prompting user.")
+        }
+    }
+
+    // MARK: - Post-Update Accessibility Alert
+
+    /// Shows a friendly alert when accessibility was previously granted but has
+    /// been invalidated by an app update (the binary's code signature changed).
+    /// Attempts to reset the stale TCC entry with `tccutil` so the user only
+    /// needs to click "Allow" in the system prompt rather than manually
+    /// removing and re-adding the app.
+    private func showPostUpdateAccessibilityAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Accessibility Permission Needs Refresh"
+        alert.informativeText = """
+            MissionStrike was updated and macOS needs you to re-approve \
+            Accessibility access. This is a one-time step after each update.
+
+            Click "Re-Authorize" and macOS will prompt you to allow access again.
+            """
+
+        if let icon = NSApplication.shared.applicationIconImage {
+            alert.icon = icon
+        }
+
+        alert.addButton(withTitle: "Re-Authorize")
+        alert.addButton(withTitle: "Open Settings Manually")
+
+        NSApp.activate()
+        let response = alert.runModal()
+
+        switch response {
+        case .alertFirstButtonReturn:
+            // Reset the stale TCC entry so the system prompt works cleanly
+            resetTCCEntry()
+            // Small delay to let tccutil finish before prompting
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
+                _ = AXIsProcessTrustedWithOptions(options)
+            }
+        case .alertSecondButtonReturn:
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+        default:
+            break
+        }
+    }
+
+    /// Runs `tccutil reset Accessibility <bundleID>` to clear the stale TCC entry
+    /// left over from the previous binary signature. This allows the standard
+    /// system prompt to work without the user manually removing the app first.
+    private func resetTCCEntry() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", bundleID]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            logger.info("TCC entry reset for \(bundleID) (exit code \(process.terminationStatus)).")
+        } catch {
+            logger.warning("Failed to reset TCC entry: \(error.localizedDescription)")
         }
     }
 
