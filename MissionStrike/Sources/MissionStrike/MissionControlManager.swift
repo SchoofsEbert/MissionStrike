@@ -93,18 +93,23 @@ class MissionControlManager {
     static let shared = MissionControlManager()
     private init() {}
 
-    func handleMouseEvent(location: CGPoint) {
-        closeWindowAt(location: location)
-    }
-
-    private func closeWindowAt(location: CGPoint) {
+    func handleMouseEvent(location: CGPoint, action: MouseAction = .close) {
         let systemWideElement = AXUIElementCreateSystemWide()
         var elementAtPosition: AXUIElement?
 
-        let result = AXUIElementCopyElementAtPosition(systemWideElement, Float(location.x), Float(location.y), &elementAtPosition)
+        let result = AXUIElementCopyElementAtPosition(
+            systemWideElement, Float(location.x), Float(location.y), &elementAtPosition
+        )
 
-        if result == .success, let element = elementAtPosition {
+        guard result == .success, let element = elementAtPosition else { return }
+
+        switch action {
+        case .close:
             attemptToClose(element: element, at: location)
+        case .closeAll:
+            closeAllWindowsForApp(element: element, at: location)
+        case .minimize:
+            minimizeWindow(element: element, at: location)
         }
     }
 
@@ -122,20 +127,7 @@ class MissionControlManager {
     }
 
     private func attemptToClose(element: AXUIElement, at location: CGPoint) {
-        var current: AXUIElement? = element
-        var inSpacesBar = false
-        while let elem = current {
-            var title: CFTypeRef?
-            AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &title)
-
-            if let titleStr = title as? String, titleStr == "Spaces Bar" {
-                inSpacesBar = true
-                break
-            }
-            current = getParent(of: elem)
-        }
-
-        if inSpacesBar {
+        if isInSpacesBar(element: element) {
             let enableSpaceClosing = UserDefaults.standard.bool(forKey: "enableSpaceClosing")
             if enableSpaceClosing {
                 var actionNames: CFArray?
@@ -260,5 +252,109 @@ class MissionControlManager {
 
             logger.warning("Could not find a close button for the target window ID (\(targetWindowID)).")
         }
+    }
+
+    // MARK: - Minimize (#15)
+
+    private func minimizeWindow(element: AXUIElement, at location: CGPoint) {
+        // Don't minimize Spaces — that doesn't make sense
+        if isInSpacesBar(element: element) { return }
+
+        if let window = findEnclosingWindow(for: element) {
+            let minimizeResult = AXUIElementSetAttributeValue(
+                window, kAXMinimizedAttribute as CFString, true as CFTypeRef
+            )
+            if minimizeResult == .success {
+                logger.debug("Minimized window via AXMinimized attribute.")
+            } else {
+                logger.warning("AXMinimized failed with error: \(minimizeResult.rawValue)")
+            }
+            return
+        }
+
+        // Fallback: CGWindow identification
+        if let cgHit = findTargetCGWindow(at: location) {
+            let appElement = AXUIElementCreateApplication(cgHit.pid)
+            var windowsRef: CFTypeRef?
+
+            if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+               let windows = windowsRef as? [AXUIElement] {
+                for window in windows {
+                    var cgWindowID: CGWindowID = 0
+                    if _AXUIElementGetWindow(window, &cgWindowID) == .success,
+                       cgWindowID == cgHit.windowID {
+                        let minimizeResult = AXUIElementSetAttributeValue(
+                            window, kAXMinimizedAttribute as CFString, true as CFTypeRef
+                        )
+                        if minimizeResult == .success {
+                            logger.debug("Minimized CGWindow \(cgHit.windowID) on PID \(cgHit.pid).")
+                        } else {
+                            logger.warning("AXMinimized for window \(cgHit.windowID) failed: \(minimizeResult.rawValue)")
+                        }
+                        return
+                    }
+                }
+            }
+        }
+        logger.warning("Could not find a window to minimize.")
+    }
+
+    // MARK: - Close All App Windows (#14)
+
+    private func closeAllWindowsForApp(element: AXUIElement, at location: CGPoint) {
+        // Don't close-all from Spaces bar — use normal close for Spaces
+        if isInSpacesBar(element: element) {
+            attemptToClose(element: element, at: location)
+            return
+        }
+
+        // Get the PID of the app that owns the clicked element
+        var pid: pid_t = 0
+        if AXUIElementGetPid(element, &pid) != .success {
+            // Fallback to CGWindow lookup
+            if let cgHit = findTargetCGWindow(at: location) {
+                pid = cgHit.pid
+            } else {
+                logger.warning("Could not determine app PID for close-all.")
+                return
+            }
+        }
+
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            logger.warning("Could not enumerate windows for PID \(pid).")
+            return
+        }
+
+        var closedCount = 0
+        for window in windows {
+            var closeButtonRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+               let closeButtonRef {
+                let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
+                if AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success {
+                    closedCount += 1
+                }
+            }
+        }
+        logger.debug("Closed \(closedCount)/\(windows.count) windows for PID \(pid).")
+    }
+
+    // MARK: - Helpers
+
+    private func isInSpacesBar(element: AXUIElement) -> Bool {
+        var current: AXUIElement? = element
+        while let elem = current {
+            var title: CFTypeRef?
+            AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &title)
+            if let titleStr = title as? String, titleStr == "Spaces Bar" {
+                return true
+            }
+            current = getParent(of: elem)
+        }
+        return false
     }
 }

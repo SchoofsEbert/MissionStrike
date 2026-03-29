@@ -73,17 +73,21 @@ Audited all log statements across the codebase. Demoted 5 routine success messag
 
 ## 🚀 New Feature Ideas
 
-### 14. Close All Windows of an App (Modifier + Middle Click)
+### 14. ✅ ADDRESSED — Close All Windows of an App (Modifier + Middle Click)
 
-Add a "power close" gesture: **Cmd + Middle Click** (or **Cmd + Option + Left Click**) on any window in Mission Control to close *all* windows belonging to that app. This would be incredibly useful for cleaning up browser or Finder clutter. The PID is already extracted — iterate all `AXWindow` elements for that PID and close each one.
+**Cmd + Middle Click** (or **Cmd + configured-modifier + Left Click**) on any window in Mission Control now closes all windows belonging to that app. `MissionControlManager.closeAllWindowsForApp` extracts the PID from the clicked element (with CGWindow fallback), enumerates all `AXWindow` elements for that PID, and presses each close button. If triggered from the Spaces bar, it falls back to normal Space closing. The action is determined in the event tap callback by checking for `maskCommand` in the event flags.
 
-### 15. Minimize Instead of Close (Shift + Middle Click)
+### 15. ✅ ADDRESSED — Minimize Instead of Close (Shift + Middle Click)
 
-Not every window needs to be destroyed. Offering **Shift + Middle Click** to *minimize* a window to the Dock (via `AXMinimize` action) would give users a non-destructive alternative. This could be gated behind a Settings toggle.
+**Shift + Middle Click** (or **Shift + configured-modifier + Left Click**) now minimizes a window to the Dock instead of closing it. `MissionControlManager.minimizeWindow` sets the `kAXMinimizedAttribute` to `true` on the target window, with a CGWindow fallback path. Spaces bar clicks are ignored (minimizing a Space doesn't make sense). The action is determined in the event tap callback by checking for `maskShift` in the event flags.
 
-### 16. Customizable Trigger Bindings
+### 16. ✅ ADDRESSED — Customizable Trigger Bindings
 
-Currently the triggers are hardcoded (middle-click + Option+Left Click). A settings UI letting users choose their preferred modifier keys (Control, Command, Shift, Option) for the left-click trigger — or disable the middle-click trigger entirely — would accommodate different workflows and mouse configurations.
+The event tap trigger is now fully configurable via Settings:
+- **Middle Mouse Click** — toggle on/off (default: on)
+- **Left Click Modifier** — picker with ⌥ Option (default), ⌃ Control, or Disabled
+
+Action modifiers layer on top of any trigger: +⌘ Cmd = close all, +⇧ Shift = minimize. Preferences are read from UserDefaults in the event tap callback (thread-safe). The `TriggerModifier` enum maps each option to its `CGEventFlags` mask. Option and Control are offered as trigger modifiers; Command and Shift are reserved for action modifiers to avoid conflicts.
 
 ### 17. App Exclusion List (Whitelist / Blacklist)
 

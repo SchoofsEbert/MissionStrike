@@ -72,7 +72,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Register all UserDefaults defaults in one place
         UserDefaults.standard.register(defaults: [
             "showMenuBarIcon": true,
-            "enableSpaceClosing": true
+            "enableSpaceClosing": true,
+            "enableMiddleClick": true,
+            "leftClickModifier": TriggerModifier.option.rawValue
         ])
 
         // Observe menu bar icon preference using modern block-based KVO (auto-removes on dealloc)

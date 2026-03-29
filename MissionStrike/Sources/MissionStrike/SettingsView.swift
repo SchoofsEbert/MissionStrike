@@ -8,6 +8,8 @@ private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: 
 struct SettingsView: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("enableSpaceClosing") private var enableSpaceClosing = true
+    @AppStorage("enableMiddleClick") private var enableMiddleClick = true
+    @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
 
@@ -16,7 +18,7 @@ struct SettingsView: View {
         .publisher(for: Notification.Name("com.apple.accessibility.api"))
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 15) {
                 if let nsImage = NSApplication.shared.applicationIconImage {
                     Image(nsImage: nsImage)
@@ -31,7 +33,9 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Image(systemName: isAccessibilityEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    Image(systemName: isAccessibilityEnabled
+                          ? "checkmark.circle.fill"
+                          : "exclamationmark.triangle.fill")
                         .foregroundStyle(isAccessibilityEnabled ? .green : .orange)
                     Text("Accessibility Permissions")
                 }
@@ -45,6 +49,27 @@ struct SettingsView: View {
                 }
             }
 
+            // --- Trigger Bindings ---
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Trigger Bindings")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                Toggle("Middle Mouse Click", isOn: $enableMiddleClick)
+
+                HStack {
+                    Text("Left Click Modifier:")
+                    Picker("", selection: $leftClickModifier) {
+                        ForEach(TriggerModifier.allCases, id: \.rawValue) { modifier in
+                            Text(modifier.displayName).tag(modifier.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+            }
+
+            // --- General ---
             Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
 
             Toggle("Enable Closing Spaces", isOn: $enableSpaceClosing)
@@ -54,7 +79,10 @@ struct SettingsView: View {
                     toggleLaunchAtLogin()
                 }
 
-            Text("MissionStrike allows you to close windows in Mission Control using:\n• Middle Mouse Click\n• Option + Left Click")
+            Text("Actions in Mission Control:\n"
+                 + "• Click → Close window\n"
+                 + "• ⇧ Shift + Click → Minimize window\n"
+                 + "• ⌘ Cmd + Click → Close all app windows")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -67,7 +95,7 @@ struct SettingsView: View {
             refreshAccessibilityStatus()
         }
         .padding()
-        .frame(width: 320, height: 300)
+        .frame(width: 340, height: 420)
     }
 
     private func refreshAccessibilityStatus() {

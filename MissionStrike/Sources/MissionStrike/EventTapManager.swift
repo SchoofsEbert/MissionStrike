@@ -112,33 +112,63 @@ private func eventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    let isMiddleClick = (type == .otherMouseDown && event.getIntegerValueField(.mouseEventButtonNumber) == 2)
-    let isOptionLeftClick = (type == .leftMouseDown && event.flags.contains(.maskAlternate))
+    // Determine if this event matches a configured trigger
+    let flags = event.flags
+    let isTrigger: Bool
 
-    if isMiddleClick || isOptionLeftClick {
-        // Debounce: ignore clicks that arrive too soon after the last processed one
-        let now = mach_absolute_time()
-        let elapsedNano = machTimeToNanoseconds(now - lastProcessedClickTime)
-        let elapsedSeconds = Double(elapsedNano) / 1_000_000_000
+    if type == .otherMouseDown && event.getIntegerValueField(.mouseEventButtonNumber) == 2 {
+        // Middle click — check if enabled in preferences
+        isTrigger = UserDefaults.standard.bool(forKey: "enableMiddleClick")
+    } else if type == .leftMouseDown {
+        // Left click — check configured modifier
+        let modifierRaw = UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option"
+        if let modifier = TriggerModifier(rawValue: modifierRaw),
+           let mask = modifier.eventFlagMask {
+            isTrigger = flags.contains(mask)
+        } else {
+            isTrigger = false
+        }
+    } else {
+        isTrigger = false
+    }
 
-        if elapsedSeconds < debounceInterval {
-            logger.debug("Click debounced (\(String(format: "%.0f", elapsedSeconds * 1000))ms since last).")
-            return nil
+    guard isTrigger else {
+        return Unmanaged.passUnretained(event)
+    }
+
+    // Debounce: ignore clicks that arrive too soon after the last processed one
+    let now = mach_absolute_time()
+    let elapsedNano = machTimeToNanoseconds(now - lastProcessedClickTime)
+    let elapsedSeconds = Double(elapsedNano) / 1_000_000_000
+
+    if elapsedSeconds < debounceInterval {
+        logger.debug("Click debounced (\(String(format: "%.0f", elapsedSeconds * 1000))ms since last).")
+        return nil
+    }
+
+    // Run check synchronously to decide whether to swallow the event
+    let isActive = MissionControlActiveChecker().isActive()
+
+    if isActive {
+        lastProcessedClickTime = now
+        let location = event.location
+
+        // Determine action from additional modifier keys
+        let action: MouseAction
+        if flags.contains(.maskCommand) {
+            action = .closeAll
+        } else if flags.contains(.maskShift) {
+            action = .minimize
+        } else {
+            action = .close
         }
 
-        // Run check synchronously to decide whether to swallow the event
-        let isActive = MissionControlActiveChecker().isActive()
-
-        if isActive {
-            lastProcessedClickTime = now
-            let location = event.location
-            Task { @MainActor in
-                MissionControlManager.shared.handleMouseEvent(location: location)
-            }
-
-            // Return nil to completely intercept the event (blocks default action)
-            return nil
+        Task { @MainActor in
+            MissionControlManager.shared.handleMouseEvent(location: location, action: action)
         }
+
+        // Return nil to completely intercept the event (blocks default action)
+        return nil
     }
 
     // passUnretained: the caller owns the event, we must not retain it
