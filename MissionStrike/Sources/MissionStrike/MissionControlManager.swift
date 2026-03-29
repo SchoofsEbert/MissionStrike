@@ -15,6 +15,13 @@ func _AXUIElementGetWindow(_ element: AXUIElement, _ id: inout CGWindowID) -> AX
 
 private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "MissionControl")
 
+// MARK: - Mission Control Detection Protocol
+
+/// Abstracts Mission Control detection so implementations can be swapped in tests.
+protocol MissionControlDetecting: Sendable {
+    func isActive() -> Bool
+}
+
 // MARK: - Mission Control Detection
 
 /// Checks whether Mission Control is currently active by inspecting Dock-owned overlay windows.
@@ -22,45 +29,51 @@ private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: 
 /// Thread safety: All calls within this class use CoreGraphics APIs that are thread-safe.
 /// This class is intentionally `nonisolated` / not actor-isolated so it can be called
 /// synchronously from the event tap callback (which runs on the run loop thread).
-final class MissionControlActiveChecker: Sendable {
+final class MissionControlActiveChecker: MissionControlDetecting, Sendable {
 
-    // Dock overlay window layers observed during Mission Control (macOS 13–15).
-    private static let missionControlOverlayLayers: Set<Int> = [18, 20]
+    private let config: MissionStrikeConfig
 
-    // Minimum fraction of a screen that a Dock overlay must cover
-    // to be considered a Mission Control overlay (avoids false positives on small Dock windows).
-    private static let minimumScreenCoverageFraction: CGFloat = 0.5
+    init(config: MissionStrikeConfig = .default) {
+        self.config = config
+    }
 
-    static func isActive() -> Bool {
+    /// Live check using system APIs (CGWindowList + NSScreen).
+    func isActive() -> Bool {
         let options = CGWindowListOption.optionOnScreenOnly
-        guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
+        let screenSizes = NSScreen.screens.map { $0.frame.size }
+        return Self.isActive(windowList: windowList, screenSizes: screenSizes, config: config)
+    }
 
-        // Pre-compute minimum overlay dimensions for every connected display.
-        // On a single-monitor setup this is one entry; on multi-monitor it covers all screens.
-        let screens = NSScreen.screens
-        let screenThresholds: [(minWidth: CGFloat, minHeight: CGFloat)]
-        if screens.isEmpty {
-            // Fallback if NSScreen.screens is empty (headless or unusual config)
-            screenThresholds = [(1920 * minimumScreenCoverageFraction, 1080 * minimumScreenCoverageFraction)]
+    /// Pure, testable detection logic with no system dependencies.
+    /// Pass in window list data and screen sizes to verify heuristics.
+    static func isActive(
+        windowList: [[String: Any]],
+        screenSizes: [CGSize],
+        config: MissionStrikeConfig = .default
+    ) -> Bool {
+        let fraction = config.minimumScreenCoverageFraction
+        let thresholds: [(minWidth: CGFloat, minHeight: CGFloat)]
+
+        if screenSizes.isEmpty {
+            let fallback = config.fallbackScreenSize
+            thresholds = [(fallback.width * fraction, fallback.height * fraction)]
         } else {
-            screenThresholds = screens.map { screen in
-                (screen.frame.width * minimumScreenCoverageFraction,
-                 screen.frame.height * minimumScreenCoverageFraction)
+            thresholds = screenSizes.map { size in
+                (size.width * fraction, size.height * fraction)
             }
         }
 
-        for info in windowListInfo {
+        for info in windowList {
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let layer = info[kCGWindowLayer as String] as? Int ?? 0
 
-            // Mission Control creates full-screen overlay windows at specific layers, owned by the Dock.
-            if owner == "Dock" && missionControlOverlayLayers.contains(layer) {
+            if owner == "Dock" && config.missionControlOverlayLayers.contains(layer) {
                 if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
                    let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) {
-                    // Check if this overlay is large enough relative to ANY connected screen.
-                    let coversAScreen = screenThresholds.contains { threshold in
+                    let coversAScreen = thresholds.contains { threshold in
                         bounds.width > threshold.minWidth && bounds.height > threshold.minHeight
                     }
                     if coversAScreen {
@@ -196,7 +209,7 @@ class MissionControlManager {
             return nil
         }
 
-        let ignoredOwners: Set<String> = ["Dock", "Window Server", "Wallpaper"]
+        let ignoredOwners = MissionStrikeConfig.default.ignoredWindowOwners
 
         for info in windowListInfo {
             if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],

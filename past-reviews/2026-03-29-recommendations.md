@@ -45,17 +45,17 @@ If Apple ever exposes hover events in Mission Control through the Accessibility 
 
 The event tap callback now handles `tapDisabledByTimeout` and `tapDisabledByUserInput`. When macOS disables the tap (e.g., due to resource pressure or the callback taking too long), the callback immediately re-enables it via `CGEvent.tapEnable(tap:enable:)` and logs a warning. The mach port is passed to the callback through the `userInfo`/`refcon` pointer using a heap-allocated `UnsafeMutablePointer<CFMachPort?>`, which is properly allocated in `start()` and deallocated in `stop()`. No relaunch required for recovery.
 
-### 8. Protocol-Based Abstractions for Testability
+### 8. ✅ ADDRESSED — Protocol-Based Abstractions for Testability
 
-`MissionControlActiveChecker`, `MissionControlManager`, and `EventTapManager` are all concrete classes with no protocol abstractions. Introducing protocols (e.g., `MissionControlDetecting`, `WindowClosing`) would allow injecting mock implementations for unit testing — particularly for the Mission Control detection heuristics and window-matching logic.
+Added `MissionControlDetecting` protocol with an `isActive() -> Bool` contract. `MissionControlActiveChecker` now conforms to it and exposes a testable pure static method `isActive(windowList:screenSizes:config:)` that takes raw data with no system dependencies. The live `isActive()` instance method is a thin wrapper that gathers `CGWindowListCopyWindowInfo` and `NSScreen.screens` data and delegates to the static method. Tests call the static method directly with mock data.
 
-### 9. Unit Tests for Detection Heuristics
+### 9. ✅ ADDRESSED — Unit Tests for Detection Heuristics
 
-`MissionControlActiveChecker.isActive()` uses a specific set of heuristics (Dock-owned windows at layers 18/20, screen coverage fraction). These are ideal candidates for unit tests with mock `CGWindowListCopyWindowInfo` data. Even basic snapshot-style tests ("given this window list, is Mission Control detected?") would catch regressions when macOS changes behavior.
+Added `MissionStrikeTests` test target with 13 tests across 2 suites using Swift Testing. Tests cover: positive detection (layer 18/20), negative detection (too small, wrong owner, wrong layer, empty list), multi-display scenarios (secondary screen coverage, too-small-for-all), fallback screen size, and custom config (custom layers, custom coverage fraction). All tests use mock `CGWindowListCopyWindowInfo`-shaped data via the pure `isActive(windowList:screenSizes:config:)` method — no system APIs involved.
 
-### 10. Extract Magic Values into a Configuration Object
+### 10. ✅ ADDRESSED — Extract Magic Values into a Configuration Object
 
-Scattered constants like the `ignoredOwners` set, `missionControlOverlayLayers`, and `minimumScreenCoverageFraction` are good candidates for a single `MissionStrikeConfig` struct. This centralizes tuning knobs and makes it easier to adjust for future macOS versions.
+Created `MissionStrikeConfig` struct centralizing all tunable constants: `missionControlOverlayLayers`, `minimumScreenCoverageFraction`, `fallbackScreenSize`, `ignoredWindowOwners`, and `debounceInterval`. A `static let default` provides the production values. `MissionControlActiveChecker` accepts a config via its initializer and testable static method. `EventTapManager` reads the debounce interval from `MissionStrikeConfig.default`. `MissionControlManager.findTargetCGWindow` reads ignored owners from config. No more scattered magic numbers.
 
 ### 11. ✅ ADDRESSED — Structured Concurrency Audit
 

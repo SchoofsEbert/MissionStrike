@@ -87,7 +87,7 @@ class EventTapManager {
 
 /// Minimum interval (in seconds) between processed clicks to prevent
 /// racing close operations on rapid double-clicks.
-private let debounceInterval: TimeInterval = 0.3
+private let debounceInterval: TimeInterval = MissionStrikeConfig.default.debounceInterval
 
 /// Timestamp of the last click that was actually processed.
 /// Only accessed from the run-loop thread (event tap callback), so no lock is needed.
@@ -127,7 +127,7 @@ private func eventTapCallback(
         }
 
         // Run check synchronously to decide whether to swallow the event
-        let isActive = MissionControlActiveChecker.isActive()
+        let isActive = MissionControlActiveChecker().isActive()
 
         if isActive {
             lastProcessedClickTime = now
