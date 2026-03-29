@@ -18,85 +18,126 @@ struct SettingsView: View {
         .publisher(for: Notification.Name("com.apple.accessibility.api"))
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 15) {
-                if let nsImage = NSApplication.shared.applicationIconImage {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 48, height: 48)
-                }
-
-                Text("MissionStrike Settings")
-                    .font(.headline)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
+        Form {
+            // MARK: - Status
+            Section {
+                HStack(spacing: 10) {
                     Image(systemName: isAccessibilityEnabled
-                          ? "checkmark.circle.fill"
-                          : "exclamationmark.triangle.fill")
+                          ? "checkmark.shield.fill"
+                          : "exclamationmark.shield.fill")
+                        .font(.title2)
                         .foregroundStyle(isAccessibilityEnabled ? .green : .orange)
-                    Text("Accessibility Permissions")
-                }
 
-                if !isAccessibilityEnabled {
-                    Button("Open System Settings") {
-                        let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-                        _ = AXIsProcessTrustedWithOptions(options)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Accessibility")
+                            .fontWeight(.medium)
+                        Text(isAccessibilityEnabled
+                             ? "Permissions granted — MissionStrike is active."
+                             : "Permissions required for MissionStrike to work.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                }
-            }
 
-            // --- Trigger Bindings ---
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Trigger Bindings")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                    Spacer()
 
-                Toggle("Middle Mouse Click", isOn: $enableMiddleClick)
-
-                HStack {
-                    Text("Left Click Modifier:")
-                    Picker("", selection: $leftClickModifier) {
-                        ForEach(TriggerModifier.allCases, id: \.rawValue) { modifier in
-                            Text(modifier.displayName).tag(modifier.rawValue)
+                    if !isAccessibilityEnabled {
+                        Button("Grant Access") {
+                            let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
+                            _ = AXIsProcessTrustedWithOptions(options)
                         }
+                        .controlSize(.small)
                     }
-                    .labelsHidden()
-                    .frame(width: 130)
                 }
             }
 
-            // --- General ---
-            Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+            // MARK: - Triggers
+            Section {
+                Toggle("Middle Mouse Button", isOn: $enableMiddleClick)
 
-            Toggle("Enable Closing Spaces", isOn: $enableSpaceClosing)
-
-            Toggle("Start at Login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) {
-                    toggleLaunchAtLogin()
+                Picker("Left Click Modifier", selection: $leftClickModifier) {
+                    ForEach(TriggerModifier.allCases, id: \.rawValue) { modifier in
+                        Text(modifier.displayName).tag(modifier.rawValue)
+                    }
                 }
+            } header: {
+                Text("Trigger Bindings")
+            } footer: {
+                Text("Choose how to trigger actions in Mission Control. "
+                     + "Command and Shift are reserved as action modifiers.")
+            }
 
-            Text("Actions in Mission Control:\n"
-                 + "• Click → Close window\n"
-                 + "• ⇧ Shift + Click → Minimize window\n"
-                 + "• ⌘ Cmd + Click → Close all app windows")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // MARK: - Actions Reference
+            Section("Actions in Mission Control") {
+                actionRow(
+                    keys: "Click",
+                    description: "Close window",
+                    icon: "xmark.circle"
+                )
+                actionRow(
+                    keys: "⇧ Shift + Click",
+                    description: "Minimize to Dock",
+                    icon: "minus.circle"
+                )
+                actionRow(
+                    keys: "⌘ Cmd + Click",
+                    description: "Close all app windows",
+                    icon: "xmark.circle.fill"
+                )
+            }
 
-            Spacer()
+            // MARK: - Spaces
+            Section {
+                Toggle("Enable Closing Spaces", isOn: $enableSpaceClosing)
+            } header: {
+                Text("Spaces")
+            } footer: {
+                Text("When enabled, clicking a Space in the top bar "
+                     + "removes it instantly — no hover delay.")
+            }
+
+            // MARK: - General
+            Section("General") {
+                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+
+                Toggle("Start at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) {
+                        toggleLaunchAtLogin()
+                    }
+            }
         }
+        .formStyle(.grouped)
         .onAppear {
             refreshAccessibilityStatus()
         }
         .onReceive(accessibilityChanged) { _ in
             refreshAccessibilityStatus()
         }
-        .padding()
-        .frame(width: 340, height: 420)
+        .frame(width: 400, height: 520)
     }
+
+    // MARK: - Action Row
+
+    private func actionRow(keys: String, description: String, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+
+            Text(description)
+                .font(.callout)
+
+            Spacer()
+
+            Text(keys)
+                .font(.caption)
+                .fontDesign(.rounded)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+        }
+    }
+
+    // MARK: - Logic
 
     private func refreshAccessibilityStatus() {
         let wasEnabled = isAccessibilityEnabled
