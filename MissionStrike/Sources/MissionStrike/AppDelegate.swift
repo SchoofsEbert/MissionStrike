@@ -62,8 +62,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Prevent App Nap — the event tap must respond to clicks in real time,
         // even when MissionStrike has no visible windows.
+        // Note: .userInitiated alone disables App Nap without preventing system sleep,
+        // so there is no battery impact on laptops.
         appNapActivity = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated, .idleSystemSleepDisabled],
+            options: .userInitiated,
             reason: "Event tap must remain responsive for Mission Control clicks"
         )
 
