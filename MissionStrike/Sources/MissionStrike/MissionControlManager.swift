@@ -116,7 +116,7 @@ class MissionControlManager {
                     if actions.contains("AXRemoveDesktop") {
                         let closeResult = AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
                         if closeResult == .success {
-                            logger.info("Closed Space via AXRemoveDesktop.")
+                            logger.debug("Closed Space via AXRemoveDesktop.")
                         } else {
                             logger.warning("AXRemoveDesktop failed with error: \(closeResult.rawValue)")
                         }
@@ -134,7 +134,7 @@ class MissionControlManager {
                 let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
                 let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
                 if closeResult == .success {
-                    logger.info("Closed window via AXWindow's Close Button.")
+                    logger.debug("Closed window via AXWindow's Close Button.")
                 } else {
                     logger.warning("AXPress on close button failed with error: \(closeResult.rawValue)")
                 }
@@ -146,7 +146,7 @@ class MissionControlManager {
                 if actions.contains("AXClose") {
                     let closeResult = AXUIElementPerformAction(window, "AXClose" as CFString)
                     if closeResult == .success {
-                        logger.info("Closed window via AXWindow's AXClose action.")
+                        logger.debug("Closed window via AXWindow's AXClose action.")
                     } else {
                         logger.warning("AXClose action failed with error: \(closeResult.rawValue)")
                     }
@@ -159,7 +159,7 @@ class MissionControlManager {
         var pid: pid_t = 0
         if AXUIElementGetPid(element, &pid) == .success {
             if let cgHit = findTargetCGWindow(at: location) {
-                logger.info("Target identified via CGWindow mapping: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
+                logger.debug("Target identified via CGWindow mapping: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
                 closeWindowByWindowID(pid: cgHit.pid, targetWindowID: cgHit.windowID)
                 return
             }
@@ -219,7 +219,7 @@ class MissionControlManager {
                             let closeButton = targetCloseBtn as! AXUIElement // swiftlint:disable:this force_cast
                             let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
                             if closeResult == .success {
-                                logger.info("Closed exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid).")
+                                logger.debug("Closed exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid).")
                             } else {
                             logger.warning(
                                 "AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)"

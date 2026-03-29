@@ -65,9 +65,9 @@ The rapid-click racing concern is resolved by the 300ms debounce implemented in 
 
 Added `.swiftlint.yml` with a rule set tailored to the project: `.build` and `Package.swift` excluded, line length set to 140/200, opt-in rules enabled (e.g., `empty_count`, `closure_spacing`, `modifier_order`, `sorted_first_last`), and thresholds tuned for the Accessibility API-heavy codebase. All existing source files were fixed to pass with **0 violations**. Intentional `force_cast` sites (CFTypeRef → AXUIElement, documented in code review #2) use inline `swiftlint:disable:this` comments.
 
-### 13. Logging Levels Review
+### 13. ✅ ADDRESSED — Logging Levels Review
 
-All successful close actions log at `.info` level. Consider demoting routine successes to `.debug` and reserving `.info` for state transitions (tap started, permissions changed). This keeps the Console cleaner during normal operation while still capturing events when debugging with `log stream`.
+Audited all log statements across the codebase. Demoted 5 routine success messages in `MissionControlManager.swift` from `.info` to `.debug` (closed window/Space confirmations, CGWindow target identification). `.info` is now reserved for state transitions (tap started/stopped, permissions granted/revoked, first launch). `.warning` and `.error` levels were already used correctly. The Console is now clean during normal operation; use `log stream --level debug` to see per-close details.
 
 ---
 
