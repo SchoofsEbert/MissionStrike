@@ -74,9 +74,9 @@ Scattered constants like the `ignoredOwners` set, `missionControlOverlayLayers`,
 
 The rapid-click racing concern is resolved by the 300ms debounce implemented in #26. The event tap callback now gates dispatched `Task` calls behind a timestamp check, ensuring only one close operation can be in-flight at a time. The fire-and-forget `Task { @MainActor in ... }` pattern is safe with the debounce in place — a serial `AsyncStream` is no longer necessary.
 
-### 12. SwiftLint / Formatting
+### 12. ✅ ADDRESSED — SwiftLint / Formatting
 
-There's no linting configuration in the project. Adding a `.swiftlint.yml` with a basic rule set would enforce consistency, especially valuable for a vibe-coded project where AI-generated code can drift in style across sessions.
+Added `.swiftlint.yml` with a rule set tailored to the project: `.build` and `Package.swift` excluded, line length set to 140/200, opt-in rules enabled (e.g., `empty_count`, `closure_spacing`, `modifier_order`, `sorted_first_last`), and thresholds tuned for the Accessibility API-heavy codebase. All existing source files were fixed to pass with **0 violations**. Intentional `force_cast` sites (CFTypeRef → AXUIElement, documented in code review #2) use inline `swiftlint:disable:this` comments.
 
 ### 13. Logging Levels Review
 

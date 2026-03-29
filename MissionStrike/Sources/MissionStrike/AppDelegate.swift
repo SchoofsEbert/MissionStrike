@@ -148,7 +148,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let content = UNMutableNotificationContent()
         content.title = "MissionStrike Disabled"
-        content.body = "Accessibility permissions were revoked. MissionStrike cannot close windows until permissions are restored. Re-enable in System Settings → Privacy & Security → Accessibility."
+        content.body = "Accessibility permissions were revoked. MissionStrike cannot close windows "
+            + "until permissions are restored. Re-enable in System Settings → Privacy & Security → Accessibility."
         content.sound = .default
 
         let request = UNNotificationRequest(identifier: "com.vibecoded.missionstrike.permissionLost", content: content, trigger: nil)

@@ -49,4 +49,3 @@ struct AboutView: View {
         .frame(width: 280, height: 300)
     }
 }
-

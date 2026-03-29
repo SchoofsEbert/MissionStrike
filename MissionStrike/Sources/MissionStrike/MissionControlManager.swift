@@ -101,7 +101,7 @@ class MissionControlManager {
             var title: CFTypeRef?
             AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &title)
 
-            if let t = title as? String, t == "Spaces Bar" {
+            if let titleStr = title as? String, titleStr == "Spaces Bar" {
                 inSpacesBar = true
                 break
             }
@@ -131,7 +131,7 @@ class MissionControlManager {
             var closeButtonRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
                let closeButtonRef {
-                let closeButton = closeButtonRef as! AXUIElement
+                let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
                 let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
                 if closeResult == .success {
                     logger.info("Closed window via AXWindow's Close Button.")
@@ -171,7 +171,7 @@ class MissionControlManager {
         var parentRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
            let parentRef {
-            return (parentRef as! AXUIElement)
+            return (parentRef as! AXUIElement) // swiftlint:disable:this force_cast
         }
         return nil
     }
@@ -216,12 +216,14 @@ class MissionControlManager {
                         var targetCloseBtn: CFTypeRef?
                         if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &targetCloseBtn) == .success,
                            let targetCloseBtn {
-                            let closeButton = targetCloseBtn as! AXUIElement
+                            let closeButton = targetCloseBtn as! AXUIElement // swiftlint:disable:this force_cast
                             let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
                             if closeResult == .success {
                                 logger.info("Closed exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid).")
                             } else {
-                                logger.warning("AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)")
+                            logger.warning(
+                                "AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)"
+                            )
                             }
                             return
                         }

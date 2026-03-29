@@ -70,9 +70,16 @@ private let debounceInterval: TimeInterval = 0.3
 
 /// Timestamp of the last click that was actually processed.
 /// Only accessed from the run-loop thread (event tap callback), so no lock is needed.
-private nonisolated(unsafe) var lastProcessedClickTime: UInt64 = 0
+nonisolated(unsafe) private var lastProcessedClickTime: UInt64 = 0
 
-private func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
+// MARK: - Event Tap Callback
+
+private func eventTapCallback(
+    proxy: CGEventTapProxy,
+    type: CGEventType,
+    event: CGEvent,
+    refcon: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
     let isMiddleClick = (type == .otherMouseDown && event.getIntegerValueField(.mouseEventButtonNumber) == 2)
     let isOptionLeftClick = (type == .leftMouseDown && event.flags.contains(.maskAlternate))
 
@@ -112,4 +119,3 @@ private func machTimeToNanoseconds(_ ticks: UInt64) -> UInt64 {
     mach_timebase_info(&timebaseInfo)
     return ticks * UInt64(timebaseInfo.numer) / UInt64(timebaseInfo.denom)
 }
-
