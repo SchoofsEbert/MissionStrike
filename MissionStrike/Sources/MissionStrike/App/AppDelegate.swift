@@ -54,6 +54,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var kvoObservation: NSKeyValueObservation?
     private var accessibilityObserver: Any?
     private var eventTapObserver: Any?
+    private var eventTapFailureObserver: Any?
     private var wasAccessibilityEnabled = AXIsProcessTrusted()
 
     /// Prevents App Nap from throttling the event tap run loop.
@@ -103,6 +104,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMenuBarIconState()
+            }
+        }
+
+        // Observe event tap creation failures to show a user-facing alert
+        eventTapFailureObserver = NotificationCenter.default.addObserver(
+            forName: .eventTapCreationFailed,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.showEventTapFailureAlert()
             }
         }
 
@@ -330,6 +342,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !accessEnabled {
             logger.warning("Accessibility not enabled. Please enable in System Settings -> Privacy & Security -> Accessibility.")
+        }
+    }
+
+    // MARK: - Event Tap Failure Alert
+
+    /// Shows a user-visible alert when `CGEvent.tapCreate` fails.
+    /// This can happen on Apple Silicon Macs with certain security configurations
+    /// (e.g., MDM-managed devices) even when Accessibility permissions are granted.
+    private func showEventTapFailureAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "MissionStrike Could Not Start"
+        alert.informativeText = """
+            The system refused to create an event tap. This can happen even with \
+            Accessibility permissions enabled — for example on MDM-managed Macs or \
+            certain Apple Silicon security configurations.
+
+            Troubleshooting steps:
+            1. Open System Settings → Privacy & Security → Accessibility.
+            2. Remove MissionStrike from the list, then re-add it.
+            3. Restart your Mac and try again.
+            4. If your Mac is managed by an organization, contact your IT administrator \
+            — a configuration profile may be blocking input monitoring.
+            """
+        alert.addButton(withTitle: "Open Accessibility Settings")
+        alert.addButton(withTitle: "Retry")
+        alert.addButton(withTitle: "Quit")
+
+        NSApp.activate()
+        let response = alert.runModal()
+
+        switch response {
+        case .alertFirstButtonReturn:
+            // Open Accessibility preferences pane
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+        case .alertSecondButtonReturn:
+            // Retry starting the event tap
+            EventTapManager.shared.start()
+        case .alertThirdButtonReturn:
+            NSApplication.shared.terminate(nil)
+        default:
+            break
         }
     }
 

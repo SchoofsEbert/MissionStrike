@@ -7,6 +7,9 @@ private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: 
 extension Notification.Name {
     /// Posted on the default `NotificationCenter` whenever the event tap starts or stops.
     static let eventTapStateChanged = Notification.Name("com.vibecoded.missionstrike.eventTapStateChanged")
+
+    /// Posted when `CGEvent.tapCreate` fails entirely (e.g., on MDM-managed Apple Silicon Macs).
+    static let eventTapCreationFailed = Notification.Name("com.vibecoded.missionstrike.eventTapCreationFailed")
 }
 
 @MainActor
@@ -48,6 +51,7 @@ class EventTapManager {
             pointer.deinitialize(count: 1)
             pointer.deallocate()
             self.tapPortPointer = nil
+            NotificationCenter.default.post(name: .eventTapCreationFailed, object: nil)
             return
         }
 

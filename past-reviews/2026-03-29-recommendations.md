@@ -125,9 +125,9 @@ Publishing a Homebrew Cask formula (`brew install --cask missionstrike`) would m
 
 ## 🛡️ Robustness & Edge Cases
 
-### 25. Graceful Handling of `CGEvent.tapCreate` Failure on Apple Silicon
+### 25. ✅ ADDRESSED — Graceful Handling of `CGEvent.tapCreate` Failure on Apple Silicon
 
-On some Apple Silicon Macs with specific security configurations (e.g., MDM-managed devices), event tap creation can fail even with Accessibility enabled. The current code logs an error but gives the user no actionable feedback. Consider surfacing this as a user-visible alert with troubleshooting steps.
+On some Apple Silicon Macs with specific security configurations (e.g., MDM-managed devices), event tap creation can fail even with Accessibility enabled. `EventTapManager` now posts an `.eventTapCreationFailed` notification when `CGEvent.tapCreate` returns `nil`. `AppDelegate` observes this notification and presents an `NSAlert` with a clear explanation and actionable troubleshooting steps: re-adding the app in Accessibility settings, restarting the Mac, and contacting IT if the device is MDM-managed. The alert offers three buttons: "Open Accessibility Settings" (deep-links to the preference pane), "Retry" (attempts `start()` again), and "Quit".
 
 ### 26. ✅ ADDRESSED — Rapid Click Debouncing
 
