@@ -262,7 +262,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             : "MissionStrike: Inactive — check Accessibility permissions"
     }
 
-    private func openOnboardingWindow() {
+    func openOnboardingWindow() {
         if onboardingWindow == nil {
             let view = OnboardingView { [weak self] in
                 self?.onboardingWindow?.close()

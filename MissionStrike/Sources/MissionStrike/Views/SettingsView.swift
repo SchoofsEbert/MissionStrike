@@ -204,7 +204,18 @@ struct SettingsView: View {
                     delegate.openAboutWindow()
                 }
             } label: {
-                Label("About MissionStrike", systemImage: "info.circle")
+                Label("About", systemImage: "info.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .font(.caption)
+
+            Button {
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.openOnboardingWindow()
+                }
+            } label: {
+                Label("Setup Guide", systemImage: "questionmark.circle")
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
