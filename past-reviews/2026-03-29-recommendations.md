@@ -70,9 +70,9 @@ Pass the `eventTapPort` via `refcon` (the `userInfo` pointer) to make this work.
 
 Scattered constants like the `ignoredOwners` set, `missionControlOverlayLayers`, and `minimumScreenCoverageFraction` are good candidates for a single `MissionStrikeConfig` struct. This centralizes tuning knobs and makes it easier to adjust for future macOS versions.
 
-### 11. Structured Concurrency Audit
+### 11. ✅ ADDRESSED — Structured Concurrency Audit
 
-The event tap callback dispatches work via `Task { @MainActor in ... }`, which is fire-and-forget. If the user clicks very rapidly, multiple close operations could race. Consider adding a simple debounce mechanism (e.g., ignore clicks within 200ms of each other) or a serial `AsyncStream` to process events one at a time.
+The rapid-click racing concern is resolved by the 300ms debounce implemented in #26. The event tap callback now gates dispatched `Task` calls behind a timestamp check, ensuring only one close operation can be in-flight at a time. The fire-and-forget `Task { @MainActor in ... }` pattern is safe with the debounce in place — a serial `AsyncStream` is no longer necessary.
 
 ### 12. SwiftLint / Formatting
 
