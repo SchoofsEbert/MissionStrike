@@ -15,9 +15,15 @@ Closing a Space is a destructive, irreversible action — all windows in that Sp
 
 The menu bar icon now reflects the current state. When the event tap is running and accessibility is enabled, the icon appears normally. When inactive (accessibility denied or event tap failed), an orange dot badge is drawn on the bottom-right of the icon and the tooltip changes to "MissionStrike: Inactive — check Accessibility permissions." `EventTapManager` posts a `.eventTapStateChanged` notification on start/stop, and `AppDelegate` observes both that and the `com.apple.accessibility.api` distributed notification to keep the icon in sync.
 
-### 3. Onboarding Walkthrough
+### 3. ✅ ADDRESSED — Onboarding Walkthrough
 
-The first-launch experience drops the user into a Settings window. A short, friendly onboarding overlay (2–3 steps) explaining the Accessibility permission, the two trigger methods (middle-click / Option+Click), and the Space-closing feature would significantly reduce confusion — especially since macOS Accessibility prompts can be intimidating.
+On first launch, MissionStrike now shows a 3-step onboarding window instead of opening Settings directly:
+
+1. **Welcome** — App icon, name, and a brief description of what MissionStrike does.
+2. **Accessibility Permission** — Explains why the permission is needed, shows a live granted/required status indicator, and provides a button to open System Settings. Status updates in real-time via `DistributedNotificationCenter`.
+3. **How It Works** — Describes the three trigger methods: middle-click, Option+Left Click, and Space closing.
+
+Navigation uses Back/Continue buttons with page indicator dots. "Get Started" on the final step closes the onboarding and opens the Settings window. Implemented in `OnboardingView.swift`, wired through `AppDelegate.openOnboardingWindow()`.
 
 ### 4. ✅ ADDRESSED — Notification on Permission Loss
 

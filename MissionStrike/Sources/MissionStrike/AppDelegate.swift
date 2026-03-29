@@ -49,6 +49,7 @@ extension NSImage {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow?
+    var onboardingWindow: NSWindow?
     private var kvoObservation: NSKeyValueObservation?
     private var accessibilityObserver: Any?
     private var eventTapObserver: Any?
@@ -90,13 +91,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Request notification permission for permission-loss alerts
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error = error {
-                logger.error("Notification authorization error: \(error.localizedDescription)")
-            } else if !granted {
-                logger.info("User declined notification permissions — permission-loss alerts will not be shown.")
+        // Request notification permission for permission-loss alerts.
+        // UNUserNotificationCenter requires a proper .app bundle; skip when running via `swift run`.
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+                if let error = error {
+                    logger.error("Notification authorization error: \(error.localizedDescription)")
+                } else if !granted {
+                    logger.info("User declined notification permissions — permission-loss alerts will not be shown.")
+                }
             }
+        } else {
+            logger.info("No bundle identifier — skipping notification permission request (running outside .app bundle).")
         }
 
         // Request Accessibility permissions if needed
@@ -105,11 +111,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Event Tap
         EventTapManager.shared.start()
 
-        // Only show settings window on first launch, not on subsequent auto-starts (e.g., Login Items)
+        // Only show onboarding on first launch, not on subsequent auto-starts (e.g., Login Items)
         let hasLaunchedBefore = UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
         if !hasLaunchedBefore {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
-            openSettingsWindow()
+            openOnboardingWindow()
         }
     }
 
@@ -134,6 +140,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func sendPermissionLostNotification() {
+        guard Bundle.main.bundleIdentifier != nil else {
+            logger.warning("Cannot deliver notification — no bundle identifier.")
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = "MissionStrike Disabled"
         content.body = "Accessibility permissions were revoked. MissionStrike cannot close windows until permissions are restored. Re-enable in System Settings → Privacy & Security → Accessibility."
@@ -199,6 +210,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         button.toolTip = isActive
             ? "MissionStrike: Active"
             : "MissionStrike: Inactive — check Accessibility permissions"
+    }
+
+    private func openOnboardingWindow() {
+        if onboardingWindow == nil {
+            let view = OnboardingView { [weak self] in
+                self?.onboardingWindow?.close()
+                self?.onboardingWindow = nil
+                self?.openSettingsWindow()
+            }
+            let hostingController = NSHostingController(rootView: view)
+
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 440, height: 340),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.center()
+            window.title = "Welcome to MissionStrike"
+            window.contentViewController = hostingController
+            window.isReleasedWhenClosed = false
+            self.onboardingWindow = window
+        }
+
+        onboardingWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     @objc func openSettingsWindow() {
