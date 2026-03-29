@@ -27,12 +27,26 @@
 
 ## Installation
 
-You can download and install the app seamlessly using the pre-compiled releases.
+### Quick Install (Recommended)
+
+Run this single command in **Terminal** — it downloads the latest release, removes the macOS quarantine flag, and installs the app to `/Applications`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
+```
+
+Then launch it:
+
+```bash
+open /Applications/MissionStrike.app
+```
+
+### Manual Install
 
 1. Go to the [Releases](https://github.com/SchoofsEbert/MissionStrike/releases) page.
 2. Download the latest `MissionStrike.app.zip`.
 3. Unzip the file and move `MissionStrike.app` into your `Applications` folder.
-4. Because this app is not signed with a paid Apple Developer account, macOS will likely mark it as "damaged". To fix this, open Terminal and run:
+4. Because this app is not signed with a paid Apple Developer account, macOS will quarantine downloaded apps and mark them as "damaged". To fix this, open Terminal and run:
    ```bash
    xattr -cr /Applications/MissionStrike.app
    ```
