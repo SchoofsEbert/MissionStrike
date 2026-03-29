@@ -64,15 +64,34 @@ class EventTapManager {
     }
 }
 
+/// Minimum interval (in seconds) between processed clicks to prevent
+/// racing close operations on rapid double-clicks.
+private let debounceInterval: TimeInterval = 0.3
+
+/// Timestamp of the last click that was actually processed.
+/// Only accessed from the run-loop thread (event tap callback), so no lock is needed.
+private nonisolated(unsafe) var lastProcessedClickTime: UInt64 = 0
+
 private func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     let isMiddleClick = (type == .otherMouseDown && event.getIntegerValueField(.mouseEventButtonNumber) == 2)
     let isOptionLeftClick = (type == .leftMouseDown && event.flags.contains(.maskAlternate))
 
     if isMiddleClick || isOptionLeftClick {
+        // Debounce: ignore clicks that arrive too soon after the last processed one
+        let now = mach_absolute_time()
+        let elapsedNano = machTimeToNanoseconds(now - lastProcessedClickTime)
+        let elapsedSeconds = Double(elapsedNano) / 1_000_000_000
+
+        if elapsedSeconds < debounceInterval {
+            logger.debug("Click debounced (\(String(format: "%.0f", elapsedSeconds * 1000))ms since last).")
+            return nil
+        }
+
         // Run check synchronously to decide whether to swallow the event
         let isActive = MissionControlActiveChecker.isActive()
 
         if isActive {
+            lastProcessedClickTime = now
             let location = event.location
             Task { @MainActor in
                 MissionControlManager.shared.handleMouseEvent(location: location)
@@ -86,3 +105,11 @@ private func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: 
     // passUnretained: the caller owns the event, we must not retain it
     return Unmanaged.passUnretained(event)
 }
+
+/// Converts a `mach_absolute_time` delta to nanoseconds.
+private func machTimeToNanoseconds(_ ticks: UInt64) -> UInt64 {
+    var timebaseInfo = mach_timebase_info_data_t()
+    mach_timebase_info(&timebaseInfo)
+    return ticks * UInt64(timebaseInfo.numer) / UInt64(timebaseInfo.denom)
+}
+

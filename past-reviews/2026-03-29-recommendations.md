@@ -138,9 +138,9 @@ Publishing a Homebrew Cask formula (`brew install --cask missionstrike`) would m
 
 On some Apple Silicon Macs with specific security configurations (e.g., MDM-managed devices), event tap creation can fail even with Accessibility enabled. The current code logs an error but gives the user no actionable feedback. Consider surfacing this as a user-visible alert with troubleshooting steps.
 
-### 26. Rapid Click Debouncing
+### 26. ✅ ADDRESSED — Rapid Click Debouncing
 
-If a user accidentally double-middle-clicks, two `handleMouseEvent` tasks are dispatched. The second may try to close a window that's already being destroyed, leading to noisy log warnings. A simple timestamp-based debounce (ignore clicks within ~300ms of the last processed click) would clean this up.
+The event tap callback now implements a 300ms timestamp-based debounce using `mach_absolute_time()`. If a click arrives within 300ms of the last processed click, it is silently swallowed (returns `nil`) and logged at `.debug` level. The timestamp is stored in a `nonisolated(unsafe)` file-private variable, which is safe because the callback always runs on the same run-loop thread. This prevents racing close operations from double-clicks.
 
 ### 27. Coordinate System Edge Cases
 
