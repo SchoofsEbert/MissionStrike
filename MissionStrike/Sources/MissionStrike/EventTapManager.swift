@@ -4,6 +4,11 @@ import os.log
 
 private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "EventTap")
 
+extension Notification.Name {
+    /// Posted on the default `NotificationCenter` whenever the event tap starts or stops.
+    static let eventTapStateChanged = Notification.Name("com.vibecoded.missionstrike.eventTapStateChanged")
+}
+
 @MainActor
 class EventTapManager {
     static let shared = EventTapManager()
@@ -40,6 +45,7 @@ class EventTapManager {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
             logger.info("Event tap started.")
+            NotificationCenter.default.post(name: .eventTapStateChanged, object: nil)
         }
     }
 
@@ -54,6 +60,7 @@ class EventTapManager {
             self.eventTapPort = nil
         }
         logger.info("Event tap stopped.")
+        NotificationCenter.default.post(name: .eventTapStateChanged, object: nil)
     }
 }
 
