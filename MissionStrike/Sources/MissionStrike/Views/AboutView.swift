@@ -2,11 +2,11 @@ import SwiftUI
 
 struct AboutView: View {
     private let appVersion: String = {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.2.0"
     }()
 
     private let buildNumber: String = {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "2.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "2.2.0"
     }()
 
     private let repoURL = URL(string: "https://github.com/SchoofsEbert/MissionStrike")!
