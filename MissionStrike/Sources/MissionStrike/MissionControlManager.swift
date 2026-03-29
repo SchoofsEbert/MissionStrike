@@ -27,7 +27,7 @@ final class MissionControlActiveChecker: Sendable {
     // Dock overlay window layers observed during Mission Control (macOS 13–15).
     private static let missionControlOverlayLayers: Set<Int> = [18, 20]
 
-    // Minimum fraction of the main screen that a Dock overlay must cover
+    // Minimum fraction of a screen that a Dock overlay must cover
     // to be considered a Mission Control overlay (avoids false positives on small Dock windows).
     private static let minimumScreenCoverageFraction: CGFloat = 0.5
 
@@ -37,9 +37,19 @@ final class MissionControlActiveChecker: Sendable {
             return false
         }
 
-        let mainScreenSize = NSScreen.main?.frame.size ?? NSSize(width: 1920, height: 1080)
-        let minWidth = mainScreenSize.width * minimumScreenCoverageFraction
-        let minHeight = mainScreenSize.height * minimumScreenCoverageFraction
+        // Pre-compute minimum overlay dimensions for every connected display.
+        // On a single-monitor setup this is one entry; on multi-monitor it covers all screens.
+        let screens = NSScreen.screens
+        let screenThresholds: [(minWidth: CGFloat, minHeight: CGFloat)]
+        if screens.isEmpty {
+            // Fallback if NSScreen.screens is empty (headless or unusual config)
+            screenThresholds = [(1920 * minimumScreenCoverageFraction, 1080 * minimumScreenCoverageFraction)]
+        } else {
+            screenThresholds = screens.map { screen in
+                (screen.frame.width * minimumScreenCoverageFraction,
+                 screen.frame.height * minimumScreenCoverageFraction)
+            }
+        }
 
         for info in windowListInfo {
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
@@ -49,7 +59,11 @@ final class MissionControlActiveChecker: Sendable {
             if owner == "Dock" && missionControlOverlayLayers.contains(layer) {
                 if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
                    let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) {
-                    if bounds.width > minWidth && bounds.height > minHeight {
+                    // Check if this overlay is large enough relative to ANY connected screen.
+                    let coversAScreen = screenThresholds.contains { threshold in
+                        bounds.width > threshold.minWidth && bounds.height > threshold.minHeight
+                    }
+                    if coversAScreen {
                         return true
                     }
                 }

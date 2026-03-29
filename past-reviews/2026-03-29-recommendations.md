@@ -97,9 +97,9 @@ Instead of the heavyweight Sparkle framework, a lightweight `UpdateChecker` poll
 
 macOS Ventura+ introduced Stage Manager as an alternative window management mode. Investigating whether MissionStrike's event tap and Accessibility approach can work within Stage Manager's overlay would expand the app's usefulness. The AX tree structure under Stage Manager may differ from Mission Control.
 
-### 20. Multi-Display Awareness
+### 20. ✅ ADDRESSED — Multi-Display Awareness
 
-The current `MissionControlActiveChecker` only checks `NSScreen.main`. On multi-monitor setups, Mission Control spans all displays. The screen coverage check should iterate `NSScreen.screens` and match the Dock overlay bounds against the correct display, preventing false negatives on secondary screens.
+`MissionControlActiveChecker.isActive()` now checks all connected displays instead of only `NSScreen.main`. Screen thresholds are pre-computed from `NSScreen.screens` and each Dock overlay is tested against every screen's minimum dimensions using `contains`. This fixes false negatives on multi-monitor setups where the overlay for a smaller secondary screen would fail the size check against the primary. Single-monitor behavior is identical. Includes a fallback for the edge case where `NSScreen.screens` is empty.
 
 ### 21. Close Counter / Statistics
 
