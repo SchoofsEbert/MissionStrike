@@ -118,6 +118,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
             openOnboardingWindow()
         }
+
+        // Check for updates in the background (once per 24 hours)
+        UpdateChecker.shared.checkIfNeeded()
     }
 
     // MARK: - Accessibility State
@@ -173,11 +176,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 let menu = NSMenu()
-                menu.addItem(NSMenuItem(title: "About MissionStrike", action: #selector(openAboutWindow), keyEquivalent: ""))
+                menu.addItem(NSMenuItem(
+                    title: "About MissionStrike",
+                    action: #selector(openAboutWindow),
+                    keyEquivalent: ""
+                ))
+                menu.addItem(NSMenuItem(
+                    title: "Check for Updates…",
+                    action: #selector(checkForUpdates),
+                    keyEquivalent: ""
+                ))
                 menu.addItem(NSMenuItem.separator())
-                menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettingsWindow), keyEquivalent: ","))
+                menu.addItem(NSMenuItem(
+                    title: "Settings...",
+                    action: #selector(openSettingsWindow),
+                    keyEquivalent: ","
+                ))
                 menu.addItem(NSMenuItem.separator())
-                menu.addItem(NSMenuItem(title: "Quit MissionStrike", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+                menu.addItem(NSMenuItem(
+                    title: "Quit MissionStrike",
+                    action: #selector(NSApplication.terminate(_:)),
+                    keyEquivalent: "q"
+                ))
                 statusItem?.menu = menu
             }
             updateMenuBarIconState()
@@ -240,6 +260,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         onboardingWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    @objc func checkForUpdates() {
+        UpdateChecker.shared.checkNow()
     }
 
     @objc func openAboutWindow() {

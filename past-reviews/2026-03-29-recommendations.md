@@ -102,9 +102,9 @@ Currently the triggers are hardcoded (middle-click + Option+Left Click). A setti
 
 Some users may want to protect certain apps from accidental closure (e.g., a long-running terminal session or a virtual machine). A simple list in Settings where users can add app names/bundle IDs to an "exclude from closing" list would add a safety net.
 
-### 18. Auto-Update via Sparkle
+### 18. ✅ ADDRESSED — Auto-Update via GitHub Releases API
 
-Since the app is distributed outside the Mac App Store, integrating [Sparkle](https://sparkle-project.org/) for automatic updates would be a significant quality-of-life improvement. Users currently have to manually check GitHub Releases.
+Instead of the heavyweight Sparkle framework, a lightweight `UpdateChecker` polls the GitHub Releases API (`/repos/SchoofsEbert/MissionStrike/releases/latest`). It compares the `tag_name` against the running `CFBundleShortVersionString` using semantic version comparison. On launch, an automatic background check runs once per 24 hours (timestamp stored in UserDefaults). A "Check for Updates…" menu item triggers an immediate check. If an update is found, an alert offers a "Download" button that opens the GitHub release page in the browser. No external dependencies, no self-hosting — fully GitHub-powered.
 
 ### 19. Stage Manager Support
 
