@@ -344,6 +344,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func checkAccessibilityPermissions() {
         let accessEnabled = AXIsProcessTrusted()
         let previouslyGranted = UserDefaults.standard.bool(forKey: Self.accessibilityWasGrantedKey)
+        let isSelfUpdateRelaunch = UserDefaults.standard.bool(forKey: "pendingSelfUpdate")
+
+        // Always clear the self-update flag so it doesn't fire again
+        if isSelfUpdateRelaunch {
+            UserDefaults.standard.removeObject(forKey: "pendingSelfUpdate")
+        }
 
         if accessEnabled {
             // All good — remember the grant
@@ -351,11 +357,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if previouslyGranted {
-            // Accessibility was granted before but is now invalid — likely a post-update
-            // signature change. Show a specific, friendly alert instead of the generic prompt.
-            logger.warning("Accessibility previously granted but now invalid — likely post-update.")
-            showPostUpdateAccessibilityAlert()
+        if isSelfUpdateRelaunch || previouslyGranted {
+            // Accessibility was granted before but invalidated by the update.
+            // Reset the stale TCC entry and prompt directly — no intermediate alert
+            // needed when we know exactly what happened.
+            logger.info("Accessibility invalidated after update — resetting TCC and re-prompting.")
+            resetTCCEntry()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
+                _ = AXIsProcessTrustedWithOptions(options)
+            }
         } else {
             // First time — use the standard system prompt
             let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
@@ -364,51 +375,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Post-Update Accessibility Alert
-
-    /// Shows a friendly alert when accessibility was previously granted but has
-    /// been invalidated by an app update (the binary's code signature changed).
-    /// Attempts to reset the stale TCC entry with `tccutil` so the user only
-    /// needs to click "Allow" in the system prompt rather than manually
-    /// removing and re-adding the app.
-    private func showPostUpdateAccessibilityAlert() {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Accessibility Permission Needs Refresh"
-        alert.informativeText = """
-            MissionStrike was updated and macOS needs you to re-approve \
-            Accessibility access. This is a one-time step after each update.
-
-            Click "Re-Authorize" and macOS will prompt you to allow access again.
-            """
-
-        if let icon = NSApplication.shared.applicationIconImage {
-            alert.icon = icon
-        }
-
-        alert.addButton(withTitle: "Re-Authorize")
-        alert.addButton(withTitle: "Open Settings Manually")
-
-        NSApp.activate()
-        let response = alert.runModal()
-
-        switch response {
-        case .alertFirstButtonReturn:
-            // Reset the stale TCC entry so the system prompt works cleanly
-            resetTCCEntry()
-            // Small delay to let tccutil finish before prompting
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-                _ = AXIsProcessTrustedWithOptions(options)
-            }
-        case .alertSecondButtonReturn:
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-        default:
-            break
-        }
-    }
+    // MARK: - TCC Reset
 
     /// Runs `tccutil reset Accessibility <bundleID>` to clear the stale TCC entry
     /// left over from the previous binary signature. This allows the standard

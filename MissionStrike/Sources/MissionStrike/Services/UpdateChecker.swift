@@ -302,6 +302,10 @@ final class UpdateChecker {
 
     /// Spawns a detached process to relaunch the app after the current process exits.
     private func relaunch(appPath: String) {
+        // Signal to the next launch that this is a self-update relaunch,
+        // so AppDelegate can silently handle accessibility re-authorization.
+        UserDefaults.standard.set(true, forKey: "pendingSelfUpdate")
+
         let pid = ProcessInfo.processInfo.processIdentifier
         // Shell snippet: wait for current PID to exit, then open the new app.
         let script = """
