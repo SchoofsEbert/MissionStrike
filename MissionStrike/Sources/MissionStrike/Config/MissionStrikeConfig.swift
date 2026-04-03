@@ -22,6 +22,19 @@ struct MissionStrikeConfig: Sendable {
     /// Window owner names ignored during CGWindow fallback lookup.
     let ignoredWindowOwners: Set<String>
 
+    // MARK: - Overlay Filtering
+
+    /// Minimum window alpha for a Dock overlay to be considered visible.
+    /// Transparent hit-test overlays (e.g. dock auto-show, app-bounce)
+    /// are filtered out when their alpha is below this threshold.
+    let minimumOverlayAlpha: CGFloat
+
+    /// Minimum number of qualifying Dock overlay windows required to
+    /// consider Mission Control active.  Mission Control creates multiple
+    /// overlays (background dimmer + spaces bar); a dock bounce typically
+    /// produces at most one.
+    let minimumOverlayCount: Int
+
     // MARK: - Event Tap
 
     /// Minimum interval (seconds) between processed clicks to prevent
@@ -35,6 +48,8 @@ struct MissionStrikeConfig: Sendable {
         minimumScreenCoverageFraction: 0.5,
         fallbackScreenSize: CGSize(width: 1920, height: 1080),
         ignoredWindowOwners: ["Dock", "Window Server", "Wallpaper"],
+        minimumOverlayAlpha: 0.01,
+        minimumOverlayCount: 2,
         debounceInterval: 0.3
     )
 }

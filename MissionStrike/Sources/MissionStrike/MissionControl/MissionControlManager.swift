@@ -66,18 +66,27 @@ final class MissionControlActiveChecker: MissionControlDetecting, Sendable {
             }
         }
 
+        var qualifyingCount = 0
+
         for info in windowList {
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let layer = info[kCGWindowLayer as String] as? Int ?? 0
 
             if owner == "Dock" && config.missionControlOverlayLayers.contains(layer) {
+                // Filter out transparent hit-test overlays (e.g. dock auto-show, app bounce)
+                let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
+                guard alpha >= config.minimumOverlayAlpha else { continue }
+
                 if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
                    let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) {
                     let coversAScreen = thresholds.contains { threshold in
                         bounds.width > threshold.minWidth && bounds.height > threshold.minHeight
                     }
                     if coversAScreen {
-                        return true
+                        qualifyingCount += 1
+                        if qualifyingCount >= config.minimumOverlayCount {
+                            return true
+                        }
                     }
                 }
             }
