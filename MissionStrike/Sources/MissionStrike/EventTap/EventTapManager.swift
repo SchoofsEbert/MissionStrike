@@ -154,25 +154,29 @@ private func eventTapCallback(
     let isActive = MissionControlActiveChecker().isActive()
 
     if isActive {
+        // Single resolve from the live cursor. HitTester applies an OS-gated Y-flip
+        // when Mission Control’s AX space is mirrored vs click coordinates (macOS 27+).
+        let clickPoint = NSEvent.mouseLocation
+        let resolution = MissionControlHitTester.resolve(clickPoint: clickPoint)
+
         lastProcessedClickTime = now
-        // CGEvent uses Quartz lower-left origin; AX / CGWindowList use Cocoa upper-left.
-        let location = ScreenCoordinates.cocoaPoint(fromQuartzPoint: event.location)
 
-        // Determine action from additional modifier keys
-        let action: MouseAction
-        if flags.contains(.maskCommand) {
-            action = .closeAll
-        } else if flags.contains(.maskShift) {
-            action = .minimize
-        } else {
-            action = .close
+        if let resolution {
+            let action: MouseAction
+            if flags.contains(.maskCommand) {
+                action = .closeAll
+            } else if flags.contains(.maskShift) {
+                action = .minimize
+            } else {
+                action = .close
+            }
+
+            Task { @MainActor in
+                MissionControlManager.shared.perform(resolution: resolution, action: action)
+            }
         }
-
-        Task { @MainActor in
-            MissionControlManager.shared.handleMouseEvent(location: location, action: action)
-        }
-
-        // Return nil to completely intercept the event (blocks default action)
+        // Always swallow while Mission Control is up so empty/near-miss middle-clicks
+        // do not fall through as normal MC clicks.
         return nil
     }
 

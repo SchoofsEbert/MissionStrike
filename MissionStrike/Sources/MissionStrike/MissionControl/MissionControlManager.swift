@@ -120,27 +120,189 @@ class MissionControlManager {
     static let shared = MissionControlManager()
     private init() {}
 
-    func handleMouseEvent(location: CGPoint, action: MouseAction = .close) {
-        let systemWideElement = AXUIElementCreateSystemWide()
-        var elementAtPosition: AXUIElement?
+    /// Performs a pre-resolved hit from the event tap.
+    func perform(resolution: MissionControlHitTester.Resolution, action: MouseAction) {
+        switch resolution.target {
+        case .removeDesktop(let button):
+            guard action == .close || action == .closeAll else { return }
+            guard UserDefaults.standard.bool(forKey: "enableSpaceClosing") else {
+                logger.info("Space close skipped — enableSpaceClosing is off.")
+                return
+            }
+            let result = AXUIElementPerformAction(button, "AXRemoveDesktop" as CFString)
+            if result == .success {
+                logger.debug("Closed Space via AXRemoveDesktop.")
+            } else {
+                logger.warning("AXRemoveDesktop failed with error: \(result.rawValue)")
+            }
 
-        let result = AXUIElementCopyElementAtPosition(
-            systemWideElement, Float(location.x), Float(location.y), &elementAtPosition
-        )
+        case .window(let pid, let ownerName, let windowID):
+            switch action {
+            case .close:
+                logger.debug("Closing wid \(windowID) (\(ownerName), pid \(pid)).")
+                closeWindowByWindowID(pid: pid, targetWindowID: windowID)
+            case .closeAll:
+                closeAllWindows(forPID: pid)
+            case .minimize:
+                minimizeWindow(pid: pid, windowID: windowID)
+            }
 
-        guard result == .success, let element = elementAtPosition else { return }
-
-        switch action {
-        case .close:
-            attemptToClose(element: element, at: location)
-        case .closeAll:
-            closeAllWindowsForApp(element: element, at: location)
-        case .minimize:
-            minimizeWindow(element: element, at: location)
+        case .legacyAXWindow:
+            // Re-hit at the same point for the AXWindow element (≤ macOS 26 Dock UI).
+            guard let element = element(at: resolution.point),
+                  let window = enclosingWindow(from: element) else {
+                logger.warning("Legacy AXWindow target lost before close.")
+                return
+            }
+            switch action {
+            case .close:
+                closeLegacyAXWindow(window)
+            case .closeAll:
+                var pid: pid_t = 0
+                AXUIElementGetPid(window, &pid)
+                closeAllWindows(forPID: pid)
+            case .minimize:
+                minimizeLegacyAXWindow(window)
+            }
         }
     }
 
-    private func findEnclosingWindow(for element: AXUIElement) -> AXUIElement? {
+    // MARK: - Window actions
+
+    private func closeWindowByWindowID(pid: Int32, targetWindowID: CGWindowID) {
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            logger.warning("Could not enumerate windows for PID \(pid).")
+            return
+        }
+
+        for window in windows {
+            var cgWindowID: CGWindowID = 0
+            guard _AXUIElementGetWindow(window, &cgWindowID) == .success,
+                  cgWindowID == targetWindowID else { continue }
+
+            var closeButtonRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(
+                window, kAXCloseButtonAttribute as CFString, &closeButtonRef
+            ) == .success,
+                  let closeButtonRef else {
+                logger.warning("No close button for window \(targetWindowID).")
+                return
+            }
+            let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
+            let result = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+            if result == .success {
+                logger.debug("Closed CGWindow \(targetWindowID) on PID \(pid).")
+            } else {
+                logger.warning("AXPress on close button failed: \(result.rawValue)")
+            }
+            return
+        }
+        logger.warning("Could not find AX window for CGWindowID \(targetWindowID).")
+    }
+
+    private func minimizeWindow(pid: Int32, windowID: CGWindowID) {
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            logger.warning("Could not enumerate windows to minimize for PID \(pid).")
+            return
+        }
+        for window in windows {
+            var cgWindowID: CGWindowID = 0
+            guard _AXUIElementGetWindow(window, &cgWindowID) == .success,
+                  cgWindowID == windowID else { continue }
+            let result = AXUIElementSetAttributeValue(
+                window, kAXMinimizedAttribute as CFString, true as CFTypeRef
+            )
+            if result == .success {
+                logger.debug("Minimized CGWindow \(windowID) on PID \(pid).")
+            } else {
+                logger.warning("AXMinimized failed: \(result.rawValue)")
+            }
+            return
+        }
+        logger.warning("Could not find window \(windowID) to minimize.")
+    }
+
+    private func closeAllWindows(forPID pid: pid_t) {
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            logger.warning("Could not enumerate windows for close-all on PID \(pid).")
+            return
+        }
+        var closedCount = 0
+        for window in windows {
+            var closeButtonRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                window, kAXCloseButtonAttribute as CFString, &closeButtonRef
+            ) == .success,
+               let closeButtonRef {
+                let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
+                if AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success {
+                    closedCount += 1
+                }
+            }
+        }
+        logger.debug("Closed \(closedCount)/\(windows.count) windows for PID \(pid).")
+    }
+
+    private func closeLegacyAXWindow(_ window: AXUIElement) {
+        var closeButtonRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+           let closeButtonRef {
+            let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
+            let result = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+            if result == .success {
+                logger.debug("Closed window via AXWindow close button.")
+            } else {
+                logger.warning("AXPress on close button failed: \(result.rawValue)")
+            }
+            return
+        }
+        var actionNames: CFArray?
+        if AXUIElementCopyActionNames(window, &actionNames) == .success,
+           let actions = actionNames as? [String],
+           actions.contains("AXClose") {
+            let result = AXUIElementPerformAction(window, "AXClose" as CFString)
+            if result == .success {
+                logger.debug("Closed window via AXClose.")
+            } else {
+                logger.warning("AXClose failed: \(result.rawValue)")
+            }
+        }
+    }
+
+    private func minimizeLegacyAXWindow(_ window: AXUIElement) {
+        let result = AXUIElementSetAttributeValue(
+            window, kAXMinimizedAttribute as CFString, true as CFTypeRef
+        )
+        if result == .success {
+            logger.debug("Minimized legacy AXWindow.")
+        } else {
+            logger.warning("AXMinimized failed: \(result.rawValue)")
+        }
+    }
+
+    // MARK: - Re-hit helpers (Spaces / legacy)
+
+    private func element(at point: CGPoint) -> AXUIElement? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var element: AXUIElement?
+        let result = AXUIElementCopyElementAtPosition(
+            systemWide, Float(point.x), Float(point.y), &element
+        )
+        guard result == .success else { return nil }
+        return element
+    }
+
+    private func enclosingWindow(from element: AXUIElement) -> AXUIElement? {
         var current: AXUIElement? = element
         while let elem = current {
             var role: CFTypeRef?
@@ -148,120 +310,25 @@ class MissionControlManager {
             if let roleStr = role as? String, roleStr == "AXWindow" {
                 return elem
             }
-            current = getParent(of: elem)
+            current = parent(of: elem)
         }
         return nil
     }
 
-    private func attemptToClose(element: AXUIElement, at location: CGPoint) {
-        // Spaces Bar (macOS 27+: may hit AXList/AXGroup; resolve the desktop button).
-        if let spaceButton = findSpaceCloseButton(from: element, at: location) {
-            let enableSpaceClosing = UserDefaults.standard.bool(forKey: "enableSpaceClosing")
-            if enableSpaceClosing {
-                let closeResult = AXUIElementPerformAction(spaceButton, "AXRemoveDesktop" as CFString)
-                if closeResult == .success {
-                    logger.debug("Closed Space via AXRemoveDesktop.")
-                } else {
-                    logger.warning("AXRemoveDesktop failed with error: \(closeResult.rawValue)")
-                }
-            }
-            return
-        }
-
-        // Legacy path: Dock-hosted Mission Control exposed real AXWindow ancestors (≤ macOS 26).
-        if let window = findEnclosingWindow(for: element) {
-            var closeButtonRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
-               let closeButtonRef {
-                let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
-                let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
-                if closeResult == .success {
-                    logger.debug("Closed window via AXWindow's Close Button.")
-                } else {
-                    logger.warning("AXPress on close button failed with error: \(closeResult.rawValue)")
-                }
-                return
-            }
-
-            var actionNames: CFArray?
-            if AXUIElementCopyActionNames(window, &actionNames) == .success, let actions = actionNames as? [String] {
-                if actions.contains("AXClose") {
-                    let closeResult = AXUIElementPerformAction(window, "AXClose" as CFString)
-                    if closeResult == .success {
-                        logger.debug("Closed window via AXWindow's AXClose action.")
-                    } else {
-                        logger.warning("AXClose action failed with error: \(closeResult.rawValue)")
-                    }
-                    return
-                }
-            }
-        }
-
-        // macOS 27+: WindowManager thumbnails expose `wid` = real CGWindowID.
-        // Do not guess via frame/point overlap — that closes unrelated windows.
-        if let cgHit = resolveTargetCGWindow(from: element) {
-            logger.debug("Target via thumbnail wid: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
-            closeWindowByWindowID(pid: cgHit.pid, targetWindowID: cgHit.windowID)
-            return
-        }
-        logger.warning("Could not reliably determine which window to close.")
-    }
-
-    private func getParent(of element: AXUIElement) -> AXUIElement? {
+    private func parent(of element: AXUIElement) -> AXUIElement? {
         var parentRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
-           let parentRef {
-            return (parentRef as! AXUIElement) // swiftlint:disable:this force_cast
-        }
-        return nil
-    }
-
-    /// Resolves the real app window from a Mission Control thumbnail.
-    ///
-    /// Only uses the undocumented `wid` attribute. Geometric heuristics were removed
-    /// because they frequently closed the wrong window on macOS 27.
-    private func resolveTargetCGWindow(
-        from element: AXUIElement
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
-        guard let windowID = missionControlWindowID(from: element) else { return nil }
-
-        let options = CGWindowListOption.optionOnScreenOnly
-        guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+        guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
+              let parentRef else {
             return nil
         }
-        return Self.window(
-            withID: windowID,
-            windowList: windowListInfo,
-            ignoredOwners: MissionStrikeConfig.default.ignoredWindowOwners
-        )
+        return (parentRef as! AXUIElement) // swiftlint:disable:this force_cast
     }
 
-    /// Reads the undocumented Mission Control thumbnail `wid` attribute (CGWindowID).
-    private func missionControlWindowID(from element: AXUIElement) -> CGWindowID? {
-        var current: AXUIElement? = element
-        while let elem = current {
-            if let wid = axUInt32Attribute(elem, "wid"), wid != 0 {
-                return wid
-            }
-            current = getParent(of: elem)
-        }
-        return nil
-    }
+}
 
-    private func axUInt32Attribute(_ element: AXUIElement, _ name: String) -> CGWindowID? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
-              let value,
-              CFGetTypeID(value) == CFNumberGetTypeID() else {
-            return nil
-        }
-        var number: Int64 = 0
-        guard CFNumberGetValue((value as! CFNumber), .sInt64Type, &number), number > 0 else { // swiftlint:disable:this force_cast
-            return nil
-        }
-        return CGWindowID(number)
-    }
+// MARK: - Test helpers (window ID lookup)
 
+extension MissionControlManager {
     /// Pure helper: look up an app window by CGWindowID (skips Dock / WindowManager / etc.).
     nonisolated static func window(
         withID windowID: CGWindowID,
@@ -277,204 +344,5 @@ class MissionControlManager {
             return (pid, owner, windowID)
         }
         return nil
-    }
-
-    private func axFrame(of element: AXUIElement) -> CGRect? {
-        var posRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let posRef, let sizeRef else {
-            return nil
-        }
-        var origin = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(posRef as! AXValue, .cgPoint, &origin), // swiftlint:disable:this force_cast
-              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else { // swiftlint:disable:this force_cast
-            return nil
-        }
-        let frame = CGRect(origin: origin, size: size)
-        guard frame.width > 1, frame.height > 1 else { return nil }
-        return frame
-    }
-
-    private func closeWindowByWindowID(pid: Int32, targetWindowID: CGWindowID) {
-        let appElement = AXUIElementCreateApplication(pid)
-        var windowsRef: CFTypeRef?
-
-        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-           let windows = windowsRef as? [AXUIElement] {
-
-            for window in windows {
-                var cgWindowID: CGWindowID = 0
-                if _AXUIElementGetWindow(window, &cgWindowID) == .success {
-                    if cgWindowID == targetWindowID {
-                        var targetCloseBtn: CFTypeRef?
-                        if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &targetCloseBtn) == .success,
-                           let targetCloseBtn {
-                            let closeButton = targetCloseBtn as! AXUIElement // swiftlint:disable:this force_cast
-                            let closeResult = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
-                            if closeResult == .success {
-                                logger.debug("Closed exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid).")
-                            } else {
-                                logger.warning(
-                                    "AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)"
-                                )
-                            }
-                            return
-                        }
-                    }
-                }
-            }
-
-            logger.warning("Could not find a close button for the target window ID (\(targetWindowID)).")
-        }
-    }
-
-    // MARK: - Minimize (#15)
-
-    private func minimizeWindow(element: AXUIElement, at location: CGPoint) {
-        if findSpaceCloseButton(from: element, at: location) != nil { return }
-
-        if let window = findEnclosingWindow(for: element) {
-            let minimizeResult = AXUIElementSetAttributeValue(
-                window, kAXMinimizedAttribute as CFString, true as CFTypeRef
-            )
-            if minimizeResult == .success {
-                logger.debug("Minimized window via AXMinimized attribute.")
-            } else {
-                logger.warning("AXMinimized failed with error: \(minimizeResult.rawValue)")
-            }
-            return
-        }
-
-        if let cgHit = resolveTargetCGWindow(from: element) {
-            let appElement = AXUIElementCreateApplication(cgHit.pid)
-            var windowsRef: CFTypeRef?
-
-            if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-               let windows = windowsRef as? [AXUIElement] {
-                for window in windows {
-                    var cgWindowID: CGWindowID = 0
-                    if _AXUIElementGetWindow(window, &cgWindowID) == .success,
-                       cgWindowID == cgHit.windowID {
-                        let minimizeResult = AXUIElementSetAttributeValue(
-                            window, kAXMinimizedAttribute as CFString, true as CFTypeRef
-                        )
-                        if minimizeResult == .success {
-                            logger.debug("Minimized CGWindow \(cgHit.windowID) on PID \(cgHit.pid).")
-                        } else {
-                            logger.warning("AXMinimized for window \(cgHit.windowID) failed: \(minimizeResult.rawValue)")
-                        }
-                        return
-                    }
-                }
-            }
-        }
-        logger.warning("Could not find a window to minimize.")
-    }
-
-    // MARK: - Close All App Windows (#14)
-
-    private func closeAllWindowsForApp(element: AXUIElement, at location: CGPoint) {
-        if findSpaceCloseButton(from: element, at: location) != nil {
-            attemptToClose(element: element, at: location)
-            return
-        }
-
-        // Must resolve via thumbnail wid — AX pid is WindowManager on macOS 27+.
-        guard let cgHit = resolveTargetCGWindow(from: element) else {
-            logger.warning("Could not determine app PID for close-all.")
-            return
-        }
-        let pid = cgHit.pid
-
-        let appElement = AXUIElementCreateApplication(pid)
-        var windowsRef: CFTypeRef?
-
-        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-              let windows = windowsRef as? [AXUIElement] else {
-            logger.warning("Could not enumerate windows for PID \(pid).")
-            return
-        }
-
-        var closedCount = 0
-        for window in windows {
-            var closeButtonRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
-               let closeButtonRef {
-                let closeButton = closeButtonRef as! AXUIElement // swiftlint:disable:this force_cast
-                if AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success {
-                    closedCount += 1
-                }
-            }
-        }
-        logger.debug("Closed \(closedCount)/\(windows.count) windows for PID \(pid).")
-    }
-
-    // MARK: - Spaces Bar
-
-    /// Finds the desktop thumbnail that can be removed, even when the hit-test
-    /// lands on the surrounding AXList / AXGroup instead of the button itself.
-    private func findSpaceCloseButton(from element: AXUIElement, at location: CGPoint) -> AXUIElement? {
-        if hasAction(element, "AXRemoveDesktop") {
-            return element
-        }
-
-        guard let spacesBar = findAncestor(titled: "Spaces Bar", from: element) else {
-            return nil
-        }
-
-        // Prefer a desktop button whose frame contains the click.
-        if let match = findDescendant(in: spacesBar, matching: { candidate in
-            hasAction(candidate, "AXRemoveDesktop")
-                && (axFrame(of: candidate)?.contains(location) ?? false)
-        }) {
-            return match
-        }
-
-        // Hit the Spaces Bar chrome but not a specific desktop — do nothing
-        // rather than removing an arbitrary Space.
-        return nil
-    }
-
-    private func findAncestor(titled title: String, from element: AXUIElement) -> AXUIElement? {
-        var current: AXUIElement? = element
-        while let elem = current {
-            var titleRef: CFTypeRef?
-            AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &titleRef)
-            if let titleStr = titleRef as? String, titleStr == title {
-                return elem
-            }
-            current = getParent(of: elem)
-        }
-        return nil
-    }
-
-    private func findDescendant(
-        in root: AXUIElement,
-        matching predicate: (AXUIElement) -> Bool
-    ) -> AXUIElement? {
-        if predicate(root) { return root }
-        var childrenRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(root, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-              let children = childrenRef as? [AXUIElement] else {
-            return nil
-        }
-        for child in children {
-            if let found = findDescendant(in: child, matching: predicate) {
-                return found
-            }
-        }
-        return nil
-    }
-
-    private func hasAction(_ element: AXUIElement, _ action: String) -> Bool {
-        var actionNames: CFArray?
-        guard AXUIElementCopyActionNames(element, &actionNames) == .success,
-              let actions = actionNames as? [String] else {
-            return false
-        }
-        return actions.contains(action)
     }
 }
