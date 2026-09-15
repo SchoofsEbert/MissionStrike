@@ -24,7 +24,12 @@ protocol MissionControlDetecting: Sendable {
 
 // MARK: - Mission Control Detection
 
-/// Checks whether Mission Control is currently active by inspecting Dock-owned overlay windows.
+/// Checks whether Mission Control is currently active by inspecting system overlay windows.
+///
+/// Detection requires multiple large, opaque overlays (to reject dock-bounce false positives)
+/// and at least one Dock-owned overlay among them. On macOS 27+, Mission Control's second
+/// full-screen surface is owned by WindowManager rather than Dock; companion overlays from
+/// config cover that case while older Dock-only sessions keep working unchanged.
 ///
 /// Thread safety: All calls within this class use CoreGraphics APIs that are thread-safe.
 /// This class is intentionally `nonisolated` / not actor-isolated so it can be called
@@ -66,29 +71,42 @@ final class MissionControlActiveChecker: MissionControlDetecting, Sendable {
             }
         }
 
-        var qualifyingCount = 0
+        var dockQualifyingCount = 0
+        var totalQualifyingCount = 0
 
         for info in windowList {
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let layer = info[kCGWindowLayer as String] as? Int ?? 0
 
-            if owner == "Dock" && config.missionControlOverlayLayers.contains(layer) {
-                // Filter out transparent hit-test overlays (e.g. dock auto-show, app bounce)
-                let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
-                guard alpha >= config.minimumOverlayAlpha else { continue }
+            let isDockOverlay = owner == "Dock"
+                && config.missionControlOverlayLayers.contains(layer)
+            let isCompanionOverlay = config.missionControlCompanionOverlays[owner]?.contains(layer) == true
+            guard isDockOverlay || isCompanionOverlay else { continue }
 
-                if let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                   let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) {
-                    let coversAScreen = thresholds.contains { threshold in
-                        bounds.width > threshold.minWidth && bounds.height > threshold.minHeight
-                    }
-                    if coversAScreen {
-                        qualifyingCount += 1
-                        if qualifyingCount >= config.minimumOverlayCount {
-                            return true
-                        }
-                    }
-                }
+            // Filter out transparent hit-test overlays (e.g. dock auto-show, app bounce)
+            let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
+            guard alpha >= config.minimumOverlayAlpha else { continue }
+
+            guard let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
+                continue
+            }
+
+            let coversAScreen = thresholds.contains { threshold in
+                bounds.width > threshold.minWidth && bounds.height > threshold.minHeight
+            }
+            guard coversAScreen else { continue }
+
+            totalQualifyingCount += 1
+            if isDockOverlay {
+                dockQualifyingCount += 1
+            }
+
+            // Require a Dock overlay so companion-only stacks cannot false-trigger,
+            // while still needing enough total overlays to reject a lone dock bounce.
+            if dockQualifyingCount >= 1,
+               totalQualifyingCount >= config.minimumOverlayCount {
+                return true
             }
         }
         return false

@@ -65,12 +65,49 @@ struct MissionControlDetectionTests {
         ))
     }
 
+    @Test("macOS 27 Dock layer 20 plus WindowManager layer 19 is detected")
+    func goldenGateDockPlusWindowManagerCompanion() {
+        // Observed on macOS 27: only one Dock overlay; companion is WindowManager @ 19.
+        let windowList = [
+            mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+            mockWindowEntry(owner: "WindowManager", layer: 19, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        ]
+        #expect(MissionControlActiveChecker.isActive(
+            windowList: windowList,
+            screenSizes: [standardScreen]
+        ))
+    }
+
     // MARK: - Negative detection
 
     @Test("Single Dock overlay is not enough (dock bounce false positive)")
     func singleDockOverlayNotDetected() {
         let windowList = [
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        ]
+        #expect(!MissionControlActiveChecker.isActive(
+            windowList: windowList,
+            screenSizes: [standardScreen]
+        ))
+    }
+
+    @Test("WindowManager companion overlays alone are not enough")
+    func companionOverlaysAloneNotDetected() {
+        let windowList = [
+            mockWindowEntry(owner: "WindowManager", layer: 19, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+            mockWindowEntry(owner: "WindowManager", layer: 19, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        ]
+        #expect(!MissionControlActiveChecker.isActive(
+            windowList: windowList,
+            screenSizes: [standardScreen]
+        ))
+    }
+
+    @Test("WindowManager at non-companion layer does not help detection")
+    func windowManagerWrongLayerIgnored() {
+        let windowList = [
+            mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+            mockWindowEntry(owner: "WindowManager", layer: 0, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
         #expect(!MissionControlActiveChecker.isActive(
             windowList: windowList,
@@ -183,6 +220,7 @@ struct MissionControlDetectionTests {
     func customOverlayLayers() {
         let customConfig = MissionStrikeConfig(
             missionControlOverlayLayers: [99],
+            missionControlCompanionOverlays: [:],
             minimumScreenCoverageFraction: 0.5,
             fallbackScreenSize: CGSize(width: 1920, height: 1080),
             ignoredWindowOwners: [],
@@ -215,6 +253,7 @@ struct MissionControlDetectionTests {
     func customCoverageFraction() {
         let strictConfig = MissionStrikeConfig(
             missionControlOverlayLayers: [18, 20],
+            missionControlCompanionOverlays: [:],
             minimumScreenCoverageFraction: 0.9,
             fallbackScreenSize: CGSize(width: 1920, height: 1080),
             ignoredWindowOwners: [],
@@ -243,6 +282,7 @@ struct MissionControlDetectionTests {
     func customMinimumOverlayCount() {
         let lenientConfig = MissionStrikeConfig(
             missionControlOverlayLayers: [18, 20],
+            missionControlCompanionOverlays: [:],
             minimumScreenCoverageFraction: 0.5,
             fallbackScreenSize: CGSize(width: 1920, height: 1080),
             ignoredWindowOwners: [],
@@ -295,6 +335,7 @@ struct MissionStrikeConfigTests {
     func defaultOverlayLayers() {
         let config = MissionStrikeConfig.default
         #expect(config.missionControlOverlayLayers == [18, 20])
+        #expect(config.missionControlCompanionOverlays["WindowManager"] == [19])
     }
 
     @Test("Default config contains Dock in ignored owners")
