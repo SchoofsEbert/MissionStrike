@@ -12,11 +12,12 @@ struct SettingsView: View {
     @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
+    @State private var accessibilityRetryTask: Task<Void, Never>?
 
     private let appVersion: String = {
         Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.3.0"
+        ) as? String ?? "2.5.1"
     }()
 
     /// Fires when any app's accessibility trust status changes in System Settings.
@@ -51,8 +52,15 @@ struct SettingsView: View {
         .onAppear {
             refreshAccessibilityStatus()
         }
+        .onDisappear {
+            accessibilityRetryTask?.cancel()
+            accessibilityRetryTask = nil
+        }
         .onReceive(accessibilityChanged) { _ in
-            refreshAccessibilityStatus()
+            accessibilityRetryTask?.cancel()
+            accessibilityRetryTask = AccessibilityTrustRetry.schedule {
+                refreshAccessibilityStatus()
+            }
         }
         .frame(width: 440, height: 680)
     }

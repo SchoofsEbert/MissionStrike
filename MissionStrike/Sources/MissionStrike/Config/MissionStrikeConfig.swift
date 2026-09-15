@@ -56,7 +56,7 @@ struct MissionStrikeConfig: Sendable {
         missionControlCompanionOverlays: ["WindowManager": [19]],
         minimumScreenCoverageFraction: 0.5,
         fallbackScreenSize: CGSize(width: 1920, height: 1080),
-        ignoredWindowOwners: ["Dock", "Window Server", "Wallpaper"],
+        ignoredWindowOwners: ["Dock", "Window Server", "Wallpaper", "WindowManager"],
         minimumOverlayAlpha: 0.01,
         minimumOverlayCount: 2,
         debounceInterval: 0.3

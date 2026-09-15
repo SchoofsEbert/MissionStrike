@@ -4,6 +4,7 @@ import ApplicationServices
 struct OnboardingView: View {
     @State private var currentStep = 0
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
+    @State private var accessibilityRetryTask: Task<Void, Never>?
 
     /// Called when the user finishes onboarding.
     var onComplete: () -> Void
@@ -81,16 +82,14 @@ struct OnboardingView: View {
             .padding(.vertical, 14)
         }
         .onReceive(accessibilityChanged) { _ in
-            isAccessibilityEnabled = AXIsProcessTrusted()
-            if isAccessibilityEnabled {
-                EventTapManager.shared.start()
-                // Auto-advance past the accessibility step
-                if currentStep == 1 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        currentStep = 2
-                    }
-                }
+            accessibilityRetryTask?.cancel()
+            accessibilityRetryTask = AccessibilityTrustRetry.schedule {
+                applyAccessibilityGrantIfNeeded()
             }
+        }
+        .onDisappear {
+            accessibilityRetryTask?.cancel()
+            accessibilityRetryTask = nil
         }
         .frame(width: 520, height: 460)
     }
@@ -315,6 +314,20 @@ struct OnboardingView: View {
             Text(text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private func applyAccessibilityGrantIfNeeded() {
+        let nowTrusted = AXIsProcessTrusted()
+        isAccessibilityEnabled = nowTrusted
+        guard nowTrusted else { return }
+
+        EventTapManager.shared.start()
+        // Auto-advance past the accessibility step
+        if currentStep == 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                currentStep = 2
+            }
         }
     }
 }

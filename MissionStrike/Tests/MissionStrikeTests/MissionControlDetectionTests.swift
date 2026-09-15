@@ -9,9 +9,11 @@ private func mockWindowEntry(
     owner: String,
     layer: Int,
     bounds: CGRect,
-    alpha: CGFloat = 1.0
+    alpha: CGFloat = 1.0,
+    pid: Int32 = 0,
+    windowID: CGWindowID = 0
 ) -> [String: Any] {
-    [
+    var entry: [String: Any] = [
         kCGWindowOwnerName as String: owner,
         kCGWindowLayer as String: layer,
         kCGWindowBounds as String: [
@@ -22,6 +24,13 @@ private func mockWindowEntry(
         ],
         kCGWindowAlpha as String: alpha
     ]
+    if pid != 0 {
+        entry[kCGWindowOwnerPID as String] = pid
+    }
+    if windowID != 0 {
+        entry[kCGWindowNumber as String] = windowID
+    }
+    return entry
 }
 
 /// Helper: two full-screen Dock overlays that represent a real Mission Control session.
@@ -343,6 +352,7 @@ struct MissionStrikeConfigTests {
         let config = MissionStrikeConfig.default
         #expect(config.ignoredWindowOwners.contains("Dock"))
         #expect(config.ignoredWindowOwners.contains("Window Server"))
+        #expect(config.ignoredWindowOwners.contains("WindowManager"))
         #expect(!config.ignoredWindowOwners.contains("Finder"))
     }
 
@@ -356,5 +366,85 @@ struct MissionStrikeConfigTests {
     func defaultOverlayAlpha() {
         let config = MissionStrikeConfig.default
         #expect(config.minimumOverlayAlpha == 0.01)
+    }
+}
+
+// MARK: - Window Targeting Tests
+
+@Suite("Mission Control Window Targeting")
+struct MissionControlWindowTargetingTests {
+
+    private let ignored = MissionStrikeConfig.default.ignoredWindowOwners
+
+    @Test("Best overlap picks the app window matching an AX thumbnail frame")
+    func bestOverlapPrefersMatchingAppWindow() {
+        let axFrame = CGRect(x: 20, y: 75, width: 835, height: 524)
+        let windowList = [
+            mockWindowEntry(
+                owner: "WindowManager", layer: 0,
+                bounds: CGRect(x: 10, y: 60, width: 860, height: 550),
+                pid: 737, windowID: 100
+            ),
+            mockWindowEntry(
+                owner: "Google Chrome", layer: 0,
+                bounds: CGRect(x: 19, y: 75, width: 836, height: 524),
+                pid: 1269, windowID: 5206
+            ),
+            mockWindowEntry(
+                owner: "Cursor", layer: 0,
+                bounds: CGRect(x: 873, y: 503, width: 836, height: 525),
+                pid: 8621, windowID: 538
+            )
+        ]
+
+        let hit = MissionControlManager.bestOverlappingWindow(
+            axFrame: axFrame,
+            windowList: windowList,
+            ignoredOwners: ignored
+        )
+        #expect(hit?.ownerName == "Google Chrome")
+        #expect(hit?.windowID == 5206)
+        #expect(hit?.pid == 1269)
+    }
+
+    @Test("WindowManager layer-0 mirrors are ignored during targeting")
+    func ignoresWindowManagerMirrors() {
+        let axFrame = CGRect(x: 20, y: 75, width: 835, height: 524)
+        let windowList = [
+            mockWindowEntry(
+                owner: "WindowManager", layer: 0,
+                bounds: axFrame,
+                pid: 737, windowID: 100
+            )
+        ]
+        let hit = MissionControlManager.bestOverlappingWindow(
+            axFrame: axFrame,
+            windowList: windowList,
+            ignoredOwners: ignored
+        )
+        #expect(hit == nil)
+    }
+
+    @Test("Point containment finds the layer-0 app window under the cursor")
+    func pointContainmentFindsAppWindow() {
+        let windowList = [
+            mockWindowEntry(
+                owner: "Cursor", layer: 0,
+                bounds: CGRect(x: 873, y: 503, width: 836, height: 525),
+                pid: 8621, windowID: 538
+            ),
+            mockWindowEntry(
+                owner: "Dock", layer: 20,
+                bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                pid: 743, windowID: 9
+            )
+        ]
+        let hit = MissionControlManager.windowContainingPoint(
+            CGPoint(x: 900, y: 550),
+            windowList: windowList,
+            ignoredOwners: ignored
+        )
+        #expect(hit?.ownerName == "Cursor")
+        #expect(hit?.windowID == 538)
     }
 }

@@ -155,7 +155,8 @@ private func eventTapCallback(
 
     if isActive {
         lastProcessedClickTime = now
-        let location = event.location
+        // CGEvent uses Quartz lower-left origin; AX / CGWindowList use Cocoa upper-left.
+        let location = ScreenCoordinates.cocoaPoint(fromQuartzPoint: event.location)
 
         // Determine action from additional modifier keys
         let action: MouseAction

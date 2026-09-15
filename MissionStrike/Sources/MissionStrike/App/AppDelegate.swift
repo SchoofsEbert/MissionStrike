@@ -56,6 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTapObserver: Any?
     private var eventTapFailureObserver: Any?
     private var wasAccessibilityEnabled = AXIsProcessTrusted()
+    private var accessibilityRetryTask: Task<Void, Never>?
 
     /// Prevents App Nap from throttling the event tap run loop.
     private var appNapActivity: NSObjectProtocol?
@@ -85,14 +86,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Observe accessibility permission changes via distributed notification
+        // Observe accessibility permission changes via distributed notification.
+        // On recent macOS versions TCC can lag the notification, so we also retry.
         accessibilityObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.apple.accessibility.api"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.handleAccessibilityChange()
+                self?.scheduleAccessibilitySync()
             }
         }
 
@@ -154,7 +156,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Key used to remember that accessibility was previously granted.
     private static let accessibilityWasGrantedKey = "accessibilityWasGranted"
 
-    private func handleAccessibilityChange() {
+    /// Sync immediately, then retry at fixed offsets while TCC catches up.
+    private func scheduleAccessibilitySync() {
+        accessibilityRetryTask?.cancel()
+        accessibilityRetryTask = AccessibilityTrustRetry.schedule { [weak self] in
+            self?.syncAccessibilityState()
+            // Stop early once trusted and the tap is running.
+            if AXIsProcessTrusted(), EventTapManager.shared.isRunning {
+                self?.accessibilityRetryTask?.cancel()
+            }
+        }
+    }
+
+    private func syncAccessibilityState() {
         let isNowEnabled = AXIsProcessTrusted()
 
         if wasAccessibilityEnabled && !isNowEnabled {
@@ -168,10 +182,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             logger.info("Accessibility permissions granted.")
             UserDefaults.standard.set(true, forKey: Self.accessibilityWasGrantedKey)
             EventTapManager.shared.start()
+        } else if isNowEnabled && !EventTapManager.shared.isRunning {
+            // Trusted but tap never started (e.g. grant raced the first check).
+            logger.info("Accessibility trusted — starting event tap.")
+            EventTapManager.shared.start()
         }
 
         wasAccessibilityEnabled = isNowEnabled
         updateMenuBarIconState()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Catch grants that happened while we were inactive / notification was missed.
+        if !EventTapManager.shared.isRunning {
+            scheduleAccessibilitySync()
+        }
     }
 
     private func sendPermissionLostNotification() {
