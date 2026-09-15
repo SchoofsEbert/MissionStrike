@@ -376,75 +376,47 @@ struct MissionControlWindowTargetingTests {
 
     private let ignored = MissionStrikeConfig.default.ignoredWindowOwners
 
-    @Test("Best overlap picks the app window matching an AX thumbnail frame")
-    func bestOverlapPrefersMatchingAppWindow() {
-        let axFrame = CGRect(x: 20, y: 75, width: 835, height: 524)
+    @Test("Window ID lookup returns the matching app window")
+    func windowIDLookup() {
         let windowList = [
             mockWindowEntry(
                 owner: "WindowManager", layer: 0,
-                bounds: CGRect(x: 10, y: 60, width: 860, height: 550),
+                bounds: CGRect(x: 0, y: 0, width: 100, height: 100),
                 pid: 737, windowID: 100
             ),
             mockWindowEntry(
-                owner: "Google Chrome", layer: 0,
-                bounds: CGRect(x: 19, y: 75, width: 836, height: 524),
-                pid: 1269, windowID: 5206
-            ),
-            mockWindowEntry(
                 owner: "Cursor", layer: 0,
-                bounds: CGRect(x: 873, y: 503, width: 836, height: 525),
-                pid: 8621, windowID: 538
+                bounds: CGRect(x: 0, y: 0, width: 100, height: 100),
+                pid: 8621, windowID: 5697
             )
         ]
-
-        let hit = MissionControlManager.bestOverlappingWindow(
-            axFrame: axFrame,
-            windowList: windowList,
-            ignoredOwners: ignored
-        )
-        #expect(hit?.ownerName == "Google Chrome")
-        #expect(hit?.windowID == 5206)
-        #expect(hit?.pid == 1269)
-    }
-
-    @Test("WindowManager layer-0 mirrors are ignored during targeting")
-    func ignoresWindowManagerMirrors() {
-        let axFrame = CGRect(x: 20, y: 75, width: 835, height: 524)
-        let windowList = [
-            mockWindowEntry(
-                owner: "WindowManager", layer: 0,
-                bounds: axFrame,
-                pid: 737, windowID: 100
-            )
-        ]
-        let hit = MissionControlManager.bestOverlappingWindow(
-            axFrame: axFrame,
-            windowList: windowList,
-            ignoredOwners: ignored
-        )
-        #expect(hit == nil)
-    }
-
-    @Test("Point containment finds the layer-0 app window under the cursor")
-    func pointContainmentFindsAppWindow() {
-        let windowList = [
-            mockWindowEntry(
-                owner: "Cursor", layer: 0,
-                bounds: CGRect(x: 873, y: 503, width: 836, height: 525),
-                pid: 8621, windowID: 538
-            ),
-            mockWindowEntry(
-                owner: "Dock", layer: 20,
-                bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080),
-                pid: 743, windowID: 9
-            )
-        ]
-        let hit = MissionControlManager.windowContainingPoint(
-            CGPoint(x: 900, y: 550),
+        let hit = MissionControlManager.window(
+            withID: 5697,
             windowList: windowList,
             ignoredOwners: ignored
         )
         #expect(hit?.ownerName == "Cursor")
-        #expect(hit?.windowID == 538)
+        #expect(hit?.pid == 8621)
+        #expect(MissionControlManager.window(
+            withID: 100,
+            windowList: windowList,
+            ignoredOwners: ignored
+        ) == nil)
+    }
+
+    @Test("Unknown window ID returns nil")
+    func unknownWindowID() {
+        let windowList = [
+            mockWindowEntry(
+                owner: "Cursor", layer: 0,
+                bounds: CGRect(x: 0, y: 0, width: 100, height: 100),
+                pid: 8621, windowID: 5697
+            )
+        ]
+        #expect(MissionControlManager.window(
+            withID: 9999,
+            windowList: windowList,
+            ignoredOwners: ignored
+        ) == nil)
     }
 }

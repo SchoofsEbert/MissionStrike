@@ -154,26 +154,21 @@ class MissionControlManager {
     }
 
     private func attemptToClose(element: AXUIElement, at location: CGPoint) {
-        if isInSpacesBar(element: element) {
+        // Spaces Bar (macOS 27+: may hit AXList/AXGroup; resolve the desktop button).
+        if let spaceButton = findSpaceCloseButton(from: element, at: location) {
             let enableSpaceClosing = UserDefaults.standard.bool(forKey: "enableSpaceClosing")
             if enableSpaceClosing {
-                var actionNames: CFArray?
-                if AXUIElementCopyActionNames(element, &actionNames) == .success, let actions = actionNames as? [String] {
-                    if actions.contains("AXRemoveDesktop") {
-                        let closeResult = AXUIElementPerformAction(element, "AXRemoveDesktop" as CFString)
-                        if closeResult == .success {
-                            logger.debug("Closed Space via AXRemoveDesktop.")
-                        } else {
-                            logger.warning("AXRemoveDesktop failed with error: \(closeResult.rawValue)")
-                        }
-                    }
+                let closeResult = AXUIElementPerformAction(spaceButton, "AXRemoveDesktop" as CFString)
+                if closeResult == .success {
+                    logger.debug("Closed Space via AXRemoveDesktop.")
+                } else {
+                    logger.warning("AXRemoveDesktop failed with error: \(closeResult.rawValue)")
                 }
             }
             return
         }
 
-        // 1. Walk up the tree to find the precise accessibility window that was clicked
-        //    (legacy Dock-hosted Mission Control UI on older macOS).
+        // Legacy path: Dock-hosted Mission Control exposed real AXWindow ancestors (≤ macOS 26).
         if let window = findEnclosingWindow(for: element) {
             var closeButtonRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
@@ -202,10 +197,10 @@ class MissionControlManager {
             }
         }
 
-        // 2. Fallback: map Mission Control thumbnails (WindowManager AXButtons on macOS 27+)
-        //    or cursor position onto the real app CGWindow, then close via Accessibility.
-        if let cgHit = resolveTargetCGWindow(from: element, at: location) {
-            logger.debug("Target identified via CGWindow mapping: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
+        // macOS 27+: WindowManager thumbnails expose `wid` = real CGWindowID.
+        // Do not guess via frame/point overlap — that closes unrelated windows.
+        if let cgHit = resolveTargetCGWindow(from: element) {
+            logger.debug("Target via thumbnail wid: \(cgHit.ownerName) (PID: \(cgHit.pid), WindowID: \(cgHit.windowID))")
             closeWindowByWindowID(pid: cgHit.pid, targetWindowID: cgHit.windowID)
             return
         }
@@ -221,102 +216,67 @@ class MissionControlManager {
         return nil
     }
 
-    /// Resolves the real app window under a Mission Control click.
+    /// Resolves the real app window from a Mission Control thumbnail.
     ///
-    /// On macOS 27+, thumbnails are WindowManager `AXButton`s with no `AXWindow`
-    /// ancestor, so we match the button's AX frame (or click point) against layer-0
-    /// CGWindows belonging to real apps.
+    /// Only uses the undocumented `wid` attribute. Geometric heuristics were removed
+    /// because they frequently closed the wrong window on macOS 27.
     private func resolveTargetCGWindow(
-        from element: AXUIElement,
-        at location: CGPoint
+        from element: AXUIElement
     ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
+        guard let windowID = missionControlWindowID(from: element) else { return nil }
+
         let options = CGWindowListOption.optionOnScreenOnly
         guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return nil
         }
-        let ignoredOwners = MissionStrikeConfig.default.ignoredWindowOwners
-
-        // Prefer the AX frame of the clicked thumbnail / control.
-        if let axFrame = axFrame(of: element) ?? nearestAncestorFrame(of: element),
-           let match = Self.bestOverlappingWindow(
-            axFrame: axFrame,
+        return Self.window(
+            withID: windowID,
             windowList: windowListInfo,
-            ignoredOwners: ignoredOwners
-           ) {
-            return match
-        }
-
-        // Point-in-bounds fallback (Cocoa / upper-left coordinates).
-        return Self.windowContainingPoint(
-            location,
-            windowList: windowListInfo,
-            ignoredOwners: ignoredOwners
+            ignoredOwners: MissionStrikeConfig.default.ignoredWindowOwners
         )
     }
 
-    /// Pure helper: pick the layer-0 app window with the largest intersection area.
-    nonisolated static func bestOverlappingWindow(
-        axFrame: CGRect,
-        windowList: [[String: Any]],
-        ignoredOwners: Set<String>
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
-        var best: (pid: Int32, ownerName: String, windowID: CGWindowID, area: CGFloat)?
-
-        for info in windowList {
-            guard let candidate = layerZeroAppWindow(from: info, ignoredOwners: ignoredOwners),
-                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
-                continue
+    /// Reads the undocumented Mission Control thumbnail `wid` attribute (CGWindowID).
+    private func missionControlWindowID(from element: AXUIElement) -> CGWindowID? {
+        var current: AXUIElement? = element
+        while let elem = current {
+            if let wid = axUInt32Attribute(elem, "wid"), wid != 0 {
+                return wid
             }
-
-            let intersection = axFrame.intersection(bounds)
-            guard !intersection.isNull, !intersection.isEmpty else { continue }
-            let area = intersection.width * intersection.height
-            // Require a meaningful overlap so tiny edge hits don't steal the target.
-            let minArea = min(axFrame.width * axFrame.height, bounds.width * bounds.height) * 0.15
-            guard area >= minArea else { continue }
-
-            if best == nil || area > best!.area {
-                best = (candidate.pid, candidate.ownerName, candidate.windowID, area)
-            }
-        }
-
-        if let best {
-            return (best.pid, best.ownerName, best.windowID)
+            current = getParent(of: elem)
         }
         return nil
     }
 
-    /// Pure helper: first layer-0 app window whose bounds contain the point.
-    nonisolated static func windowContainingPoint(
-        _ location: CGPoint,
-        windowList: [[String: Any]],
-        ignoredOwners: Set<String>
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
-        for info in windowList {
-            guard let candidate = layerZeroAppWindow(from: info, ignoredOwners: ignoredOwners),
-                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
-                  bounds.contains(location) else {
-                continue
-            }
-            return candidate
-        }
-        return nil
-    }
-
-    private nonisolated static func layerZeroAppWindow(
-        from info: [String: Any],
-        ignoredOwners: Set<String>
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
-        let owner = info[kCGWindowOwnerName as String] as? String ?? ""
-        let layer = info[kCGWindowLayer as String] as? Int ?? 0
-        let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
-        let windowID = info[kCGWindowNumber as String] as? CGWindowID ?? 0
-        guard layer == 0, !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0, windowID != 0 else {
+    private func axUInt32Attribute(_ element: AXUIElement, _ name: String) -> CGWindowID? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
+              let value,
+              CFGetTypeID(value) == CFNumberGetTypeID() else {
             return nil
         }
-        return (pid, owner, windowID)
+        var number: Int64 = 0
+        guard CFNumberGetValue((value as! CFNumber), .sInt64Type, &number), number > 0 else { // swiftlint:disable:this force_cast
+            return nil
+        }
+        return CGWindowID(number)
+    }
+
+    /// Pure helper: look up an app window by CGWindowID (skips Dock / WindowManager / etc.).
+    nonisolated static func window(
+        withID windowID: CGWindowID,
+        windowList: [[String: Any]],
+        ignoredOwners: Set<String>
+    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
+        for info in windowList {
+            let id = info[kCGWindowNumber as String] as? CGWindowID ?? 0
+            guard id == windowID else { continue }
+            let owner = info[kCGWindowOwnerName as String] as? String ?? ""
+            let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
+            guard !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0 else { return nil }
+            return (pid, owner, windowID)
+        }
+        return nil
     }
 
     private func axFrame(of element: AXUIElement) -> CGRect? {
@@ -334,27 +294,8 @@ class MissionControlManager {
             return nil
         }
         let frame = CGRect(origin: origin, size: size)
-        // Skip empty / degenerate frames (e.g. AXApplication).
         guard frame.width > 1, frame.height > 1 else { return nil }
         return frame
-    }
-
-    private func nearestAncestorFrame(of element: AXUIElement) -> CGRect? {
-        var current: AXUIElement? = getParent(of: element)
-        while let elem = current {
-            if let frame = axFrame(of: elem), frame.width < 10_000, frame.height < 10_000 {
-                // Prefer reasonably sized frames (skip the full-screen MC root group).
-                let screens = NSScreen.screens.map(\.frame.size)
-                let isFullScreenOverlay = screens.contains {
-                    frame.width >= $0.width * 0.9 && frame.height >= $0.height * 0.9
-                }
-                if !isFullScreenOverlay {
-                    return frame
-                }
-            }
-            current = getParent(of: elem)
-        }
-        return nil
     }
 
     private func closeWindowByWindowID(pid: Int32, targetWindowID: CGWindowID) {
@@ -376,9 +317,9 @@ class MissionControlManager {
                             if closeResult == .success {
                                 logger.debug("Closed exact CGWindow match (\(targetWindowID)) via Accessibility on PID \(pid).")
                             } else {
-                            logger.warning(
-                                "AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)"
-                            )
+                                logger.warning(
+                                    "AXPress on close button for window \(targetWindowID) failed with error: \(closeResult.rawValue)"
+                                )
                             }
                             return
                         }
@@ -393,8 +334,7 @@ class MissionControlManager {
     // MARK: - Minimize (#15)
 
     private func minimizeWindow(element: AXUIElement, at location: CGPoint) {
-        // Don't minimize Spaces — that doesn't make sense
-        if isInSpacesBar(element: element) { return }
+        if findSpaceCloseButton(from: element, at: location) != nil { return }
 
         if let window = findEnclosingWindow(for: element) {
             let minimizeResult = AXUIElementSetAttributeValue(
@@ -408,8 +348,7 @@ class MissionControlManager {
             return
         }
 
-        // Fallback: CGWindow identification (required on macOS 27+ WindowManager thumbnails)
-        if let cgHit = resolveTargetCGWindow(from: element, at: location) {
+        if let cgHit = resolveTargetCGWindow(from: element) {
             let appElement = AXUIElementCreateApplication(cgHit.pid)
             var windowsRef: CFTypeRef?
 
@@ -438,25 +377,17 @@ class MissionControlManager {
     // MARK: - Close All App Windows (#14)
 
     private func closeAllWindowsForApp(element: AXUIElement, at location: CGPoint) {
-        // Don't close-all from Spaces bar — use normal close for Spaces
-        if isInSpacesBar(element: element) {
+        if findSpaceCloseButton(from: element, at: location) != nil {
             attemptToClose(element: element, at: location)
             return
         }
 
-        // Resolve the real app PID via CGWindow mapping. On macOS 27+ the clicked
-        // element belongs to WindowManager, so AXUIElementGetPid is the wrong process.
-        let pid: pid_t
-        if let cgHit = resolveTargetCGWindow(from: element, at: location) {
-            pid = cgHit.pid
-        } else {
-            var elementPID: pid_t = 0
-            guard AXUIElementGetPid(element, &elementPID) == .success else {
-                logger.warning("Could not determine app PID for close-all.")
-                return
-            }
-            pid = elementPID
+        // Must resolve via thumbnail wid — AX pid is WindowManager on macOS 27+.
+        guard let cgHit = resolveTargetCGWindow(from: element) else {
+            logger.warning("Could not determine app PID for close-all.")
+            return
         }
+        let pid = cgHit.pid
 
         let appElement = AXUIElementCreateApplication(pid)
         var windowsRef: CFTypeRef?
@@ -481,18 +412,69 @@ class MissionControlManager {
         logger.debug("Closed \(closedCount)/\(windows.count) windows for PID \(pid).")
     }
 
-    // MARK: - Helpers
+    // MARK: - Spaces Bar
 
-    private func isInSpacesBar(element: AXUIElement) -> Bool {
+    /// Finds the desktop thumbnail that can be removed, even when the hit-test
+    /// lands on the surrounding AXList / AXGroup instead of the button itself.
+    private func findSpaceCloseButton(from element: AXUIElement, at location: CGPoint) -> AXUIElement? {
+        if hasAction(element, "AXRemoveDesktop") {
+            return element
+        }
+
+        guard let spacesBar = findAncestor(titled: "Spaces Bar", from: element) else {
+            return nil
+        }
+
+        // Prefer a desktop button whose frame contains the click.
+        if let match = findDescendant(in: spacesBar, matching: { candidate in
+            hasAction(candidate, "AXRemoveDesktop")
+                && (axFrame(of: candidate)?.contains(location) ?? false)
+        }) {
+            return match
+        }
+
+        // Hit the Spaces Bar chrome but not a specific desktop — do nothing
+        // rather than removing an arbitrary Space.
+        return nil
+    }
+
+    private func findAncestor(titled title: String, from element: AXUIElement) -> AXUIElement? {
         var current: AXUIElement? = element
         while let elem = current {
-            var title: CFTypeRef?
-            AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &title)
-            if let titleStr = title as? String, titleStr == "Spaces Bar" {
-                return true
+            var titleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(elem, kAXTitleAttribute as CFString, &titleRef)
+            if let titleStr = titleRef as? String, titleStr == title {
+                return elem
             }
             current = getParent(of: elem)
         }
-        return false
+        return nil
+    }
+
+    private func findDescendant(
+        in root: AXUIElement,
+        matching predicate: (AXUIElement) -> Bool
+    ) -> AXUIElement? {
+        if predicate(root) { return root }
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(root, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement] else {
+            return nil
+        }
+        for child in children {
+            if let found = findDescendant(in: child, matching: predicate) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private func hasAction(_ element: AXUIElement, _ action: String) -> Bool {
+        var actionNames: CFArray?
+        guard AXUIElementCopyActionNames(element, &actionNames) == .success,
+              let actions = actionNames as? [String] else {
+            return false
+        }
+        return actions.contains(action)
     }
 }
