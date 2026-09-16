@@ -102,12 +102,12 @@ If you prefer to build the project yourself (requires Xcode or the Swift Command
 ## How it Works
 
 1. A global event tap (`CGEventTap`) listens for middle-clicks and modifier+left-clicks (configurable).
-2. When triggered in Mission Control, modifier keys determine the action:
-   - **No modifier** → close the window under the cursor.
-   - **⇧ Shift** → minimize the window to the Dock.
-   - **⌘ Command** → close all windows belonging to that app.
-3. If the click lands on the **Spaces Bar**, the app identifies the Space thumbnail and triggers an `AXRemoveDesktop` action immediately.
-4. Otherwise, the underlying process ID (PID) and window identity are extracted via CoreGraphics.
-5. MissionStrike climbs the Accessibility tree (`AXUIElement`) to find the target window and performs the action programmatically.
+2. Mission Control is detected via Dock / WindowManager overlay windows (so a lonely dock bounce doesn’t count).
+3. Modifier keys pick the action: plain click closes, **⇧** minimizes, **⌘** closes all windows for that app.
+4. The click is hit-tested through Accessibility:
+   - **Spaces Bar** → `AXRemoveDesktop` on the Space under the cursor.
+   - **Window tile (macOS 27+)** → WindowManager thumbnail `wid` → real window → close / minimize / close-all.
+   - **Older Mission Control** → classic `AXWindow` close button / `AXClose`.
+5. On macOS 27+, click coordinates are Y-flipped once to match AX’s top-left space (WindowManager UI and the event tap don’t agree on Y). Older macOS keeps the unflipped path.
 
 Enjoy a cleaner Mission Control experience!
