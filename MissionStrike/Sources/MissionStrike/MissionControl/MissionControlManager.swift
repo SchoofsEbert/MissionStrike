@@ -129,12 +129,7 @@ class MissionControlManager {
                 logger.info("Space close skipped — enableSpaceClosing is off.")
                 return
             }
-            let result = AXUIElementPerformAction(button, "AXRemoveDesktop" as CFString)
-            if result == .success {
-                logger.debug("Closed Space via AXRemoveDesktop.")
-            } else {
-                logger.warning("AXRemoveDesktop failed with error: \(result.rawValue)")
-            }
+            removeDesktop(button)
 
         case .window(let pid, let ownerName, let windowID):
             switch action {
@@ -164,6 +159,34 @@ class MissionControlManager {
             case .minimize:
                 minimizeLegacyAXWindow(window)
             }
+        }
+    }
+
+    /// Removes a Space via its Spaces Bar button.
+    func removeDesktop(_ button: AXUIElement) {
+        let result = AXUIElementPerformAction(button, "AXRemoveDesktop" as CFString)
+        if result == .success {
+            logger.debug("Closed Space via AXRemoveDesktop.")
+        } else {
+            logger.warning("AXRemoveDesktop failed with error: \(result.rawValue)")
+        }
+    }
+
+    /// Owning app of a window hit; nil for Spaces or when the window is gone.
+    func pid(for resolution: MissionControlHitTester.Resolution) -> pid_t? {
+        switch resolution.target {
+        case .removeDesktop:
+            return nil
+        case .window(let pid, _, _):
+            return pid
+        case .legacyAXWindow:
+            guard let element = element(at: resolution.point),
+                  let window = enclosingWindow(from: element) else {
+                return nil
+            }
+            var pid: pid_t = 0
+            guard AXUIElementGetPid(window, &pid) == .success, pid != 0 else { return nil }
+            return pid
         }
     }
 

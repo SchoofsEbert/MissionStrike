@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("enableSpaceClosing") private var enableSpaceClosing = true
     @AppStorage("enableMiddleClick") private var enableMiddleClick = true
+    @AppStorage("enableContextMenu") private var enableContextMenu = true
     @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
@@ -17,7 +18,7 @@ struct SettingsView: View {
     private let appVersion: String = {
         Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.5.3"
+        ) as? String ?? "2.6.0"
     }()
 
     /// Fires when any app's accessibility trust status changes in System Settings.
@@ -126,6 +127,7 @@ struct SettingsView: View {
     private var triggersSection: some View {
         Section {
             Toggle("Middle Mouse Button", isOn: $enableMiddleClick)
+            Toggle("Right-Click Menu", isOn: $enableContextMenu)
 
             Picker("Left Click Modifier", selection: $leftClickModifier) {
                 ForEach(TriggerModifier.allCases, id: \.rawValue) { modifier in

@@ -76,6 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "showMenuBarIcon": true,
             "enableSpaceClosing": true,
             "enableMiddleClick": true,
+            "enableContextMenu": true,
             "leftClickModifier": TriggerModifier.option.rawValue
         ])
 

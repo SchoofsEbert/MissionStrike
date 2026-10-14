@@ -38,6 +38,8 @@ class EventTapManager {
 
         let eventMask = (1 << CGEventType.otherMouseDown.rawValue)
             | (1 << CGEventType.leftMouseDown.rawValue)
+            | (1 << CGEventType.rightMouseDown.rawValue)
+            | (1 << CGEventType.rightMouseUp.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -97,6 +99,10 @@ private let debounceInterval: TimeInterval = MissionStrikeConfig.default.debounc
 /// Only accessed from the run-loop thread (event tap callback), so no lock is needed.
 nonisolated(unsafe) private var lastProcessedClickTime: UInt64 = 0
 
+/// Set when a right-click opened the context menu so the matching mouse-up is swallowed
+/// too; otherwise it reaches Mission Control (or lands on an item of the fresh menu).
+nonisolated(unsafe) private var swallowNextRightMouseUp = false
+
 // MARK: - Event Tap Callback
 
 private func eventTapCallback(
@@ -108,12 +114,25 @@ private func eventTapCallback(
     // Watchdog: macOS disables the tap if the callback takes too long.
     // Re-enable it immediately to recover without requiring a relaunch.
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        // Revoking Accessibility also disables the tap. Re-enabling it then fights
+        // macOS and can stall system-wide input, so tear it down instead.
+        guard AXIsProcessTrusted() else {
+            logger.warning("Event tap disabled after Accessibility was revoked — stopping it.")
+            Task { @MainActor in
+                EventTapManager.shared.stop()
+            }
+            return Unmanaged.passUnretained(event)
+        }
         if let refcon,
            let tap = refcon.assumingMemoryBound(to: CFMachPort?.self).pointee {
             CGEvent.tapEnable(tap: tap, enable: true)
             logger.warning("Event tap was disabled by macOS — re-enabled automatically.")
         }
         return Unmanaged.passUnretained(event)
+    }
+
+    if type == .rightMouseDown || type == .rightMouseUp {
+        return handleRightMouse(type: type, event: event)
     }
 
     // Determine if this event matches a configured trigger
@@ -182,6 +201,29 @@ private func eventTapCallback(
 
     // passUnretained: the caller owns the event, we must not retain it
     return Unmanaged.passUnretained(event)
+}
+
+/// Right-click on a window or Space thumbnail opens MissionStrike's context menu.
+/// Right-clicks that hit nothing keep Mission Control's default behavior.
+private func handleRightMouse(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    if type == .rightMouseUp {
+        guard swallowNextRightMouseUp else { return Unmanaged.passUnretained(event) }
+        swallowNextRightMouseUp = false
+        return nil
+    }
+
+    guard UserDefaults.standard.bool(forKey: "enableContextMenu"),
+          MissionControlActiveChecker().isActive(),
+          let resolution = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation) else {
+        return Unmanaged.passUnretained(event)
+    }
+
+    swallowNextRightMouseUp = true
+    // Async: popUp runs a nested run loop and must not block this callback.
+    Task { @MainActor in
+        MissionControlContextMenu.shared.show(for: resolution)
+    }
+    return nil
 }
 
 /// Converts a `mach_absolute_time` delta to nanoseconds.

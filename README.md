@@ -19,6 +19,7 @@
 - 🗂️ **Close Spaces** — click a Space thumbnail in the Spaces Bar to remove it instantly.
 - 📦 **⌘ Cmd + Click** — close *all* windows of an app at once.
 - ➖ **⇧ Shift + Click** — minimize a window to the Dock instead of closing it.
+- 📋 **Right-click menu** — right-click a window to close, minimize, hide, or quit its app (hold ⌥ to force quit), or right-click a Space to close it.
 - 🎛️ **Customizable triggers** — choose your preferred modifier key or disable triggers in Settings.
 - 🔄 **One-click auto-updates** — when a new version is available, install it directly from the app with a single click. No manual downloading or terminal commands needed.
 - 🛡️ **Resilient event tap** — auto-recovers if macOS disables it, with App Nap prevention.
