@@ -1,8 +1,8 @@
 {
   "fill": {
     "linear-gradient": [
-      "display-p3:0.24706,0.37647,0.95294,1.00000",
-      "display-p3:0.14118,0.12549,0.50980,1.00000"
+      "display-p3:0.20,0.21,0.27,1",
+      "display-p3:0.07,0.07,0.10,1"
     ]
   },
   "groups": [
@@ -10,25 +10,8 @@
       "layers": [
         {
           "glass": true,
-          "image-name": "badge.svg",
-          "name": "badge"
-        }
-      ],
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.6
-      },
-      "translucency": {
-        "enabled": true,
-        "value": 0.1
-      }
-    },
-    {
-      "layers": [
-        {
-          "glass": true,
-          "image-name": "tiles.svg",
-          "name": "tiles"
+          "image-name": "core.svg",
+          "name": "core"
         }
       ],
       "shadow": {
@@ -37,7 +20,41 @@
       },
       "translucency": {
         "enabled": true,
-        "value": 0.4
+        "value": 0.05
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "inner.svg",
+          "name": "inner"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.15
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "outer.svg",
+          "name": "outer"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
       }
     }
   ],
