@@ -3,6 +3,8 @@ import ApplicationServices
 
 struct OnboardingView: View {
     @State private var currentStep = 0
+    /// Direction of the last step change; decides which side pages enter and leave from.
+    @State private var isMovingForward = true
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
     @State private var accessibilityRetryTask: Task<Void, Never>?
 
@@ -13,7 +15,7 @@ struct OnboardingView: View {
     private let accessibilityChanged = DistributedNotificationCenter.default()
         .publisher(for: Notification.Name("com.apple.accessibility.api"))
 
-    private let totalSteps = 4
+    private let totalSteps = 5
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,23 +31,23 @@ struct OnboardingView: View {
                                 width: geo.size.width * CGFloat(currentStep + 1) / CGFloat(totalSteps),
                                 height: 3
                             )
-                            .animation(.easeInOut(duration: 0.35), value: currentStep)
                     }
             }
             .frame(height: 3)
 
-            // Step content with slide transition
+            // Step content: a short directional slide with a cross-fade
             ZStack {
                 switch currentStep {
-                case 0: welcomeStep.transition(.move(edge: .trailing))
-                case 1: accessibilityStep.transition(.move(edge: .trailing))
-                case 2: howItWorksStep.transition(.move(edge: .trailing))
-                case 3: readyStep.transition(.move(edge: .trailing))
+                case 0: welcomeStep.transition(stepTransition)
+                case 1: accessibilityStep.transition(stepTransition)
+                case 2: howItWorksStep.transition(stepTransition)
+                case 3: moreWaysStep.transition(stepTransition)
+                case 4: readyStep.transition(stepTransition)
                 default: EmptyView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.3), value: currentStep)
+            .clipped()
 
             Divider()
 
@@ -60,14 +62,14 @@ struct OnboardingView: View {
 
                 if currentStep > 0 && currentStep < totalSteps - 1 {
                     Button("Back") {
-                        currentStep -= 1
+                        go(to: currentStep - 1)
                     }
                     .keyboardShortcut(.leftArrow, modifiers: [])
                 }
 
                 if currentStep < totalSteps - 1 {
                     Button("Continue") {
-                        currentStep += 1
+                        go(to: currentStep + 1)
                     }
                     .keyboardShortcut(.defaultAction)
                 } else {
@@ -91,7 +93,7 @@ struct OnboardingView: View {
             accessibilityRetryTask?.cancel()
             accessibilityRetryTask = nil
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 500)
     }
 
     // MARK: - Step 1: Welcome
@@ -113,7 +115,10 @@ struct OnboardingView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Close windows and Spaces directly from Mission Control\nwith a single click — no more hunting for tiny close buttons.")
+                Text(
+                    "Close windows and Spaces directly from Mission Control\n"
+                        + "with a single click — no more hunting for tiny close buttons."
+                )
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .font(.body)
@@ -179,73 +184,13 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding(24)
+        .animation(.smooth(duration: 0.3), value: isAccessibilityEnabled)
         .onAppear {
             isAccessibilityEnabled = AXIsProcessTrusted()
         }
     }
 
-    // MARK: - Step 3: How It Works
-
-    private var howItWorksStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Text("How It Works")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            VStack(alignment: .leading, spacing: 16) {
-                // Triggers
-                Text("Triggers")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                featureRow(
-                    icon: "computermouse.fill",
-                    title: "Middle Click",
-                    description: "Click any window in Mission Control to close it."
-                )
-                featureRow(
-                    icon: "option",
-                    title: "Option + Left Click",
-                    description: "Hold Option and left-click — great without a middle button."
-                )
-                featureRow(
-                    icon: "square.stack.3d.up",
-                    title: "Spaces",
-                    description: "Same gestures work on Spaces in the top bar."
-                )
-
-                Divider()
-
-                // Modifiers
-                Text("Action Modifiers")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                featureRow(
-                    icon: "minus.circle",
-                    title: "⇧ Shift + Click",
-                    description: "Minimize a window to the Dock instead."
-                )
-                featureRow(
-                    icon: "xmark.circle.fill",
-                    title: "⌘ Command + Click",
-                    description: "Close all windows from that app at once."
-                )
-            }
-            .frame(maxWidth: 400)
-
-            Spacer()
-        }
-        .padding(24)
-    }
-
-    // MARK: - Step 4: Ready
+    // MARK: - Step 5: Ready
 
     private var readyStep: some View {
         VStack(spacing: 20) {
@@ -270,8 +215,8 @@ struct OnboardingView: View {
             // Quick tips
             VStack(alignment: .leading, spacing: 8) {
                 tipRow(text: "Open Mission Control with a swipe up or F3")
-                tipRow(text: "All settings can be changed from the menu bar")
-                tipRow(text: "Updates install automatically with one click")
+                tipRow(text: "Pause MissionStrike or open Settings from the menu bar")
+                tipRow(text: "Updates show what's new and install with one click")
             }
             .padding(16)
             .background(
@@ -283,6 +228,128 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding(24)
+    }
+
+    private func applyAccessibilityGrantIfNeeded() {
+        let nowTrusted = AXIsProcessTrusted()
+        isAccessibilityEnabled = nowTrusted
+        guard nowTrusted else { return }
+
+        EventTapManager.shared.start()
+        // Auto-advance past the accessibility step
+        if currentStep == 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                go(to: 2)
+            }
+        }
+    }
+
+    // MARK: - Navigation
+
+    /// Pages slide a short distance in the direction of travel while cross-fading.
+    private var stepTransition: AnyTransition {
+        let distance: CGFloat = 40
+        return .asymmetric(
+            insertion: .offset(x: isMovingForward ? distance : -distance).combined(with: .opacity),
+            removal: .offset(x: isMovingForward ? -distance : distance).combined(with: .opacity)
+        )
+    }
+
+    private func go(to step: Int) {
+        guard step != currentStep, (0..<totalSteps).contains(step) else { return }
+        // Set the direction in its own update first: the outgoing page keeps the
+        // transition from its last render, so it must already point the right way.
+        isMovingForward = step > currentStep
+        DispatchQueue.main.async {
+            withAnimation(.smooth(duration: 0.35)) {
+                currentStep = step
+            }
+        }
+    }
+}
+
+// MARK: - Feature Pages and Layout Helpers
+
+extension OnboardingView {
+    // MARK: - Step 3: Closing Windows
+
+    private var howItWorksStep: some View {
+        stepPage(title: "Closing Windows") {
+            sectionLabel("Triggers")
+            featureRow(
+                icon: "computermouse.fill",
+                title: "Middle-Click",
+                description: "Click any window in Mission Control to close it."
+            )
+            featureRow(
+                icon: "option",
+                title: "Option + Click",
+                description: "No middle button? Hold Option and click. You can change the key in Settings."
+            )
+            featureRow(
+                icon: "square.stack.3d.up",
+                title: "Spaces",
+                description: "The same clicks remove a Space in the bar at the top."
+            )
+
+            sectionLabel("Modifiers").padding(.top, 6)
+            featureRow(
+                icon: "minus.circle",
+                title: "⇧ Shift + Click",
+                description: "Minimize the window to the Dock instead."
+            )
+            featureRow(
+                icon: "xmark.circle.fill",
+                title: "⌘ Command + Click",
+                description: "Close all of that app's windows at once."
+            )
+        }
+    }
+
+    // MARK: - Step 4: More Ways
+
+    private var moreWaysStep: some View {
+        stepPage(title: "More Ways") {
+            featureRow(
+                icon: "xmark.circle",
+                title: "See What a Click Will Do",
+                description: "Hold Option over a window and a close button marks it. Add ⇧ to minimize or ⌘ to close all."
+            )
+            featureRow(
+                icon: "contextualmenu.and.cursorarrow",
+                title: "Right-Click Menu",
+                description: "Right-click a window to close, minimize, hide or quit its app."
+            )
+            featureRow(
+                icon: "command",
+                title: "Keyboard Shortcuts",
+                description: "Point at a window and press ⌘W to close, ⌘M to minimize, ⌘H to hide or ⌘Q to quit."
+            )
+        }
+    }
+
+    /// Title plus left-aligned rows, centred vertically on the page.
+    private func stepPage<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 18) {
+            Spacer(minLength: 0)
+            Text(title)
+                .font(.title2)
+                .fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .frame(maxWidth: 400, alignment: .leading)
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .textCase(.uppercase)
+            .tracking(0.5)
     }
 
     // MARK: - Reusable Rows
@@ -314,20 +381,6 @@ struct OnboardingView: View {
             Text(text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private func applyAccessibilityGrantIfNeeded() {
-        let nowTrusted = AXIsProcessTrusted()
-        isAccessibilityEnabled = nowTrusted
-        guard nowTrusted else { return }
-
-        EventTapManager.shared.start()
-        // Auto-advance past the accessibility step
-        if currentStep == 1 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                currentStep = 2
-            }
         }
     }
 }

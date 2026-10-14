@@ -20,10 +20,12 @@
 - 📦 **⌘ Cmd + Click** — close *all* windows of an app at once.
 - ➖ **⇧ Shift + Click** — minimize a window to the Dock instead of closing it.
 - 📋 **Right-click menu** — right-click a window to close, minimize, hide, or quit its app (hold ⌥ to force quit), or right-click a Space to close it.
-- 🎛️ **Customizable triggers** — choose your preferred modifier key or disable triggers in Settings.
-- 🔄 **One-click auto-updates** — when a new version is available, install it directly from the app with a single click. No manual downloading or terminal commands needed.
+- ⌘ **Keyboard shortcuts** — point at a window and press ⌘W to close, ⌘M to minimize, ⌘H to hide, or ⌘Q to quit its app. ⌘W on a Space closes it.
+- 🔴 **Hover badge** — hold your modifier key and a traffic-light badge marks the window a click will act on: ✕ close, − minimize (⇧), or close all (⌘).
+- 🎛️ **Customizable** — choose your modifier key and switch each feature on or off in Settings.
+- ⏸️ **Menu bar status and Pause** — see at a glance whether MissionStrike is active, and pause it when you need Mission Control untouched.
+- 🔄 **One-click auto-updates** — a What's New window shows the release notes; install and relaunch with a single click. Updates keep the Accessibility permission.
 - 🛡️ **Resilient event tap** — auto-recovers if macOS disables it, with App Nap prevention.
-- ⚙️ Runs silently in the background with a minimal menu bar presence.
 - 🧭 **Onboarding walkthrough** on first launch to guide you through setup.
 
 ## Installation
@@ -70,15 +72,15 @@ Because this app intercepts mouse clicks and needs to ask the system to close un
 
 MissionStrike checks for updates automatically once every 24 hours and can also be triggered manually via **Check for Updates…** in the menu bar.
 
-When a new version is available, you'll see an alert with three options:
+When a new version is available, a **Software Update** window shows what's new in that release, with three options:
 
 | Option | What it does |
 |---|---|
-| **Install & Relaunch** | Downloads the update, verifies it is signed by MissionStrike, removes the macOS quarantine flag, replaces the app, and relaunches — fully automatic, no Terminal required. |
-| **View Release** | Opens the GitHub release page so you can read the release notes or download manually. |
-| **Later** | Dismisses the alert. You'll be reminded on the next check. |
+| **Install & Relaunch** | Downloads the update, verifies it is signed by MissionStrike, removes the macOS quarantine flag, replaces the app, and relaunches — fully automatic, no Terminal required. Progress is shown in the same window. |
+| **View on GitHub** | Opens the GitHub release page. |
+| **Later** | Closes the window. You'll be reminded on the next check. |
 
-If the automatic install fails for any reason, you'll be offered a link to download the update manually.
+If the automatic install fails for any reason, the window offers a link to download the update manually.
 
 > 💡 **Tip:** You can also re-run the install script at any time to update to the latest version:
 > ```bash
@@ -106,13 +108,14 @@ Releases are signed with a self-signed certificate (no paid Apple Developer acco
 
 ## How it Works
 
-1. A global event tap (`CGEventTap`) listens for middle-clicks and modifier+left-clicks (configurable).
+1. A global event tap (`CGEventTap`) listens for middle-clicks, modifier+left-clicks (configurable), right-clicks, ⌘-shortcuts and modifier changes. Everything outside Mission Control passes straight through.
 2. Mission Control is detected via Dock / WindowManager overlay windows (so a lonely dock bounce doesn’t count).
-3. Modifier keys pick the action: plain click closes, **⇧** minimizes, **⌘** closes all windows for that app.
+3. Modifier keys pick the action: plain click closes, **⇧** minimizes, **⌘** closes all windows for that app. Right-clicks open MissionStrike's own menu, and ⌘W / ⌘M / ⌘H / ⌘Q act on the window under the pointer.
 4. The click is hit-tested through Accessibility:
    - **Spaces Bar** → `AXRemoveDesktop` on the Space under the cursor.
    - **Window tile (macOS 27+)** → WindowManager thumbnail `wid` → real window → close / minimize / close-all.
    - **Older Mission Control** → classic `AXWindow` close button / `AXClose`.
 5. On macOS 27+, click coordinates are Y-flipped once to match AX’s top-left space (WindowManager UI and the event tap don’t agree on Y). Older macOS keeps the unflipped path.
+6. While the modifier key is held, the same hit test runs about 30 times a second to place the hover badge on the window under the pointer.
 
 Enjoy a cleaner Mission Control experience!
