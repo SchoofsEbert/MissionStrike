@@ -11,6 +11,7 @@ private let logger = Logger(
 private struct GitHubRelease: Decodable {
     let tagName: String
     let htmlURL: URL
+    let body: String?
     let assets: [Asset]
 
     struct Asset: Decodable {
@@ -26,6 +27,7 @@ private struct GitHubRelease: Decodable {
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
+        case body
         case assets
     }
 }
@@ -141,96 +143,45 @@ final class UpdateChecker {
         return false
     }
 
-    // MARK: - Alerts
+    // MARK: - Update Window
 
     private func showUpdateAlert(latestVersion: String, release: GitHubRelease) {
-        let alert = NSAlert()
-        alert.messageText = "Update Available"
-        alert.informativeText = "MissionStrike \(latestVersion) is available "
-            + "(you're on \(currentVersion))."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Install & Relaunch")
-        alert.addButton(withTitle: "View Release")
-        alert.addButton(withTitle: "Later")
-
-        if let icon = NSApplication.shared.applicationIconImage {
-            alert.icon = icon
-        }
-
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            // Auto-update: find the .zip asset and install it
-            if let asset = release.assets.first(where: { $0.name == "MissionStrike.app.zip" }) {
-                performAutoUpdate(downloadURL: asset.browserDownloadURL, version: latestVersion)
-            } else {
-                logger.warning("No .zip asset found in release — falling back to browser.")
-                NSWorkspace.shared.open(release.htmlURL)
-            }
-        case .alertSecondButtonReturn:
-            NSWorkspace.shared.open(release.htmlURL)
-        default:
-            break
+        let offer = UpdateOffer(
+            version: latestVersion,
+            currentVersion: currentVersion,
+            releaseNotes: release.body ?? "",
+            releaseURL: release.htmlURL,
+            downloadURL: release.assets.first { $0.name == "MissionStrike.app.zip" }?.browserDownloadURL
+        )
+        UpdateWindowController.shared.show(offer) { [weak self] offer in
+            self?.performAutoUpdate(offer)
         }
     }
 
     // MARK: - Auto-Update
 
-    /// Downloads the release zip, extracts it, removes quarantine, replaces
-    /// the running app bundle, and relaunches. Falls back to opening the
-    /// release page in the browser on any failure.
-    private func performAutoUpdate(downloadURL: URL, version: String) {
-        // Show a progress window
-        let progressWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 100),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        progressWindow.title = "Updating MissionStrike…"
-        progressWindow.center()
-
-        let progressIndicator = NSProgressIndicator()
-        progressIndicator.style = .bar
-        progressIndicator.isIndeterminate = true
-        progressIndicator.startAnimation(nil)
-
-        let label = NSTextField(labelWithString: "Downloading MissionStrike \(version)…")
-        label.alignment = .center
-
-        let stack = NSStackView(views: [label, progressIndicator])
-        stack.orientation = .vertical
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        progressWindow.contentView = stack
-
-        progressWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+    /// Downloads the release zip, verifies and installs it, and relaunches. Progress and
+    /// failures are shown in the update window.
+    private func performAutoUpdate(_ offer: UpdateOffer) {
+        let window = UpdateWindowController.shared
+        guard let downloadURL = offer.downloadURL else {
+            logger.warning("No MissionStrike.app.zip asset in release.")
+            window.showFailure("This release has no download for MissionStrike.")
+            return
+        }
+        window.setStatus("Downloading…")
 
         Task {
             do {
                 let appPath = try await downloadAndInstall(
                     downloadURL: downloadURL,
-                    expectedVersion: version,
-                    progressLabel: label
+                    expectedVersion: offer.version,
+                    status: { window.setStatus($0) }
                 )
-                progressWindow.close()
                 relaunch(appPath: appPath)
             } catch {
-                progressWindow.close()
                 logger.error("Auto-update failed: \(error.localizedDescription)")
-
-                let errorAlert = NSAlert()
-                errorAlert.messageText = "Update Failed"
-                errorAlert.informativeText = "The automatic update could not be completed: "
-                    + "\(error.localizedDescription)\n\n"
-                    + "Would you like to download the update manually?"
-                errorAlert.alertStyle = .warning
-                errorAlert.addButton(withTitle: "Open Download Page")
-                errorAlert.addButton(withTitle: "Cancel")
-                if errorAlert.runModal() == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(downloadURL)
-                }
+                window.showFailure("The update could not be installed: \(error.localizedDescription)")
             }
         }
     }
@@ -240,7 +191,7 @@ final class UpdateChecker {
     private func downloadAndInstall(
         downloadURL: URL,
         expectedVersion: String,
-        progressLabel: NSTextField
+        status: (String) -> Void
     ) async throws -> String {
         let fileManager = FileManager.default
         let tmpDir = fileManager.temporaryDirectory
@@ -257,7 +208,7 @@ final class UpdateChecker {
         try fileManager.moveItem(at: downloadedURL, to: zipPath)
 
         // 2. Extract the zip
-        await MainActor.run { progressLabel.stringValue = "Extracting…" }
+        status("Extracting…")
         let unzipProcess = Process()
         unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         unzipProcess.arguments = ["-x", "-k", zipPath.path, tmpDir.path]
@@ -280,11 +231,11 @@ final class UpdateChecker {
 
         // 3. Only install builds signed with the MissionStrike certificate, and only the
         //    version that was offered (an older signed release must not be replayed).
-        await MainActor.run { progressLabel.stringValue = "Verifying…" }
+        status("Verifying…")
         try CodeSigning.verifyUpdate(at: extractedApp, expectedVersion: expectedVersion)
 
         // 4. Remove macOS quarantine flag
-        await MainActor.run { progressLabel.stringValue = "Removing quarantine…" }
+        status("Removing quarantine…")
         let xattrProcess = Process()
         xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
         xattrProcess.arguments = ["-cr", extractedApp.path]
@@ -292,7 +243,7 @@ final class UpdateChecker {
         xattrProcess.waitUntilExit()
 
         // 5. Replace the current app bundle
-        await MainActor.run { progressLabel.stringValue = "Installing…" }
+        status("Installing…")
         let currentAppURL = Bundle.main.bundleURL
         let installDir = currentAppURL.deletingLastPathComponent()
         let installedAppURL = installDir.appendingPathComponent("MissionStrike.app")

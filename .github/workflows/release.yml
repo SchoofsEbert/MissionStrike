@@ -28,6 +28,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+        fetch-depth: 0 # full history and tags, for the release notes
 
     - name: Set up Swift
       uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
@@ -59,6 +60,23 @@ jobs:
       with:
         subject-path: MissionStrike/dist/MissionStrike.app.zip
 
+    # The in-app update window shows these notes. Changes land on main without pull
+    # requests, so GitHub's generated notes would be empty; list the commit subjects instead.
+    - name: Write release notes
+      run: |
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+        {
+          echo "## What's new"
+          echo
+          git log --no-merges --format='- %s' ${PREVIOUS_TAG:+"$PREVIOUS_TAG.."}"$GITHUB_REF_NAME" \
+            | grep -v -E '^- (chore|docs)(\(.*\))?:' || true
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo
+            echo "**Full Changelog**: [$PREVIOUS_TAG...$GITHUB_REF_NAME](https://github.com/$GITHUB_REPOSITORY/compare/$PREVIOUS_TAG...$GITHUB_REF_NAME)"
+          fi
+        } > release-notes.md
+        cat release-notes.md
+
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ github.token }}
@@ -67,5 +85,5 @@ jobs:
           MissionStrike/dist/MissionStrike.app.zip \
           MissionStrike/dist/MissionStrike.app.zip.sha256 \
           --title "$GITHUB_REF_NAME" \
-          --generate-notes \
+          --notes-file release-notes.md \
           --verify-tag
