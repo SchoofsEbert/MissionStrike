@@ -274,7 +274,8 @@ class MissionControlManager {
         logger.warning("Could not find window \(windowID) to minimize.")
     }
 
-    private func closeAllWindows(forPID pid: pid_t) {
+    /// Closes every window of the app, optionally keeping one ("Close Other Windows").
+    func closeAllWindows(forPID pid: pid_t, except keptWindowID: CGWindowID? = nil) {
         let appElement = AXUIElementCreateApplication(pid)
         var windowsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
@@ -284,6 +285,12 @@ class MissionControlManager {
         }
         var closedCount = 0
         for window in windows {
+            if let keptWindowID {
+                var cgWindowID: CGWindowID = 0
+                if _AXUIElementGetWindow(window, &cgWindowID) == .success, cgWindowID == keptWindowID {
+                    continue
+                }
+            }
             var closeButtonRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(
                 window, kAXCloseButtonAttribute as CFString, &closeButtonRef

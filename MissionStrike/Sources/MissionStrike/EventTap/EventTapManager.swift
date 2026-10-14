@@ -248,46 +248,50 @@ private func handleTapDisabled(event: CGEvent, refcon: UnsafeMutableRawPointer?)
     return Unmanaged.passUnretained(event)
 }
 
-/// Right-click on a window or Space thumbnail opens MissionStrike's context menu.
-/// Right-clicks that hit nothing keep Mission Control's default behavior.
+/// Right-click in Mission Control opens MissionStrike's context menu: for the window or
+/// Space under the pointer, or app-wide actions on empty space.
 private func handleRightMouseDown(_ event: CGEvent) -> Unmanaged<CGEvent>? {
     guard UserDefaults.standard.bool(forKey: "enableContextMenu"),
-          MissionControlActiveChecker().isActive(),
-          let resolution = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation) else {
+          MissionControlActiveChecker().isActive() else {
         return Unmanaged.passUnretained(event)
     }
 
+    let target = contextMenuTarget(at: NSEvent.mouseLocation)
     mouseUpsToSwallow.insert(.rightMouseUp)
     // Async: popUp runs a nested run loop and must not block this callback.
     Task { @MainActor in
-        MissionControlContextMenu.shared.show(for: resolution)
+        MissionControlContextMenu.shared.show(for: target)
     }
     return nil
 }
 
-/// While the context menu is open: clicks on the menu work as usual, a right-click on
-/// another thumbnail swaps the menu, and any other click only closes the menu so
+private func contextMenuTarget(at point: CGPoint) -> ContextMenuTarget {
+    MissionControlHitTester.resolve(clickPoint: point).map(ContextMenuTarget.thumbnail) ?? .background
+}
+
+/// While the context menu is open: clicks on the menu work as usual, a right-click
+/// elsewhere swaps the menu, and any other click only closes the menu so
 /// Mission Control stays open.
 private func handleMouseWhileMenuOpen(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
     if MissionControlContextMenu.menuContains(event.location) {
         return Unmanaged.passUnretained(event)
     }
 
-    var next: MissionControlHitTester.Resolution?
+    var next: ContextMenuTarget?
     switch type {
     case .rightMouseDown:
         mouseUpsToSwallow.insert(.rightMouseUp)
-        next = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation)
+        next = contextMenuTarget(at: NSEvent.mouseLocation)
     case .leftMouseDown:
         mouseUpsToSwallow.insert(.leftMouseUp)
     default:
         mouseUpsToSwallow.insert(.otherMouseUp)
     }
-    let resolution = next
+    let target = next
     // The tap's run loop source lives on the main run loop, so this already runs on
     // the main thread inside the menu's tracking loop.
     MainActor.assumeIsolated {
-        MissionControlContextMenu.shared.replace(with: resolution)
+        MissionControlContextMenu.shared.replace(with: target)
     }
     return nil
 }
