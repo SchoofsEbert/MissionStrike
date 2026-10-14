@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("enableMiddleClick") private var enableMiddleClick = true
     @AppStorage("enableContextMenu") private var enableContextMenu = true
     @AppStorage("enableKeyboardShortcuts") private var enableKeyboardShortcuts = true
+    @AppStorage("showHoverBadge") private var showHoverBadge = true
     @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
@@ -27,30 +28,14 @@ struct SettingsView: View {
         .publisher(for: Notification.Name("com.apple.accessibility.api"))
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // MARK: - Branded Header
-                header
-                    .padding(.top, 20)
-                    .padding(.bottom, 8)
-
-                // MARK: - Sections
-                Form {
-                    statusSection
-                    triggersSection
-                    actionsSection
-                    spacesSection
-                    generalSection
-                }
-                .formStyle(.grouped)
-                .scrollDisabled(true)
-                .scrollContentBackground(.hidden)
-
-                // MARK: - Footer Links
-                footerLinks
-                    .padding(.bottom, 16)
-            }
+        Form {
+            statusSection
+            triggersSection
+            actionsSection
+            spacesSection
+            generalSection
         }
+        .formStyle(.grouped)
         .onAppear {
             refreshAccessibilityStatus()
         }
@@ -64,83 +49,85 @@ struct SettingsView: View {
                 refreshAccessibilityStatus()
             }
         }
-        .frame(width: 440, height: 680)
+        .frame(width: 460, height: 700)
     }
 
     // MARK: - Header
 
     private var header: some View {
-        VStack(spacing: 8) {
-            if let nsImage = NSApplication.shared.applicationIconImage {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 56, height: 56)
-                    .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-            }
-
+        VStack(spacing: 6) {
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 64, height: 64)
             Text("MissionStrike")
-                .font(.title3)
+                .font(.title2)
                 .fontWeight(.semibold)
-
+                .foregroundStyle(.primary)
             Text("Version \(appVersion)")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 8)
+        .textCase(nil)
     }
 
     // MARK: - Status
 
     private var statusSection: some View {
         Section {
-            HStack(spacing: 10) {
-                Image(systemName: isAccessibilityEnabled
-                      ? "checkmark.shield.fill"
-                      : "exclamationmark.shield.fill")
-                    .font(.title2)
-                    .foregroundStyle(isAccessibilityEnabled ? .green : .orange)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Accessibility")
-                        .fontWeight(.medium)
-                    Text(isAccessibilityEnabled
-                         ? "Permissions granted — MissionStrike is active."
-                         : "Permissions required for MissionStrike to work.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if !isAccessibilityEnabled {
-                    Button("Grant Access") {
+            LabeledContent("Accessibility") {
+                if isAccessibilityEnabled {
+                    Label {
+                        Text("Allowed")
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                } else {
+                    Button("Grant Access…") {
                         let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
                         _ = AXIsProcessTrustedWithOptions(options)
                     }
-                    .controlSize(.small)
                 }
             }
+        } header: {
+            header
         }
     }
 
     // MARK: - Triggers
 
     private var triggersSection: some View {
-        Section {
-            Toggle("Middle Mouse Button", isOn: $enableMiddleClick)
-            Toggle("Right-Click Menu", isOn: $enableContextMenu)
-            Toggle("Keyboard Shortcuts (⌘W, ⌘M, ⌘H, ⌘Q)", isOn: $enableKeyboardShortcuts)
+        Section("Mission Control") {
+            Toggle(isOn: $enableMiddleClick) {
+                Text("Middle-Click")
+                Text("Middle-click a window to close it.")
+            }
 
-            Picker("Left Click Modifier", selection: $leftClickModifier) {
+            Picker(selection: $leftClickModifier) {
                 ForEach(TriggerModifier.allCases, id: \.rawValue) { modifier in
                     Text(modifier.displayName).tag(modifier.rawValue)
                 }
+            } label: {
+                Text("Left-Click Modifier")
+                Text("Hold this key and click instead of middle-clicking.")
             }
-            .pickerStyle(.menu)
-        } header: {
-            Text("Trigger Bindings")
-        } footer: {
-            Text("Choose how to trigger actions in Mission Control. Command and Shift are reserved as action modifiers.")
+
+            Toggle(isOn: $showHoverBadge) {
+                Text("Hover Badge")
+                Text("While the modifier is held, mark the window a click will act on.")
+            }
+
+            Toggle(isOn: $enableContextMenu) {
+                Text("Right-Click Menu")
+                Text("Close, minimize, hide or quit from a menu.")
+            }
+
+            Toggle(isOn: $enableKeyboardShortcuts) {
+                Text("Keyboard Shortcuts")
+                Text("⌘W, ⌘M, ⌘H and ⌘Q act on the window under the pointer.")
+            }
         }
     }
 
@@ -148,113 +135,64 @@ struct SettingsView: View {
 
     private var actionsSection: some View {
         Section {
-            VStack(spacing: 0) {
-                actionRow(
-                    keys: "Click",
-                    description: "Close window",
-                    icon: "xmark.circle"
-                )
-                Divider().padding(.vertical, 6)
-                actionRow(
-                    keys: "⇧ Shift + Click",
-                    description: "Minimize to Dock",
-                    icon: "minus.circle"
-                )
-                Divider().padding(.vertical, 6)
-                actionRow(
-                    keys: "⌘ Cmd + Click",
-                    description: "Close all app windows",
-                    icon: "xmark.circle.fill"
-                )
-            }
-            .padding(.vertical, 2)
+            LabeledContent("Close window", value: "Click")
+            LabeledContent("Minimize to Dock", value: "⇧ Click")
+            LabeledContent("Close all app windows", value: "⌘ Click")
         } header: {
-            Text("Actions in Mission Control")
+            Text("Click Actions")
+        } footer: {
+            Text("Click means a middle-click or a modifier-click.")
+                .foregroundStyle(.secondary)
+                .font(.callout)
         }
     }
 
     // MARK: - Spaces
 
     private var spacesSection: some View {
-        Section {
-            Toggle("Enable Closing Spaces", isOn: $enableSpaceClosing)
-        } header: {
-            Text("Spaces")
-        } footer: {
-            Text("When enabled, clicking a Space in the top bar removes it instantly — no hover delay.")
+        Section("Spaces") {
+            Toggle(isOn: $enableSpaceClosing) {
+                Text("Close Spaces with One Click")
+                Text("Click a Space in the bar at the top to remove it, without waiting for its close button.")
+            }
         }
     }
 
     // MARK: - General
 
     private var generalSection: some View {
-        Section("General") {
+        Section {
             Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
 
             Toggle("Start at Login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) {
                     toggleLaunchAtLogin()
                 }
+        } header: {
+            Text("General")
+        } footer: {
+            footerLinks
         }
     }
 
     // MARK: - Footer Links
 
     private var footerLinks: some View {
-        HStack(spacing: 24) {
-            Button {
+        HStack(spacing: 16) {
+            Button("Check for Updates…") {
                 UpdateChecker.shared.checkNow()
-            } label: {
-                Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .font(.caption)
-
-            Button {
-                if let delegate = NSApp.delegate as? AppDelegate {
-                    delegate.openAboutWindow()
-                }
-            } label: {
-                Label("About", systemImage: "info.circle")
+            Button("Setup Guide") {
+                (NSApp.delegate as? AppDelegate)?.openOnboardingWindow()
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .font(.caption)
-
-            Button {
-                if let delegate = NSApp.delegate as? AppDelegate {
-                    delegate.openOnboardingWindow()
-                }
-            } label: {
-                Label("Setup Guide", systemImage: "questionmark.circle")
+            Button("About MissionStrike") {
+                (NSApp.delegate as? AppDelegate)?.openAboutWindow()
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .font(.caption)
         }
-    }
-
-    // MARK: - Action Row
-
-    private func actionRow(keys: String, description: String, icon: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-
-            Text(description)
-                .font(.callout)
-
-            Spacer()
-
-            Text(keys)
-                .font(.caption)
-                .fontDesign(.rounded)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
-        }
+        .buttonStyle(.link)
+        .font(.callout)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
     }
 
     // MARK: - Logic

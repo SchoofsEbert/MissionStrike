@@ -36,6 +36,8 @@ final class HoverBadgeController {
     private var hostingView: NSHostingView<HoverBadgeView>?
     private var timer: Timer?
     private var flags: CGEventFlags = []
+    /// Thumbnail the badge is currently on; a different one gets a fresh fade-in.
+    private var currentThumbnail: CGRect?
 
     /// Called from the event tap on every modifier change.
     func modifiersChanged(_ flags: CGEventFlags) {
@@ -56,6 +58,7 @@ final class HoverBadgeController {
     }
 
     private var isTriggerHeld: Bool {
+        guard UserDefaults.standard.bool(forKey: "showHoverBadge") else { return false }
         let raw = UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option"
         guard let mask = TriggerModifier(rawValue: raw)?.eventFlagMask else { return false }
         return flags.contains(mask)
@@ -69,7 +72,7 @@ final class HoverBadgeController {
             return
         }
         guard let frame = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation)?.thumbnailFrame else {
-            panel?.orderOut(nil)
+            hide()
             return
         }
         show(style: HoverBadgeStyle(flags: flags), at: frame)
@@ -92,14 +95,35 @@ final class HoverBadgeController {
             x: thumbnail.minX + Self.cornerInset - Self.circleCentre,
             y: thumbnail.maxY - Self.cornerInset - size.height + Self.circleCentre
         )
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        let badgeFrame = NSRect(origin: origin, size: size)
+        guard thumbnail != currentThumbnail else {
+            // Same window, maybe another style (the "All" label changes the width).
+            panel.setFrame(badgeFrame, display: true)
+            return
+        }
+        currentThumbnail = thumbnail
+
+        // Moving to another window: hide on the old one and fade in on the new one,
+        // rather than sliding the badge across.
+        panel.orderOut(nil)
+        panel.alphaValue = 0
+        panel.setFrame(badgeFrame, display: true)
         panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    private func hide() {
+        currentThumbnail = nil
+        panel?.orderOut(nil)
     }
 
     private func stop() {
         timer?.invalidate()
         timer = nil
-        panel?.orderOut(nil)
+        hide()
     }
 
     private func makePanel() -> NSPanel {
@@ -118,6 +142,7 @@ final class HoverBadgeController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
+        panel.animationBehavior = .none
         self.panel = panel
         return panel
     }

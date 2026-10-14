@@ -45,6 +45,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "enableMiddleClick": true,
             "enableContextMenu": true,
             "enableKeyboardShortcuts": true,
+            "showHoverBadge": true,
             "leftClickModifier": TriggerModifier.option.rawValue
         ])
 
@@ -281,7 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let hostingController = NSHostingController(rootView: view)
 
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 440, height: 680),
+                contentRect: NSRect(x: 0, y: 0, width: 460, height: 700),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
