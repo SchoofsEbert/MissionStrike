@@ -1,0 +1,49 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "display-p3:0.24706,0.37647,0.95294,1.00000",
+      "display-p3:0.14118,0.12549,0.50980,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "badge.svg",
+          "name": "badge"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.6
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.1
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "tiles.svg",
+          "name": "tiles"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

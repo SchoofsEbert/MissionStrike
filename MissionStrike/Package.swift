@@ -10,8 +10,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "MissionStrike",
-            resources: [.process("Resources")]
+            name: "MissionStrike"
         ),
         .testTarget(
             name: "MissionStrikeTests",

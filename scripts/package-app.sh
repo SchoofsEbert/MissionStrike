@@ -47,7 +47,9 @@ rm -rf "$DIST_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$PACKAGE_DIR/.build/release/MissionStrike" "$APP_DIR/Contents/MacOS/"
 cp "$PACKAGE_DIR/Info.plist" "$APP_DIR/Contents/"
-cp "$PACKAGE_DIR/AppIcon.icns" "$APP_DIR/Contents/Resources/"
+# Icon: compiled from MissionStrike/Icon/MissionStrike.icon by scripts/build-icon.sh
+cp "$PACKAGE_DIR/Icon/Compiled/Assets.car" "$PACKAGE_DIR/Icon/Compiled/MissionStrike.icns" \
+    "$APP_DIR/Contents/Resources/"
 
 P12_PATH=""
 P12_PASSWORD=""

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Two windows behind, one in front: a Mission Control spread. -->
+  <rect x="150" y="214" width="340" height="236" rx="38" fill="#FFFFFF" fill-opacity="0.82"/>
+  <rect x="534" y="214" width="340" height="236" rx="38" fill="#FFFFFF" fill-opacity="0.82"/>
+  <rect x="222" y="494" width="580" height="340" rx="46" fill="#FFFFFF"/>
+</svg>

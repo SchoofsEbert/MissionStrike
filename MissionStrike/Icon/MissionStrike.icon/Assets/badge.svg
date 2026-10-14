@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Traffic-light close button on the front window's corner. -->
+  <circle cx="262" cy="534" r="84" fill="#FF5F57"/>
+  <path d="M227 499 L297 569 M297 499 L227 569" stroke="#7A0F0A" stroke-opacity="0.75" stroke-width="24" stroke-linecap="round"/>
+</svg>
