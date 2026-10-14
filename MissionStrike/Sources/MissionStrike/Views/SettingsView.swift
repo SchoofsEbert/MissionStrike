@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("enableContextMenu") private var enableContextMenu = true
     @AppStorage("enableKeyboardShortcuts") private var enableKeyboardShortcuts = true
     @AppStorage("showHoverBadge") private var showHoverBadge = true
+    @AppStorage("poofOnClose") private var poofOnClose = false
     @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
@@ -127,6 +128,11 @@ struct SettingsView: View {
             Toggle(isOn: $enableKeyboardShortcuts) {
                 Text("Keyboard Shortcuts")
                 Text("⌘W, ⌘M, ⌘H and ⌘Q act on the window under the pointer.")
+            }
+
+            Toggle(isOn: $poofOnClose) {
+                Text("Poof When Closing")
+                Text("Show the classic puff of smoke where a window or Space was closed.")
             }
         }
     }

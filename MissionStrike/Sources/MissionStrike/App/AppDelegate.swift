@@ -46,6 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "enableContextMenu": true,
             "enableKeyboardShortcuts": true,
             "showHoverBadge": true,
+            "poofOnClose": false,
             "leftClickModifier": TriggerModifier.option.rawValue
         ])
 

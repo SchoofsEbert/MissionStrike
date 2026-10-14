@@ -122,6 +122,9 @@ class MissionControlManager {
 
     /// Performs a pre-resolved hit from the event tap.
     func perform(resolution: MissionControlHitTester.Resolution, action: MouseAction) {
+        if action != .minimize, !isDesktop(resolution) {
+            CloseEffect.play(for: resolution)
+        }
         switch resolution.target {
         case .removeDesktop(let button):
             guard action == .close || action == .closeAll else { return }
@@ -162,36 +165,20 @@ class MissionControlManager {
         }
     }
 
-    /// Runs a keyboard shortcut on the hovered thumbnail. ⌘W on a Space removes it.
-    func perform(_ shortcut: MissionControlShortcut, on resolution: MissionControlHitTester.Resolution) {
-        switch shortcut {
-        case .closeWindow:
-            if case .removeDesktop(let button) = resolution.target {
-                removeDesktop(button)
-            } else {
-                perform(resolution: resolution, action: .close)
-            }
-        case .minimizeWindow:
-            perform(resolution: resolution, action: .minimize)
-        case .hideApp, .quitApp:
-            guard let pid = pid(for: resolution),
-                  let app = NSRunningApplication(processIdentifier: pid) else { return }
-            if shortcut == .hideApp {
-                app.hide()
-            } else {
-                app.terminate()
-            }
-        }
-    }
-
     /// Removes a Space via its Spaces Bar button.
     func removeDesktop(_ button: AXUIElement) {
         let result = AXUIElementPerformAction(button, "AXRemoveDesktop" as CFString)
         if result == .success {
+            CloseEffect.play(at: NSEvent.mouseLocation)
             logger.debug("Closed Space via AXRemoveDesktop.")
         } else {
             logger.warning("AXRemoveDesktop failed with error: \(result.rawValue)")
         }
+    }
+
+    private func isDesktop(_ resolution: MissionControlHitTester.Resolution) -> Bool {
+        if case .removeDesktop = resolution.target { return true }
+        return false
     }
 
     /// Owning app of a window hit; nil for Spaces or when the window is gone.
