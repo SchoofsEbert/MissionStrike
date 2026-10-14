@@ -120,9 +120,7 @@ private func eventTapCallback(
         // macOS and can stall system-wide input, so tear it down instead.
         guard AXIsProcessTrusted() else {
             logger.warning("Event tap disabled after Accessibility was revoked — stopping it.")
-            Task { @MainActor in
-                EventTapManager.shared.stop()
-            }
+            Task { @MainActor in EventTapManager.shared.stop() }
             return Unmanaged.passUnretained(event)
         }
         if let refcon,
@@ -133,9 +131,10 @@ private func eventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    if type == .leftMouseUp || type == .rightMouseUp || type == .otherMouseUp {
+    if isMouseUp(type) {
         return mouseUpsToSwallow.remove(type) == nil ? Unmanaged.passUnretained(event) : nil
     }
+    forgetLostMouseUp(beforePress: type)
 
     if MissionControlContextMenu.isOpen {
         return handleMouseWhileMenuOpen(type: type, event: event)
@@ -255,6 +254,24 @@ private func handleMouseWhileMenuOpen(type: CGEventType, event: CGEvent) -> Unma
         MissionControlContextMenu.shared.replace(with: resolution)
     }
     return nil
+}
+
+private func isMouseUp(_ type: CGEventType) -> Bool {
+    switch type {
+    case .leftMouseUp, .rightMouseUp, .otherMouseUp: true
+    default: false
+    }
+}
+
+/// A new press means any up still pending from an earlier swallowed press was lost
+/// (e.g. while the tap was disabled). Forget it so it can't eat this press's release.
+private func forgetLostMouseUp(beforePress type: CGEventType) {
+    switch type {
+    case .leftMouseDown: mouseUpsToSwallow.remove(.leftMouseUp)
+    case .rightMouseDown: mouseUpsToSwallow.remove(.rightMouseUp)
+    case .otherMouseDown: mouseUpsToSwallow.remove(.otherMouseUp)
+    default: break
+    }
 }
 
 /// Converts a `mach_absolute_time` delta to nanoseconds.

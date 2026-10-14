@@ -67,7 +67,6 @@ final class UpdateChecker {
             logger.debug("Skipping update check — last check was \(Int(now - lastCheck))s ago.")
             return
         }
-        UserDefaults.standard.set(now, forKey: Self.lastCheckKey)
         check(userInitiated: false)
     }
 
@@ -82,6 +81,9 @@ final class UpdateChecker {
         Task {
             do {
                 let release = try await fetchLatestRelease()
+                // Only a successful check starts the 24-hour cooldown, so an offline
+                // launch retries next time instead of waiting a day.
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey)
                 let latestVersion = release.tagName
                     .trimmingCharacters(in: .whitespaces)
                     .replacingOccurrences(of: "v", with: "")
