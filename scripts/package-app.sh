@@ -29,7 +29,11 @@ fi
 
 WORK_DIR="$(mktemp -d)"
 KEYCHAIN="$WORK_DIR/signing.keychain-db"
+ORIGINAL_KEYCHAINS=()
 cleanup() {
+    if [ ${#ORIGINAL_KEYCHAINS[@]} -gt 0 ]; then
+        security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}" || true
+    fi
     security delete-keychain "$KEYCHAIN" 2>/dev/null || true
     rm -rf "$WORK_DIR"
 }
@@ -65,8 +69,25 @@ if [ -n "$P12_PATH" ]; then
     security import "$P12_PATH" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign >/dev/null
     security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
 
+    # codesign only finds identities in keychains on the user search list (CI runners
+    # don't fall back to --keychain alone). Add ours for the build; cleanup restores it.
+    while IFS= read -r line; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        ORIGINAL_KEYCHAINS+=("${line//\"/}")
+    done < <(security list-keychains -d user)
+    security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
+
+    # Sign by certificate hash so a same-named certificate elsewhere can't be picked.
+    IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" \
+        | awk '/MissionStrike Code Signing/ { print $2; exit }')"
+    if [ -z "$IDENTITY" ]; then
+        echo "error: imported certificate not found in the signing keychain" >&2
+        security find-identity -p codesigning "$KEYCHAIN" >&2
+        exit 1
+    fi
+
     codesign --force --options runtime --timestamp=none \
-        --keychain "$KEYCHAIN" --sign "MissionStrike Code Signing" "$APP_DIR"
+        --keychain "$KEYCHAIN" --sign "$IDENTITY" "$APP_DIR"
     codesign --verify --strict --deep -R="$REQUIREMENT" "$APP_DIR"
     echo "    Signature satisfies: $REQUIREMENT"
 elif [ "${MISSIONSTRIKE_REQUIRE_SIGNING:-0}" = "1" ]; then
