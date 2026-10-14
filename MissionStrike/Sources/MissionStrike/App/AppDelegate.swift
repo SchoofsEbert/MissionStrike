@@ -13,41 +13,8 @@ extension UserDefaults {
     }
 }
 
-extension NSImage {
-    func resized(to newSize: NSSize) -> NSImage {
-        return NSImage(size: newSize, flipped: false) { rect in
-            self.draw(in: rect,
-                      from: NSRect(origin: .zero, size: self.size),
-                      operation: .sourceOver,
-                      fraction: 1.0)
-            return true
-        }
-    }
-
-    /// Returns a copy of the image with a small colored dot badge in the bottom-right corner.
-    func withBadge(color: NSColor) -> NSImage {
-        let badgeDiameter: CGFloat = 6
-        return NSImage(size: self.size, flipped: false) { rect in
-            self.draw(in: rect,
-                      from: NSRect(origin: .zero, size: self.size),
-                      operation: .sourceOver,
-                      fraction: 1.0)
-            let badgeRect = NSRect(
-                x: rect.maxX - badgeDiameter - 1,
-                y: 1,
-                width: badgeDiameter,
-                height: badgeDiameter
-            )
-            color.setFill()
-            NSBezierPath(ovalIn: badgeRect).fill()
-            return true
-        }
-    }
-}
-
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem?
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var aboutWindow: NSWindow?
@@ -249,74 +216,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu Bar
 
     private func setupMenuBarItem() {
-        let showIcon = UserDefaults.standard.bool(forKey: "showMenuBarIcon")
-
-        if showIcon {
-            if statusItem == nil {
-                statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-                if let button = statusItem?.button {
-                    button.toolTip = "MissionStrike"
-                }
-
-                let menu = NSMenu()
-                menu.addItem(NSMenuItem(
-                    title: "About MissionStrike",
-                    action: #selector(openAboutWindow),
-                    keyEquivalent: ""
-                ))
-                menu.addItem(NSMenuItem(
-                    title: "Check for Updates…",
-                    action: #selector(checkForUpdates),
-                    keyEquivalent: ""
-                ))
-                menu.addItem(NSMenuItem.separator())
-                menu.addItem(NSMenuItem(
-                    title: "Settings...",
-                    action: #selector(openSettingsWindow),
-                    keyEquivalent: ","
-                ))
-                menu.addItem(NSMenuItem.separator())
-                menu.addItem(NSMenuItem(
-                    title: "Quit MissionStrike",
-                    action: #selector(NSApplication.terminate(_:)),
-                    keyEquivalent: "q"
-                ))
-                statusItem?.menu = menu
-            }
-            updateMenuBarIconState()
-        } else {
-            if let item = statusItem {
-                NSStatusBar.system.removeStatusItem(item)
-                statusItem = nil
-            }
-        }
+        StatusBarController.shared.setVisible(UserDefaults.standard.bool(forKey: "showMenuBarIcon"), delegate: self)
     }
 
-    /// Updates the menu bar icon to reflect the current active/inactive state.
-    /// Active (green dot): event tap running + accessibility enabled.
-    /// Inactive (orange dot): event tap not running or accessibility denied.
     private func updateMenuBarIconState() {
-        guard let button = statusItem?.button else { return }
-
-        let isActive = EventTapManager.shared.isRunning && AXIsProcessTrusted()
-
-        if let originalImage = NSApplication.shared.applicationIconImage {
-            let resized = originalImage.resized(to: NSSize(width: 18, height: 18))
-            let icon: NSImage
-            if isActive {
-                icon = resized
-            } else {
-                icon = resized.withBadge(color: .systemOrange)
-            }
-            icon.isTemplate = false
-            button.image = icon
-        } else {
-            button.title = isActive ? "MS" : "MS⚠"
-        }
-
-        button.toolTip = isActive
-            ? "MissionStrike: Active"
-            : "MissionStrike: Inactive — check Accessibility permissions"
+        StatusBarController.shared.refresh()
     }
 
     func openOnboardingWindow() {

@@ -27,9 +27,23 @@ class EventTapManager {
     /// Whether the event tap is currently active and listening.
     var isRunning: Bool { eventTapPort != nil }
 
+    /// Paused from the menu bar: the tap stays off (no per-event cost) until resumed,
+    /// even when Accessibility changes would normally restart it. Not persisted.
+    private(set) var isPaused = false
+
+    func pause() {
+        isPaused = true
+        stop()
+    }
+
+    func resume() {
+        isPaused = false
+        start()
+    }
+
     func start() {
-        // Don't recreate if already running
-        guard !isRunning else { return }
+        // Don't recreate if already running, or while paused
+        guard !isRunning, !isPaused else { return }
 
         // Allocate stable storage for the port pointer before creating the tap
         let pointer = UnsafeMutablePointer<CFMachPort?>.allocate(capacity: 1)
