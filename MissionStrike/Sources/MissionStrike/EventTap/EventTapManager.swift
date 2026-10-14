@@ -150,6 +150,11 @@ private func eventTapCallback(
         return handleRightMouseDown(event)
     }
 
+    if type == .otherMouseDown, handleDockMiddleClick(event) {
+        mouseUpsToSwallow.insert(.otherMouseUp)
+        return nil
+    }
+
     // Determine if this event matches a configured trigger
     let flags = event.flags
     let isTrigger: Bool
@@ -192,6 +197,7 @@ private func eventTapCallback(
         // when Mission Control’s AX space is mirrored vs click coordinates (macOS 27+).
         let clickPoint = NSEvent.mouseLocation
         let resolution = MissionControlHitTester.resolve(clickPoint: clickPoint)
+        Diagnostics.shared.record(type == .otherMouseDown ? "middle-click" : "modifier-click", resolution: resolution)
 
         lastProcessedClickTime = now
 
@@ -266,7 +272,9 @@ private func handleRightMouseDown(_ event: CGEvent) -> Unmanaged<CGEvent>? {
 }
 
 private func contextMenuTarget(at point: CGPoint) -> ContextMenuTarget {
-    MissionControlHitTester.resolve(clickPoint: point).map(ContextMenuTarget.thumbnail) ?? .background
+    let resolution = MissionControlHitTester.resolve(clickPoint: point)
+    Diagnostics.shared.record("right-click", resolution: resolution)
+    return resolution.map(ContextMenuTarget.thumbnail) ?? .background
 }
 
 /// While the context menu is open: clicks on the menu work as usual, a right-click

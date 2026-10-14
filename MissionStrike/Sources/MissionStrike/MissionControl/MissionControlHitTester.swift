@@ -86,7 +86,7 @@ enum MissionControlHitTester {
     // MARK: - Y-flip gate
 
     /// macOS 27+ Mission Control reports click Y mirrored vs AX frames.
-    private static func shouldYFlipForMissionControl() -> Bool {
+    static func shouldYFlipForMissionControl() -> Bool {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
     }
 
@@ -243,7 +243,7 @@ enum MissionControlHitTester {
 
     // MARK: - AX helpers
 
-    private static func element(at point: CGPoint) -> AXUIElement? {
+    static func element(at point: CGPoint) -> AXUIElement? {
         let systemWide = AXUIElementCreateSystemWide()
         var element: AXUIElement?
         let result = AXUIElementCopyElementAtPosition(
@@ -253,7 +253,7 @@ enum MissionControlHitTester {
         return element
     }
 
-    private static func parent(of element: AXUIElement) -> AXUIElement? {
+    static func parent(of element: AXUIElement) -> AXUIElement? {
         var parentRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
               let parentRef else {
@@ -262,7 +262,7 @@ enum MissionControlHitTester {
         return (parentRef as! AXUIElement)
     }
 
-    private static func role(of element: AXUIElement) -> String {
+    static func role(of element: AXUIElement) -> String {
         var value: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
         return (value as? String) ?? ""
@@ -274,7 +274,7 @@ enum MissionControlHitTester {
         return (value as? String) ?? ""
     }
 
-    private static func readWid(_ element: AXUIElement) -> CGWindowID? {
+    static func readWid(_ element: AXUIElement) -> CGWindowID? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, "wid" as CFString, &value) == .success,
               let value,
@@ -288,7 +288,7 @@ enum MissionControlHitTester {
         return CGWindowID(number)
     }
 
-    private static func frame(of element: AXUIElement) -> CGRect? {
+    static func frame(of element: AXUIElement) -> CGRect? {
         var posRef: CFTypeRef?
         var sizeRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,

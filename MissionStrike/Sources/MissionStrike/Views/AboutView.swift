@@ -11,6 +11,8 @@ struct AboutView: View {
 
     private let repoURL = URL(string: "https://github.com/SchoofsEbert/MissionStrike")!
 
+    @State private var copiedDiagnostics = false
+
     var body: some View {
         VStack(spacing: 12) {
             if let nsImage = NSApplication.shared.applicationIconImage {
@@ -41,11 +43,23 @@ struct AboutView: View {
                 .font(.caption)
             }
 
+            Button(copiedDiagnostics ? "Copied" : "Copy Diagnostics") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(Diagnostics.shared.report(), forType: .string)
+                copiedDiagnostics = true
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    copiedDiagnostics = false
+                }
+            }
+            .controlSize(.small)
+            .help("Copies version, settings and recent Mission Control activity for a bug report. No window titles.")
+
             Text("© 2026 Ebert Schoofs")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
         .padding(24)
-        .frame(width: 280, height: 300)
+        .frame(width: 280, height: 330)
     }
 }

@@ -30,8 +30,12 @@ func handleMissionControlShortcut(_ event: CGEvent) -> Unmanaged<CGEvent>? {
     guard modifiers == .maskCommand,
           let shortcut = MissionControlShortcut(keyCode: event.getIntegerValueField(.keyboardEventKeycode)),
           UserDefaults.standard.bool(forKey: "enableKeyboardShortcuts"),
-          MissionControlActiveChecker().isActive(),
-          let resolution = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation) else {
+          MissionControlActiveChecker().isActive() else {
+        return pass
+    }
+    let hit = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation)
+    Diagnostics.shared.record("shortcut", resolution: hit)
+    guard let resolution = hit else {
         return pass
     }
 

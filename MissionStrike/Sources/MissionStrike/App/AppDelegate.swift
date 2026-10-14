@@ -47,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "enableKeyboardShortcuts": true,
             "showHoverBadge": true,
             "poofOnClose": false,
+            "enableDockMiddleClick": false,
             "leftClickModifier": TriggerModifier.option.rawValue
         ])
 
@@ -261,7 +262,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let hostingController = NSHostingController(rootView: view)
 
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 280, height: 300),
+                contentRect: NSRect(x: 0, y: 0, width: 280, height: 330),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false

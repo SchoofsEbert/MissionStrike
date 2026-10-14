@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("enableKeyboardShortcuts") private var enableKeyboardShortcuts = true
     @AppStorage("showHoverBadge") private var showHoverBadge = true
     @AppStorage("poofOnClose") private var poofOnClose = false
+    @AppStorage("enableDockMiddleClick") private var enableDockMiddleClick = false
     @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
@@ -34,6 +35,7 @@ struct SettingsView: View {
             triggersSection
             actionsSection
             spacesSection
+            dockSection
             generalSection
         }
         .formStyle(.grouped)
@@ -160,6 +162,17 @@ struct SettingsView: View {
             Toggle(isOn: $enableSpaceClosing) {
                 Text("Close Spaces with One Click")
                 Text("Click a Space in the bar at the top to remove it, without waiting for its close button.")
+            }
+        }
+    }
+
+    // MARK: - Dock
+
+    private var dockSection: some View {
+        Section("Dock") {
+            Toggle(isOn: $enableDockMiddleClick) {
+                Text("Middle-Click to Quit")
+                Text("Middle-click a running app in the Dock to quit it. Hold ⌥ to close its windows instead.")
             }
         }
     }
