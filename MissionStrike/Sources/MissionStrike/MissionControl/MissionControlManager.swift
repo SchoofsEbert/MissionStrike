@@ -162,6 +162,28 @@ class MissionControlManager {
         }
     }
 
+    /// Runs a keyboard shortcut on the hovered thumbnail. ⌘W on a Space removes it.
+    func perform(_ shortcut: MissionControlShortcut, on resolution: MissionControlHitTester.Resolution) {
+        switch shortcut {
+        case .closeWindow:
+            if case .removeDesktop(let button) = resolution.target {
+                removeDesktop(button)
+            } else {
+                perform(resolution: resolution, action: .close)
+            }
+        case .minimizeWindow:
+            perform(resolution: resolution, action: .minimize)
+        case .hideApp, .quitApp:
+            guard let pid = pid(for: resolution),
+                  let app = NSRunningApplication(processIdentifier: pid) else { return }
+            if shortcut == .hideApp {
+                app.hide()
+            } else {
+                app.terminate()
+            }
+        }
+    }
+
     /// Removes a Space via its Spaces Bar button.
     func removeDesktop(_ button: AXUIElement) {
         let result = AXUIElementPerformAction(button, "AXRemoveDesktop" as CFString)

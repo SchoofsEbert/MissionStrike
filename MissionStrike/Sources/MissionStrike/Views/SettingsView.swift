@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("enableSpaceClosing") private var enableSpaceClosing = true
     @AppStorage("enableMiddleClick") private var enableMiddleClick = true
     @AppStorage("enableContextMenu") private var enableContextMenu = true
+    @AppStorage("enableKeyboardShortcuts") private var enableKeyboardShortcuts = true
     @AppStorage("leftClickModifier") private var leftClickModifier = "option"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
@@ -128,6 +129,7 @@ struct SettingsView: View {
         Section {
             Toggle("Middle Mouse Button", isOn: $enableMiddleClick)
             Toggle("Right-Click Menu", isOn: $enableContextMenu)
+            Toggle("Keyboard Shortcuts (⌘W, ⌘M, ⌘H, ⌘Q)", isOn: $enableKeyboardShortcuts)
 
             Picker("Left Click Modifier", selection: $leftClickModifier) {
                 ForEach(TriggerModifier.allCases, id: \.rawValue) { modifier in

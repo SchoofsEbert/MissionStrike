@@ -20,6 +20,8 @@ enum MissionControlHitTester {
         let target: Target
         /// Point in AX hit-test space (after any OS-gated Y-flip).
         let point: CGPoint
+        /// Thumbnail frame in AppKit screen coordinates, when known (macOS 27+ window tiles).
+        var thumbnailFrame: CGRect?
     }
 
     /// Reject AX padding around thumbnail buttons (greedy hit targets on 27).
@@ -47,7 +49,8 @@ enum MissionControlHitTester {
         if let window = resolveThumbnailWindow(at: point) {
             return Resolution(
                 target: .window(pid: window.pid, ownerName: window.ownerName, windowID: window.windowID),
-                point: point
+                point: point,
+                thumbnailFrame: useFlip ? ScreenCoordinates.yFlipped(window.frame) : window.frame
             )
         }
 
@@ -91,7 +94,7 @@ enum MissionControlHitTester {
 
     private static func resolveThumbnailWindow(
         at point: CGPoint
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
+    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID, frame: CGRect)? {
         guard let hit = element(at: point),
               let button = ancestorWithWid(from: hit),
               let windowID = readWid(button),
@@ -103,10 +106,11 @@ enum MissionControlHitTester {
             dx: buttonFrame.width * thumbnailEdgeInsetFraction,
             dy: buttonFrame.height * thumbnailEdgeInsetFraction
         )
-        guard inset.width > 8, inset.height > 8, inset.contains(point) else {
+        guard inset.width > 8, inset.height > 8, inset.contains(point),
+              let window = lookupWindow(id: windowID) else {
             return nil
         }
-        return lookupWindow(id: windowID)
+        return (window.pid, window.ownerName, window.windowID, buttonFrame)
     }
 
     private static func lookupWindow(

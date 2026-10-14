@@ -77,6 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "enableSpaceClosing": true,
             "enableMiddleClick": true,
             "enableContextMenu": true,
+            "enableKeyboardShortcuts": true,
             "leftClickModifier": TriggerModifier.option.rawValue
         ])
 

@@ -102,16 +102,16 @@ final class MissionControlContextMenu: NSObject {
         menu.addItem(header)
         menu.addItem(.separator())
 
-        menu.addItem(item("Close Window", #selector(closeWindow)))
-        menu.addItem(item("Minimize Window", #selector(minimizeWindow)))
+        menu.addItem(item("Close Window", #selector(closeWindow), key: "w"))
+        menu.addItem(item("Minimize Window", #selector(minimizeWindow), key: "m"))
         menu.addItem(item("Close All \(appName) Windows", #selector(closeAllWindows)))
         menu.addItem(.separator())
-        menu.addItem(item("Hide \(appName)", #selector(hideApp)))
-        menu.addItem(item("Quit \(appName)", #selector(quitApp)))
+        menu.addItem(item("Hide \(appName)", #selector(hideApp), key: "h"))
+        menu.addItem(item("Quit \(appName)", #selector(quitApp), key: "q"))
 
         // Shown instead of "Quit" while ⌥ is held, like the Dock's own menu.
-        let forceQuit = item("Force Quit \(appName)", #selector(forceQuitApp))
-        forceQuit.keyEquivalentModifierMask = .option
+        let forceQuit = item("Force Quit \(appName)", #selector(forceQuitApp), key: "q")
+        forceQuit.keyEquivalentModifierMask = [.command, .option]
         forceQuit.isAlternate = true
         menu.addItem(forceQuit)
         return menu
@@ -120,12 +120,13 @@ final class MissionControlContextMenu: NSObject {
     private func spaceMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(item("Close Space", #selector(closeSpace)))
+        menu.addItem(item("Close Space", #selector(closeSpace), key: "w"))
         return menu
     }
 
-    private func item(_ title: String, _ action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    /// `key` shows the matching Mission Control shortcut (⌘ + key) next to the item.
+    private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         return item
     }

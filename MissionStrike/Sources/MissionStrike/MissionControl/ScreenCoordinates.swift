@@ -19,4 +19,11 @@ enum ScreenCoordinates {
         guard h > 0 else { return point }
         return CGPoint(x: point.x, y: h - point.y)
     }
+
+    /// Flips a rect between AX (top-left origin) and AppKit (bottom-left origin) space.
+    static func yFlipped(_ rect: CGRect) -> CGRect {
+        let h = mainDisplayHeight
+        guard h > 0 else { return rect }
+        return CGRect(x: rect.minX, y: h - rect.maxY, width: rect.width, height: rect.height)
+    }
 }

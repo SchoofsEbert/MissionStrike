@@ -42,6 +42,8 @@ class EventTapManager {
             | (1 << CGEventType.rightMouseUp.rawValue)
             | (1 << CGEventType.leftMouseUp.rawValue)
             | (1 << CGEventType.otherMouseUp.rawValue)
+            | (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.flagsChanged.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -113,22 +115,12 @@ private func eventTapCallback(
     event: CGEvent,
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-    // Watchdog: macOS disables the tap if the callback takes too long.
-    // Re-enable it immediately to recover without requiring a relaunch.
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        // Revoking Accessibility also disables the tap. Re-enabling it then fights
-        // macOS and can stall system-wide input, so tear it down instead.
-        guard AXIsProcessTrusted() else {
-            logger.warning("Event tap disabled after Accessibility was revoked — stopping it.")
-            Task { @MainActor in EventTapManager.shared.stop() }
-            return Unmanaged.passUnretained(event)
-        }
-        if let refcon,
-           let tap = refcon.assumingMemoryBound(to: CFMachPort?.self).pointee {
-            CGEvent.tapEnable(tap: tap, enable: true)
-            logger.warning("Event tap was disabled by macOS — re-enabled automatically.")
-        }
-        return Unmanaged.passUnretained(event)
+        return handleTapDisabled(event: event, refcon: refcon)
+    }
+
+    if type == .keyDown || type == .flagsChanged {
+        return handleKeyboardEvent(type: type, event: event)
     }
 
     if isMouseUp(type) {
@@ -209,6 +201,36 @@ private func eventTapCallback(
     }
 
     // passUnretained: the caller owns the event, we must not retain it
+    return Unmanaged.passUnretained(event)
+}
+
+/// ⌘-shortcuts act on the hovered thumbnail; modifier changes drive the hover badge.
+private func handleKeyboardEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    guard type == .flagsChanged else {
+        return handleMissionControlShortcut(event)
+    }
+    let flags = event.flags
+    Task { @MainActor in
+        HoverBadgeController.shared.modifiersChanged(flags)
+    }
+    return Unmanaged.passUnretained(event)
+}
+
+/// Watchdog: macOS disables the tap if the callback takes too long.
+/// Re-enable it immediately to recover without requiring a relaunch.
+private func handleTapDisabled(event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
+    // Revoking Accessibility also disables the tap. Re-enabling it then fights
+    // macOS and can stall system-wide input, so tear it down instead.
+    guard AXIsProcessTrusted() else {
+        logger.warning("Event tap disabled after Accessibility was revoked — stopping it.")
+        Task { @MainActor in EventTapManager.shared.stop() }
+        return Unmanaged.passUnretained(event)
+    }
+    if let refcon,
+       let tap = refcon.assumingMemoryBound(to: CFMachPort?.self).pointee {
+        CGEvent.tapEnable(tap: tap, enable: true)
+        logger.warning("Event tap was disabled by macOS — re-enabled automatically.")
+    }
     return Unmanaged.passUnretained(event)
 }
 
