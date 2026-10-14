@@ -30,7 +30,7 @@
 
 ### Quick Install (Recommended)
 
-Run this single command in **Terminal** — it downloads the latest release, removes the macOS quarantine flag, and installs the app to `/Applications`:
+Run this single command in **Terminal** — it downloads the latest release, checks that it is signed by MissionStrike, removes the macOS quarantine flag, and installs the app to `/Applications`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
@@ -64,7 +64,7 @@ Because this app intercepts mouse clicks and needs to ask the system to close un
 
 *If you accidentally denied the prompt, simply navigate to the Accessibility settings manually, hit the `+` button, and add `MissionStrike.app` from your Applications folder.*
 
-> ⚠️ **After updates:** macOS may invalidate Accessibility permissions when the app binary changes. MissionStrike detects this automatically and will prompt you to re-authorize with a single click — no need to manually remove and re-add the app. If the automatic prompt doesn't appear, open System Settings → Privacy & Security → Accessibility, remove MissionStrike, then re-add it.
+> ℹ️ **After updates:** since v2.6.1, every release is signed with the same MissionStrike certificate, so macOS keeps the Accessibility permission across updates. Updating from an older version asks for it one last time. If MissionStrike ever stops working after an update, open System Settings → Privacy & Security → Accessibility, remove MissionStrike, then re-add it.
 
 ## Updating
 
@@ -74,7 +74,7 @@ When a new version is available, you'll see an alert with three options:
 
 | Option | What it does |
 |---|---|
-| **Install & Relaunch** | Downloads the update, removes the macOS quarantine flag, replaces the app, and relaunches — fully automatic, no Terminal required. |
+| **Install & Relaunch** | Downloads the update, verifies it is signed by MissionStrike, removes the macOS quarantine flag, replaces the app, and relaunches — fully automatic, no Terminal required. |
 | **View Release** | Opens the GitHub release page so you can read the release notes or download manually. |
 | **Later** | Dismisses the alert. You'll be reminded on the next check. |
 
@@ -98,7 +98,11 @@ If you prefer to build the project yourself (requires Xcode or the Swift Command
    ```bash
    swift build -c release
    ```
-3. To package it into a `.app` bundle manually, you can use the provided GitHub Actions workflow as a reference or wrap the executable generated in `.build/release/MissionStrike` into a standard macOS app directory structure.
+3. To package it into a signed `.app` bundle and zip, run `scripts/package-app.sh` from the repository root. The output lands in `MissionStrike/dist/`. Without the MissionStrike signing certificate the build is signed ad-hoc, which works but means macOS asks for Accessibility again after every build.
+
+### Release signing
+
+Releases are signed with a self-signed certificate (no paid Apple Developer account). Its stable signature keeps the Accessibility permission across updates, and both the in-app updater and `install.sh` refuse downloads that aren't signed with it. Each release also carries a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations), which you can check with `gh attestation verify MissionStrike.app.zip --repo SchoofsEbert/MissionStrike`.
 
 ## How it Works
 

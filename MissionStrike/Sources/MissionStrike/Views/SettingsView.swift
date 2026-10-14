@@ -18,7 +18,7 @@ struct SettingsView: View {
     private let appVersion: String = {
         Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.6.0"
+        ) as? String ?? "2.6.1"
     }()
 
     /// Fires when any app's accessibility trust status changes in System Settings.

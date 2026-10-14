@@ -10,6 +10,9 @@ set -euo pipefail
 APP_NAME="MissionStrike"
 INSTALL_DIR="/Applications"
 REPO="SchoofsEbert/MissionStrike"
+# Every release is signed with MissionStrike's own certificate; refuse anything else.
+# Keep in sync with MissionStrike/Sources/MissionStrike/Services/CodeSigning.swift.
+REQUIREMENT='identifier "com.vibecoded.missionstrike" and certificate leaf = H"4db8f2724be711f4ad297925bac86fb1a77e8037"'
 TMP_DIR="$(mktemp -d)"
 
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -18,8 +21,8 @@ trap cleanup EXIT
 echo "🚀 Installing $APP_NAME..."
 
 # Fetch the latest release download URL from the GitHub API
-DOWNLOAD_URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep '"browser_download_url".*\.zip' \
+DOWNLOAD_URL=$(curl -fsSL --proto '=https' --tlsv1.2 "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep '"browser_download_url".*/MissionStrike\.app\.zip"' \
     | head -1 \
     | cut -d '"' -f 4)
 
@@ -30,10 +33,16 @@ fi
 
 VERSION=$(echo "$DOWNLOAD_URL" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
 echo "📦 Downloading $APP_NAME $VERSION..."
-curl -fsSL -o "$TMP_DIR/$APP_NAME.app.zip" "$DOWNLOAD_URL"
+curl -fsSL --proto '=https' --tlsv1.2 -o "$TMP_DIR/$APP_NAME.app.zip" "$DOWNLOAD_URL"
 
 echo "📂 Extracting..."
-unzip -q "$TMP_DIR/$APP_NAME.app.zip" -d "$TMP_DIR"
+ditto -x -k "$TMP_DIR/$APP_NAME.app.zip" "$TMP_DIR"
+
+echo "🔏 Verifying signature..."
+if ! codesign --verify --strict --deep -R="$REQUIREMENT" "$TMP_DIR/$APP_NAME.app" 2>/dev/null; then
+    echo "❌ The downloaded app is not signed by MissionStrike. Aborting."
+    exit 1
+fi
 
 echo "🔓 Removing macOS quarantine flag..."
 xattr -cr "$TMP_DIR/$APP_NAME.app"

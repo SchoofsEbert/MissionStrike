@@ -159,7 +159,7 @@ final class UpdateChecker {
         switch response {
         case .alertFirstButtonReturn:
             // Auto-update: find the .zip asset and install it
-            if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) {
+            if let asset = release.assets.first(where: { $0.name == "MissionStrike.app.zip" }) {
                 performAutoUpdate(downloadURL: asset.browserDownloadURL, version: latestVersion)
             } else {
                 logger.warning("No .zip asset found in release — falling back to browser.")
@@ -209,6 +209,7 @@ final class UpdateChecker {
             do {
                 let appPath = try await downloadAndInstall(
                     downloadURL: downloadURL,
+                    expectedVersion: version,
                     progressLabel: label
                 )
                 progressWindow.close()
@@ -232,10 +233,11 @@ final class UpdateChecker {
         }
     }
 
-    /// Downloads the zip, extracts, removes quarantine, and replaces the app bundle.
-    /// Returns the path to the newly installed app.
+    /// Downloads the zip, extracts, verifies the signature and version, removes
+    /// quarantine, and replaces the app bundle. Returns the path to the newly installed app.
     private func downloadAndInstall(
         downloadURL: URL,
+        expectedVersion: String,
         progressLabel: NSTextField
     ) async throws -> String {
         let fileManager = FileManager.default
@@ -255,8 +257,8 @@ final class UpdateChecker {
         // 2. Extract the zip
         await MainActor.run { progressLabel.stringValue = "Extracting…" }
         let unzipProcess = Process()
-        unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        unzipProcess.arguments = ["-qo", zipPath.path, "-d", tmpDir.path]
+        unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzipProcess.arguments = ["-x", "-k", zipPath.path, tmpDir.path]
         try unzipProcess.run()
         unzipProcess.waitUntilExit()
         guard unzipProcess.terminationStatus == 0 else {
@@ -274,7 +276,12 @@ final class UpdateChecker {
             )
         }
 
-        // 3. Remove macOS quarantine flag
+        // 3. Only install builds signed with the MissionStrike certificate, and only the
+        //    version that was offered (an older signed release must not be replayed).
+        await MainActor.run { progressLabel.stringValue = "Verifying…" }
+        try CodeSigning.verifyUpdate(at: extractedApp, expectedVersion: expectedVersion)
+
+        // 4. Remove macOS quarantine flag
         await MainActor.run { progressLabel.stringValue = "Removing quarantine…" }
         let xattrProcess = Process()
         xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
@@ -282,17 +289,18 @@ final class UpdateChecker {
         try xattrProcess.run()
         xattrProcess.waitUntilExit()
 
-        // 4. Replace the current app bundle
+        // 5. Replace the current app bundle
         await MainActor.run { progressLabel.stringValue = "Installing…" }
         let currentAppURL = Bundle.main.bundleURL
         let installDir = currentAppURL.deletingLastPathComponent()
         let installedAppURL = installDir.appendingPathComponent("MissionStrike.app")
 
-        // Move old app to trash (recoverable) and put the new one in place
+        // Swap in one step so a failure leaves the current app in place.
         if fileManager.fileExists(atPath: installedAppURL.path) {
-            try fileManager.trashItem(at: installedAppURL, resultingItemURL: nil)
+            _ = try fileManager.replaceItemAt(installedAppURL, withItemAt: extractedApp)
+        } else {
+            try fileManager.moveItem(at: extractedApp, to: installedAppURL)
         }
-        try fileManager.moveItem(at: extractedApp, to: installedAppURL)
 
         // Clean up temp directory (best-effort)
         try? fileManager.removeItem(at: tmpDir)
@@ -307,14 +315,15 @@ final class UpdateChecker {
         UserDefaults.standard.set(true, forKey: "pendingSelfUpdate")
 
         let pid = ProcessInfo.processInfo.processIdentifier
-        // Shell snippet: wait for current PID to exit, then open the new app.
+        // Shell snippet: wait for current PID to exit, then open the new app. The path is
+        // passed as an argument rather than spliced into the script.
         let script = """
             while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
-            open "\(appPath)"
+            open "$1"
             """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", script]
+        process.arguments = ["-c", script, "relaunch", appPath]
         try? process.run()
 
         // Quit the current instance so the relaunch script can proceed

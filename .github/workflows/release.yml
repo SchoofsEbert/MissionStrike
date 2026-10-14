@@ -1,64 +1,71 @@
 name: Build and Release MissionStrike
 
-permissions:
-  contents: write
-
 on:
   push:
     tags:
       - 'v*' # Trigger on tags like v1.0.0
 
+# Nothing by default; the release job asks for exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  build:
+  release:
     runs-on: macos-latest
+    permissions:
+      contents: write     # create the GitHub release
+      id-token: write     # sign the build provenance attestation
+      attestations: write # store the attestation
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+    # Third-party actions are pinned to full commit SHAs so a moved tag cannot change them.
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Swift
-      uses: swift-actions/setup-swift@v2
+      uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
       with:
         swift-version: '6'
 
-    - name: Build Executable
+    - name: Check tag matches app version
       run: |
-        cd MissionStrike
-        swift build -c release
+        PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" MissionStrike/Info.plist)
+        if [ "v$PLIST_VERSION" != "$GITHUB_REF_NAME" ]; then
+          echo "::error::Tag $GITHUB_REF_NAME does not match Info.plist version $PLIST_VERSION"
+          exit 1
+        fi
 
-    - name: Create macOS App Bundle
+    - name: Run tests
       run: |
         cd MissionStrike
-        APP_DIR="MissionStrike.app"
-        CONTENTS_DIR="$APP_DIR/Contents"
-        MACOS_DIR="$CONTENTS_DIR/MacOS"
-        
-        # Create structure
-        mkdir -p "$MACOS_DIR"
-        mkdir -p "$CONTENTS_DIR/Resources"
-        
-        # Copy release executable
-        cp ".build/release/MissionStrike" "$MACOS_DIR/"
-        
-        # Copy Info.plist
-        cp "Info.plist" "$CONTENTS_DIR/"
-        
-        # Copy App Icon
-        cp "AppIcon.icns" "$CONTENTS_DIR/Resources/"
-        
-        # Ad-hoc sign the app bundle to prevent "is damaged" error
-        codesign --force --deep --sign - "$APP_DIR"
+        swift test
 
-    - name: Zip the Application
-      run: |
-        cd MissionStrike
-        zip -r MissionStrike.app.zip MissionStrike.app
+    - name: Build, sign and package
+      env:
+        MISSIONSTRIKE_P12_BASE64: ${{ secrets.MISSIONSTRIKE_P12_BASE64 }}
+        MISSIONSTRIKE_P12_PASSWORD: ${{ secrets.MISSIONSTRIKE_P12_PASSWORD }}
+        MISSIONSTRIKE_REQUIRE_SIGNING: '1'
+      run: scripts/package-app.sh
+
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: MissionStrike/dist/MissionStrike.app.zip
 
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: MissionStrike/MissionStrike.app.zip
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "$GITHUB_REF_NAME" \
+          MissionStrike/dist/MissionStrike.app.zip \
+          MissionStrike/dist/MissionStrike.app.zip.sha256 \
+          --title "$GITHUB_REF_NAME" \
+          --generate-notes \
+          --verify-tag
