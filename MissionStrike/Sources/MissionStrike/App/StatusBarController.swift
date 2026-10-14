@@ -1,7 +1,7 @@
 import AppKit
 import ApplicationServices
 
-/// The menu bar item: a monochrome Mission Control symbol, a status line, and Pause/Resume.
+/// The menu bar item: a monochrome burst matching the app icon, a status line, and Pause/Resume.
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate {
     static let shared = StatusBarController()
@@ -43,11 +43,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let state = self.state
 
-        // Template symbol: macOS tints it for light/dark menu bars. Paused or missing
+        // Template image: macOS tints it for light/dark menu bars. Paused or missing
         // permission shows the dimmed look macOS uses for inactive menu bar items.
-        let image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "MissionStrike")
-        image?.isTemplate = true
-        button.image = image
+        button.image = Self.burstImage
         button.appearsDisabled = state != .active
 
         switch state {
@@ -64,6 +62,44 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         grantAccessItem.isHidden = state != .needsAccessibility
         pauseItem.title = state == .paused ? "Resume MissionStrike" : "Pause MissionStrike"
         pauseItem.isHidden = state == .needsAccessibility
+    }
+
+    /// The app icon's burst as a one-colour template: the outer burst with the core cut out.
+    private static let burstImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let shape = burst(in: rect, points: 12, outer: 0.95, inner: 0.5,
+                              jitter: [1.0, 0.82, 0.95, 0.78, 1.05, 0.86, 0.92, 0.8, 1.0, 0.84, 0.97, 0.79])
+            shape.append(burst(in: rect, points: 10, outer: 0.42, inner: 0.24, jitter: [1]).reversed)
+            shape.windingRule = .evenOdd
+            NSColor.black.setFill()
+            shape.fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "MissionStrike"
+        return image
+    }()
+
+    /// Star polygon centred in `rect`; radii are fractions of half the width, and
+    /// `jitter` scales successive tips to make the burst irregular like the app icon.
+    private static func burst(
+        in rect: NSRect, points: Int, outer: CGFloat, inner: CGFloat, jitter: [CGFloat]
+    ) -> NSBezierPath {
+        let path = NSBezierPath()
+        let centre = NSPoint(x: rect.midX, y: rect.midY)
+        for index in 0..<(points * 2) {
+            let isTip = index.isMultiple(of: 2)
+            let radius = (isTip ? outer * jitter[(index / 2) % jitter.count] : inner) * rect.width / 2
+            let angle = CGFloat.pi * CGFloat(index) / CGFloat(points)
+            let point = NSPoint(x: centre.x + radius * sin(angle), y: centre.y + radius * cos(angle))
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.line(to: point)
+            }
+        }
+        path.close()
+        return path
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
