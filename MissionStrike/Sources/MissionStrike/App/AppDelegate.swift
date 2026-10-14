@@ -124,13 +124,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Request notification permission for permission-loss alerts.
         // UNUserNotificationCenter requires a proper .app bundle; skip when running via `swift run`.
         if Bundle.main.bundleIdentifier != nil {
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-                if let error = error {
-                    logger.error("Notification authorization error: \(error.localizedDescription)")
-                } else if !granted {
-                    logger.info("User declined notification permissions — permission-loss alerts will not be shown.")
-                }
-            }
+            requestNotificationAuthorizationIfNeeded()
         } else {
             logger.info("No bundle identifier — skipping notification permission request (running outside .app bundle).")
         }
@@ -200,6 +194,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Asks for notification permission only while the user hasn't decided yet. Once
+    /// notifications are off, asking again fails with "not allowed" on every launch.
+    private func requestNotificationAuthorizationIfNeeded() {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let status = await center.notificationSettings().authorizationStatus
+            guard status == .notDetermined else {
+                if status == .denied {
+                    logger.info("Notifications are off — permission-loss alerts will not be shown.")
+                }
+                return
+            }
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound])
+                if !granted {
+                    logger.info("User declined notification permissions — permission-loss alerts will not be shown.")
+                }
+            } catch {
+                logger.warning("Notification authorization failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func sendPermissionLostNotification() {
         guard Bundle.main.bundleIdentifier != nil else {
             logger.warning("Cannot deliver notification — no bundle identifier.")
@@ -213,8 +230,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         content.sound = .default
 
         let request = UNNotificationRequest(identifier: "com.vibecoded.missionstrike.permissionLost", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            // The orange menu bar icon still shows the state when notifications are off.
+            guard await center.notificationSettings().authorizationStatus == .authorized else {
+                logger.info("Notifications are off — skipping permission-loss notification.")
+                return
+            }
+            do {
+                try await center.add(request)
+            } catch {
                 logger.error("Failed to deliver permission-loss notification: \(error.localizedDescription)")
             }
         }
