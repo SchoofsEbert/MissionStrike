@@ -12,30 +12,79 @@ final class MissionControlContextMenu: NSObject {
     static let shared = MissionControlContextMenu()
     override private init() {}
 
+    /// True while a menu is on screen. Read by the event tap callback, which runs on
+    /// the main thread inside the menu's tracking loop.
+    nonisolated(unsafe) static var isOpen = false
+
     /// Target of the most recent menu; menu item actions read it. Not cleared after
     /// `popUp` returns so an action delivered late still finds its target.
     private var resolution: MissionControlHitTester.Resolution?
     private var app: NSRunningApplication?
 
+    private var openMenu: NSMenu?
+    /// Target to open next once the current menu has closed (right-click on another thumbnail).
+    private var pending: MissionControlHitTester.Resolution?
+
     /// Pops up the menu at the cursor. Blocks in a nested run loop until it closes; the
     /// event tap keeps running meanwhile because its source is in the common modes.
     func show(for resolution: MissionControlHitTester.Resolution) {
-        let menu: NSMenu
+        if openMenu != nil {
+            replace(with: resolution)
+            return
+        }
+        var next: MissionControlHitTester.Resolution? = resolution
+        while let current = next {
+            next = nil
+            guard let menu = makeMenu(for: current) else { break }
+            self.resolution = current
+            openMenu = menu
+            Self.isOpen = true
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+            Self.isOpen = false
+            openMenu = nil
+            next = pending
+            pending = nil
+        }
+    }
+
+    /// Closes the open menu and, if `resolution` is given, opens that target's menu next.
+    func replace(with resolution: MissionControlHitTester.Resolution?) {
+        pending = resolution
+        openMenu?.cancelTrackingWithoutAnimation()
+    }
+
+    /// Whether a point (Quartz global coordinates) lies on one of our menu windows.
+    nonisolated static func menuContains(_ point: CGPoint) -> Bool {
+        let menuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        let ownPID = Int(getpid())
+        guard let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
+                as? [[String: Any]] else {
+            return false
+        }
+        return list.contains { info in
+            guard info[kCGWindowOwnerPID as String] as? Int == ownPID,
+                  info[kCGWindowLayer as String] as? Int == menuLevel,
+                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
+                return false
+            }
+            return bounds.contains(point)
+        }
+    }
+
+    private func makeMenu(for resolution: MissionControlHitTester.Resolution) -> NSMenu? {
         switch resolution.target {
         case .removeDesktop:
             app = nil
-            menu = spaceMenu()
+            return spaceMenu()
         case .window, .legacyAXWindow:
             guard let pid = MissionControlManager.shared.pid(for: resolution) else {
                 logger.warning("No app found for right-clicked window.")
-                return
+                return nil
             }
             app = NSRunningApplication(processIdentifier: pid)
-            menu = windowMenu(appName: app?.localizedName ?? "App")
+            return windowMenu(appName: app?.localizedName ?? "App")
         }
-
-        self.resolution = resolution
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     // MARK: - Menus
