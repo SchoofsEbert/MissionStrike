@@ -293,18 +293,20 @@ class MissionControlManager {
     private static let confirmationCheckDelay: Duration = .milliseconds(400)
 
     /// A close that asks for confirmation (unsaved changes, running processes) opens a sheet
-    /// the user can't see behind Mission Control. Flash a badge on the thumbnail instead of
-    /// leaving Mission Control, so the window doesn't look like it ignored the click.
+    /// the user can't see behind Mission Control. Show a badge on the thumbnail until the sheet
+    /// goes or Mission Control closes, so the window doesn't look like it ignored the click.
     private func flashIfConfirmationNeeded(
         _ resolution: MissionControlHitTester.Resolution,
-        window: @escaping @MainActor () -> AXUIElement?
+        findWindow: @escaping @MainActor () -> AXUIElement?
     ) {
         Task { @MainActor in
             try? await Task.sleep(for: Self.confirmationCheckDelay)
-            guard let window = window(), Self.hasSheet(window) else { return }
+            guard let window = findWindow(), Self.hasSheet(window) else { return }
             logger.debug("Close is waiting on a confirmation sheet.")
             let thumbnail = resolution.thumbnailFrame ?? CGRect(origin: resolution.point, size: .zero)
-            HoverBadgeController.shared.flash(.needsConfirmation, on: thumbnail)
+            HoverBadgeController.shared.flash(.needsConfirmation, on: thumbnail) {
+                findWindow().map(Self.hasSheet) ?? false
+            }
         }
     }
 

@@ -115,39 +115,36 @@ final class HoverBadgeController {
         }
     }
 
-    /// Pulses a badge on a thumbnail a few times, then fades it out. Mission Control stays open.
-    func flash(_ style: HoverBadgeStyle, on thumbnail: CGRect) {
+    /// Shows a badge in the middle of a thumbnail, pulsing a few times to draw the eye. It stays
+    /// while `isPending` holds and Mission Control is open, and Mission Control is never left.
+    func flash(_ style: HoverBadgeStyle, on thumbnail: CGRect, while isPending: @escaping @MainActor () -> Bool) {
         let panel = flashPanel ?? Self.makePanel()
         flashPanel = panel
         let hostingView = NSHostingView(rootView: HoverBadgeView(style: style))
         panel.contentView = hostingView
-        panel.setFrame(Self.badgeFrame(size: hostingView.fittingSize, on: thumbnail), display: true)
+        let size = hostingView.fittingSize
+        panel.setFrame(NSRect(x: thumbnail.midX - size.width / 2, y: thumbnail.midY - size.height / 2,
+                              width: size.width, height: size.height), display: true)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
 
         flashGeneration += 1
         let generation = flashGeneration
         Task { @MainActor in
-            for _ in 0..<Self.flashPulses {
-                for alpha: CGFloat in [1, 0.35] {
-                    NSAnimationContext.runAnimationGroup({ context in
-                        context.duration = Self.flashPulseDuration
-                        panel.animator().alphaValue = alpha
-                    }, completionHandler: nil)
-                    try? await Task.sleep(for: .seconds(Self.flashPulseDuration))
-                    guard generation == flashGeneration else { return }
-                }
+            var tick = 0
+            while generation == flashGeneration, isPending(), MissionControlActiveChecker().isActive() {
+                // Alternate bright and dim for the first pulses, then hold steady.
+                let dim = tick < Self.flashPulses * 2 && !tick.isMultiple(of: 2)
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = Self.flashPulseDuration
+                    panel.animator().alphaValue = dim ? 0.35 : 1
+                }, completionHandler: nil)
+                tick += 1
+                try? await Task.sleep(for: .seconds(Self.flashPulseDuration))
             }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = Self.flashPulseDuration
-                panel.animator().alphaValue = 0
-            }, completionHandler: {
-                MainActor.assumeIsolated {
-                    if generation == HoverBadgeController.shared.flashGeneration {
-                        panel.orderOut(nil)
-                    }
-                }
-            })
+            guard generation == flashGeneration else { return }
+            panel.alphaValue = 0
+            panel.orderOut(nil)
         }
     }
 
