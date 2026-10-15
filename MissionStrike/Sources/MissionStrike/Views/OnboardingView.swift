@@ -318,12 +318,17 @@ extension OnboardingView {
             featureRow(
                 icon: "contextualmenu.and.cursorarrow",
                 title: "Right-Click Menu",
-                description: "Right-click a window to close, minimize, hide or quit its app."
+                description: "Right-click a window to close, minimize, hide or quit its app, or the background to quit apps with no windows."
             )
             featureRow(
                 icon: "command",
                 title: "Keyboard Shortcuts",
                 description: "Point at a window and press ⌘W to close, ⌘M to minimize, ⌘H to hide or ⌘Q to quit."
+            )
+            featureRow(
+                icon: "dock.rectangle",
+                title: "Dock Middle-Click",
+                description: "Turn it on in Settings to quit an app by middle-clicking its Dock icon."
             )
         }
     }

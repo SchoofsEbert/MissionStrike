@@ -19,14 +19,17 @@
 - 🗂️ **Close Spaces** — click a Space thumbnail in the Spaces Bar to remove it instantly.
 - 📦 **⌘ Cmd + Click** — close *all* windows of an app at once.
 - ➖ **⇧ Shift + Click** — minimize a window to the Dock instead of closing it.
-- 📋 **Right-click menu** — right-click a window to close, minimize, hide, or quit its app (hold ⌥ to force quit), or right-click a Space to close it.
+- 📋 **Right-click menu** — right-click a window to close it, close the app's other windows, minimize, hide, hide others, or quit its app (hold ⌥ to force quit). Right-click a Space to close it, or the empty background to see and quit apps that have no windows open.
 - ⌘ **Keyboard shortcuts** — point at a window and press ⌘W to close, ⌘M to minimize, ⌘H to hide, or ⌘Q to quit its app. ⌘W on a Space closes it.
 - 🔴 **Hover badge** — hold your modifier key and a traffic-light badge marks the window a click will act on: ✕ close, − minimize (⇧), or close all (⌘).
+- 🚢 **Dock middle-click** *(optional)* — middle-click a running app in the Dock to quit it, or hold ⌥ to close its windows instead.
+- 💨 **Poof** *(optional)* — a puff of smoke where a window or Space was closed.
 - 🎛️ **Customizable** — choose your modifier key and switch each feature on or off in Settings.
 - ⏸️ **Menu bar status and Pause** — see at a glance whether MissionStrike is active, and pause it when you need Mission Control untouched.
 - 🔄 **One-click auto-updates** — a What's New window shows the release notes; install and relaunch with a single click. Updates keep the Accessibility permission.
 - 🛡️ **Resilient event tap** — auto-recovers if macOS disables it, with App Nap prevention.
 - 🧭 **Onboarding walkthrough** on first launch to guide you through setup.
+- 🩺 **Copy Diagnostics** — in About; copies what MissionStrike saw in Mission Control (never window titles) to paste into a bug report.
 
 ## Installation
 
