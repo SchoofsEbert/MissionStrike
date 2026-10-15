@@ -87,3 +87,34 @@ jobs:
           --title "$GITHUB_REF_NAME" \
           --notes-file release-notes.md \
           --verify-tag
+
+    # Bumps the cask in SchoofsEbert/homebrew-tap. The deploy key can write to that
+    # repo only; the step is skipped until the secret exists.
+    - name: Update Homebrew cask
+      env:
+        TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      run: |
+        if [ -z "$TAP_DEPLOY_KEY" ]; then
+          echo "::warning::HOMEBREW_TAP_DEPLOY_KEY is not set; skipping the cask update"
+          exit 0
+        fi
+        VERSION="${GITHUB_REF_NAME#v}"
+        SHA=$(cut -d ' ' -f 1 MissionStrike/dist/MissionStrike.app.zip.sha256)
+        KEY_FILE="$RUNNER_TEMP/tap_key"
+        ( umask 077; printf '%s\n' "$TAP_DEPLOY_KEY" > "$KEY_FILE" )
+        trap 'rm -f "$KEY_FILE"' EXIT
+        # GitHub's published host key (api.github.com/meta), so the push can't be redirected.
+        echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" \
+          > "$RUNNER_TEMP/known_hosts"
+        export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+        git clone --depth 1 git@github.com:SchoofsEbert/homebrew-tap.git "$RUNNER_TEMP/tap"
+        cd "$RUNNER_TEMP/tap"
+        sed -i '' -E \
+          -e "s/^  version \".*\"/  version \"$VERSION\"/" \
+          -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" \
+          Casks/missionstrike.rb
+        git diff
+        git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "missionstrike $VERSION"
+        git push

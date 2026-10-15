@@ -44,6 +44,14 @@ Then launch it:
 open /Applications/MissionStrike.app
 ```
 
+### Homebrew
+
+```bash
+brew install --cask schoofsebert/tap/missionstrike
+```
+
+Installing by the full name trusts only this cask from the [tap](https://github.com/SchoofsEbert/homebrew-tap). The cask removes the quarantine flag after installing, because releases aren't signed with an Apple Developer ID. MissionStrike updates itself, so `brew upgrade` skips it unless you pass `--greedy`.
+
 ### Manual Install
 
 1. Go to the [Releases](https://github.com/SchoofsEbert/MissionStrike/releases) page.
