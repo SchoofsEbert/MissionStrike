@@ -3,7 +3,7 @@ import ServiceManagement
 import ApplicationServices
 import os.log
 
-private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "Settings")
+private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "Settings")
 
 struct SettingsView: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true

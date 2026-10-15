@@ -9,7 +9,7 @@
 	<key>CFBundleIconName</key>
 	<string>MissionStrike</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.vibecoded.missionstrike</string>
+	<string>io.github.schoofsebert.missionstrike</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

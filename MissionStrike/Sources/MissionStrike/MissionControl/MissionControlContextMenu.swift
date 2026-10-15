@@ -1,7 +1,7 @@
 import AppKit
 import os.log
 
-private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "ContextMenu")
+private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "ContextMenu")
 
 /// What a right-click in Mission Control landed on.
 enum ContextMenuTarget: @unchecked Sendable {

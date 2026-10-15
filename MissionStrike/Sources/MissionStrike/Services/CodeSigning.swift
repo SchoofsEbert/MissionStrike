@@ -9,7 +9,7 @@ import Security
 enum CodeSigning {
     /// Designated requirement of release builds. `scripts/package-app.sh` reads this line,
     /// and `install.sh` repeats it; keep all three in sync if the certificate ever changes.
-    static let requirement = #"identifier "com.vibecoded.missionstrike" and certificate leaf = H"4db8f2724be711f4ad297925bac86fb1a77e8037""#
+    static let requirement = #"identifier "io.github.schoofsebert.missionstrike" and certificate leaf = H"4db8f2724be711f4ad297925bac86fb1a77e8037""#
 
     /// Whether the bundle at `url` has a valid signature that satisfies ``requirement``.
     static func isTrustedRelease(at url: URL) -> Bool {

@@ -13,7 +13,7 @@ import os.log
 @discardableResult
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: inout CGWindowID) -> AXError
 
-private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "MissionControl")
+private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "MissionControl")
 
 // MARK: - Mission Control Detection Protocol
 

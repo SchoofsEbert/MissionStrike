@@ -12,7 +12,7 @@ INSTALL_DIR="/Applications"
 REPO="SchoofsEbert/MissionStrike"
 # Every release is signed with MissionStrike's own certificate; refuse anything else.
 # Keep in sync with MissionStrike/Sources/MissionStrike/Services/CodeSigning.swift.
-REQUIREMENT='identifier "com.vibecoded.missionstrike" and certificate leaf = H"4db8f2724be711f4ad297925bac86fb1a77e8037"'
+REQUIREMENT='identifier "io.github.schoofsebert.missionstrike" and certificate leaf = H"4db8f2724be711f4ad297925bac86fb1a77e8037"'
 TMP_DIR="$(mktemp -d)"
 
 cleanup() { rm -rf "$TMP_DIR"; }

@@ -2,14 +2,14 @@ import Cocoa
 import CoreGraphics
 import os.log
 
-private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "EventTap")
+private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "EventTap")
 
 extension Notification.Name {
     /// Posted on the default `NotificationCenter` whenever the event tap starts or stops.
-    static let eventTapStateChanged = Notification.Name("com.vibecoded.missionstrike.eventTapStateChanged")
+    static let eventTapStateChanged = Notification.Name("io.github.schoofsebert.missionstrike.eventTapStateChanged")
 
     /// Posted when `CGEvent.tapCreate` fails entirely (e.g., on MDM-managed Apple Silicon Macs).
-    static let eventTapCreationFailed = Notification.Name("com.vibecoded.missionstrike.eventTapCreationFailed")
+    static let eventTapCreationFailed = Notification.Name("io.github.schoofsebert.missionstrike.eventTapCreationFailed")
 }
 
 @MainActor

@@ -3,7 +3,7 @@ import Cocoa
 import os.log
 
 private let logger = Logger(
-    subsystem: "com.vibecoded.missionstrike",
+    subsystem: "io.github.schoofsebert.missionstrike",
     category: "UpdateChecker"
 )
 

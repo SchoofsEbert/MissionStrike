@@ -5,7 +5,7 @@ import SwiftUI
 import UserNotifications
 import os.log
 
-private let logger = Logger(subsystem: "com.vibecoded.missionstrike", category: "AppDelegate")
+private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "AppDelegate")
 
 extension UserDefaults {
     @objc dynamic var showMenuBarIcon: Bool {
@@ -37,6 +37,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             options: .userInitiated,
             reason: "Event tap must remain responsive for Mission Control clicks"
         )
+
+        IdentifierMigration.migrateIfNeeded()
 
         // Register all UserDefaults defaults in one place
         UserDefaults.standard.register(defaults: [
@@ -200,7 +202,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             + "until permissions are restored. Re-enable in System Settings → Privacy & Security → Accessibility."
         content.sound = .default
 
-        let request = UNNotificationRequest(identifier: "com.vibecoded.missionstrike.permissionLost", content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: "io.github.schoofsebert.missionstrike.permissionLost", content: content, trigger: nil)
         Task {
             let center = UNUserNotificationCenter.current()
             // The orange menu bar icon still shows the state when notifications are off.
