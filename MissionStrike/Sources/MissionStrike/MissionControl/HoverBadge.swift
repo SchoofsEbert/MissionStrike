@@ -39,6 +39,9 @@ final class HoverBadgeController {
     private var flashGeneration = 0
     private static let flashPulses = 3
     private static let flashPulseDuration: TimeInterval = 0.35
+    private static let flashFadeOutDuration: TimeInterval = 0.15
+    private static let flashFrameInterval: Duration = .milliseconds(16)
+    private static let flashPendingCheckInterval: Duration = .milliseconds(300)
     private var timer: Timer?
     private var flags: CGEventFlags = []
     /// Thumbnail the badge is currently on; a different one gets a fresh fade-in.
@@ -131,20 +134,38 @@ final class HoverBadgeController {
         flashGeneration += 1
         let generation = flashGeneration
         Task { @MainActor in
-            var tick = 0
-            while generation == flashGeneration, isPending(), MissionControlActiveChecker().isActive() {
+            let start = ContinuousClock.now
+            var lastPendingCheck = start
+            var dimmed: Bool?
+            // Mission Control is checked every frame: its WindowManager overlays vanish as soon
+            // as it starts closing, so the badge can fade out with Mission Control, not after it.
+            while generation == flashGeneration, MissionControlActiveChecker().isActive() {
+                let now = ContinuousClock.now
+                if now - lastPendingCheck >= Self.flashPendingCheckInterval {
+                    lastPendingCheck = now
+                    guard isPending() else { break }
+                }
                 // Alternate bright and dim for the first pulses, then hold steady.
-                let dim = tick < Self.flashPulses * 2 && !tick.isMultiple(of: 2)
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = Self.flashPulseDuration
-                    panel.animator().alphaValue = dim ? 0.35 : 1
-                }, completionHandler: nil)
-                tick += 1
-                try? await Task.sleep(for: .seconds(Self.flashPulseDuration))
+                let step = Int((now - start) / .seconds(Self.flashPulseDuration))
+                let dim = step < Self.flashPulses * 2 && !step.isMultiple(of: 2)
+                if dim != dimmed {
+                    dimmed = dim
+                    NSAnimationContext.runAnimationGroup({ context in
+                        context.duration = Self.flashPulseDuration
+                        panel.animator().alphaValue = dim ? 0.35 : 1
+                    }, completionHandler: nil)
+                }
+                try? await Task.sleep(for: Self.flashFrameInterval)
             }
             guard generation == flashGeneration else { return }
-            panel.alphaValue = 0
-            panel.orderOut(nil)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = Self.flashFadeOutDuration
+                panel.animator().alphaValue = 0
+            }, completionHandler: nil)
+            try? await Task.sleep(for: .seconds(Self.flashFadeOutDuration))
+            if generation == flashGeneration {
+                panel.orderOut(nil)
+            }
         }
     }
 
