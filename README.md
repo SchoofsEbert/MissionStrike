@@ -5,7 +5,7 @@
 <h1 align="center">MissionStrike</h1>
 
 <p align="center">
-  <strong>A lightweight macOS utility that lets you close, minimize, and manage windows directly from Mission Control.</strong>
+  <strong>Close, minimize and manage windows straight from Mission Control.</strong>
 </p>
 
 ---
@@ -14,119 +14,78 @@
 
 ## Features
 
-- 🖱️ **Middle-click** to close windows in Mission Control.
-- ⌨️ **Option + Left Click** as an alternative (configurable modifier key).
-- 🗂️ **Close Spaces** — click a Space thumbnail in the Spaces Bar to remove it instantly.
-- 📦 **⌘ Cmd + Click** — close *all* windows of an app at once.
-- ➖ **⇧ Shift + Click** — minimize a window to the Dock instead of closing it.
-- 📋 **Right-click menu** — right-click a window to close it, close the app's other windows, minimize, hide, hide others, or quit its app (hold ⌥ to force quit). Right-click a Space to close it, or the empty background to see and quit apps that have no windows open.
-- ⌘ **Keyboard shortcuts** — point at a window and press ⌘W to close, ⌘M to minimize, ⌘H to hide, or ⌘Q to quit its app. ⌘W on a Space closes it.
-- 🔴 **Hover badge** — hold your modifier key and a traffic-light badge marks the window a click will act on: ✕ close, − minimize (⇧), or close all (⌘).
-- 🚢 **Dock middle-click** *(optional)* — middle-click a running app in the Dock to quit it, or hold ⌥ to close its windows instead.
-- 💨 **Poof** *(optional)* — a puff of smoke where a window or Space was closed.
-- 🎛️ **Customizable** — choose your modifier key and switch each feature on or off in Settings.
-- ⏸️ **Menu bar status and Pause** — see at a glance whether MissionStrike is active, and pause it when you need Mission Control untouched.
-- 🔄 **One-click auto-updates** — a What's New window shows the release notes; install and relaunch with a single click. Updates keep the Accessibility permission.
-- 🛡️ **Resilient event tap** — auto-recovers if macOS disables it, with App Nap prevention.
-- 🧭 **Onboarding walkthrough** on first launch to guide you through setup.
-- 🩺 **Copy Diagnostics** — in About; copies what MissionStrike saw in Mission Control (never window titles) to paste into a bug report.
+In Mission Control, point at a window or Space and:
+
+| Action | Does |
+|---|---|
+| **Middle-click** or **⌥ Option + click** | Close the window or Space |
+| **⇧ Shift + click** | Minimize the window |
+| **⌘ Command + click** | Close all of that app's windows |
+| **⌘W / ⌘M / ⌘H / ⌘Q** | Close, minimize, hide or quit |
+| **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to quit apps with no windows. |
+
+Hold your modifier key and a small badge shows which window a click will hit. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
 
 ## Installation
 
-### Quick Install (Recommended)
-
-Run this single command in **Terminal** — it downloads the latest release, checks that it is signed by MissionStrike, removes the macOS quarantine flag, and installs the app to `/Applications`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
-```
-
-Then launch it:
-
-```bash
-open /Applications/MissionStrike.app
-```
-
-### Homebrew
+### Homebrew (recommended)
 
 ```bash
 brew install --cask schoofsebert/tap/missionstrike
 ```
 
-Installing by the full name trusts only this cask from the [tap](https://github.com/SchoofsEbert/homebrew-tap). The cask removes the quarantine flag after installing, because releases aren't signed with an Apple Developer ID. MissionStrike updates itself, so `brew upgrade` skips it unless you pass `--greedy`.
+### Install script
 
-### Manual Install
+```bash
+curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
+```
 
-1. Go to the [Releases](https://github.com/SchoofsEbert/MissionStrike/releases) page.
-2. Download the latest `MissionStrike.app.zip`.
-3. Unzip the file and move `MissionStrike.app` into your `Applications` folder.
-4. Because this app is not signed with a paid Apple Developer account, macOS will quarantine downloaded apps and mark them as "damaged". To fix this, open Terminal and run:
-   ```bash
-   xattr -cr /Applications/MissionStrike.app
-   ```
-5. Launch the app.
+The script downloads the latest release, checks its signature and installs it to `/Applications`.
 
-### Initial Setup & Permissions
+### Manual
 
-Because this app intercepts mouse clicks and needs to ask the system to close un-focused windows, macOS requires you to grant it Accessibility permissions.
+Download `MissionStrike.app.zip` from [Releases](https://github.com/SchoofsEbert/MissionStrike/releases), move the app to `Applications`, and clear the quarantine flag macOS puts on unsigned downloads:
 
-1. Upon first launch, macOS will likely prompt you about Accessibility permissions.
-2. Open **System Settings** > **Privacy & Security** > **Accessibility**.
-3. Toggle the switch next to **MissionStrike** to ON.
-4. The app will automatically detect the permission change and start working — no re-launch needed!
+```bash
+xattr -cr /Applications/MissionStrike.app
+```
 
-*If you accidentally denied the prompt, simply navigate to the Accessibility settings manually, hit the `+` button, and add `MissionStrike.app` from your Applications folder.*
+> ℹ️ Releases are signed with MissionStrike's own certificate rather than a paid Apple Developer ID. That's why Homebrew and the script remove the quarantine flag for you.
 
-> ℹ️ **After updates:** since v2.6.1, every release is signed with the same MissionStrike certificate, so macOS keeps the Accessibility permission across updates. Updating from an older version asks for it one last time. If MissionStrike ever stops working after an update, open System Settings → Privacy & Security → Accessibility, remove MissionStrike, then re-add it.
+### Accessibility permission
+
+MissionStrike needs Accessibility access to see clicks in Mission Control and close windows. The setup guide on first launch walks you through it. Updates keep the permission.
 
 ## Updating
 
-MissionStrike checks for updates automatically once every 24 hours and can also be triggered manually via **Check for Updates…** in the menu bar.
+MissionStrike checks for updates once a day; you can also check from the menu bar. A window shows what's new, and **Install & Relaunch** downloads the update, verifies its signature and restarts the app.
 
-When a new version is available, a **Software Update** window shows what's new in that release, with three options:
-
-| Option | What it does |
-|---|---|
-| **Install & Relaunch** | Downloads the update, verifies it is signed by MissionStrike, removes the macOS quarantine flag, replaces the app, and relaunches — fully automatic, no Terminal required. Progress is shown in the same window. |
-| **View on GitHub** | Opens the GitHub release page. |
-| **Later** | Closes the window. You'll be reminded on the next check. |
-
-If the automatic install fails for any reason, the window offers a link to download the update manually.
-
-> 💡 **Tip:** You can also re-run the install script at any time to update to the latest version:
-> ```bash
-> curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
-> ```
+Homebrew leaves updates to the app, so `brew upgrade` only updates MissionStrike with `--greedy`.
 
 ## Building from Source
 
-If you prefer to build the project yourself (requires Xcode or the Swift Command Line tools):
+Requires Xcode or the Swift command line tools.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/SchoofsEbert/MissionStrike.git
-   cd MissionStrike/MissionStrike
-   ```
-2. Build the project:
-   ```bash
-   swift build -c release
-   ```
-3. To package it into a signed `.app` bundle and zip, run `scripts/package-app.sh` from the repository root. The output lands in `MissionStrike/dist/`. Without the MissionStrike signing certificate the build is signed ad-hoc, which works but means macOS asks for Accessibility again after every build.
+```bash
+git clone https://github.com/SchoofsEbert/MissionStrike.git
+cd MissionStrike
+scripts/package-app.sh
+```
+
+The signed app and zip end up in `MissionStrike/dist/`. Without the MissionStrike signing certificate the build is signed ad hoc, so macOS asks for Accessibility again after every build.
 
 ### Release signing
 
-Releases are signed with a self-signed certificate (no paid Apple Developer account). Its stable signature keeps the Accessibility permission across updates, and both the in-app updater and `install.sh` refuse downloads that aren't signed with it. Each release also carries a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations), which you can check with `gh attestation verify MissionStrike.app.zip --repo SchoofsEbert/MissionStrike`.
+Releases are signed with a self-signed certificate; the in-app updater and `install.sh` reject downloads that aren't. Each release also has a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations): `gh attestation verify MissionStrike.app.zip --repo SchoofsEbert/MissionStrike`.
 
 ## How it Works
 
-1. A global event tap (`CGEventTap`) listens for middle-clicks, modifier+left-clicks (configurable), right-clicks, ⌘-shortcuts and modifier changes. Everything outside Mission Control passes straight through.
-2. Mission Control is detected via Dock / WindowManager overlay windows (so a lonely dock bounce doesn’t count).
-3. Modifier keys pick the action: plain click closes, **⇧** minimizes, **⌘** closes all windows for that app. Right-clicks open MissionStrike's own menu, and ⌘W / ⌘M / ⌘H / ⌘Q act on the window under the pointer.
-4. The click is hit-tested through Accessibility:
+1. A global event tap listens for clicks, ⌘ shortcuts and modifier keys. Everything outside Mission Control passes straight through.
+2. Mission Control is detected by the Dock and WindowManager overlay windows.
+3. The click is hit-tested through Accessibility:
    - **Spaces Bar** → `AXRemoveDesktop` on the Space under the cursor.
-   - **Window tile (macOS 27+)** → WindowManager thumbnail `wid` → real window → close / minimize / close-all.
-   - **Older Mission Control** → classic `AXWindow` close button / `AXClose`.
-5. On macOS 27+, click coordinates are Y-flipped once to match AX’s top-left space (WindowManager UI and the event tap don’t agree on Y). Older macOS keeps the unflipped path.
-6. While the modifier key is held, the same hit test runs about 30 times a second to place the hover badge on the window under the pointer.
+   - **Window thumbnail (macOS 27+)** → the thumbnail's `wid` → the real window → close, minimize or close all.
+   - **Older Mission Control** → the classic `AXWindow` close button.
+4. On macOS 27+, click coordinates are flipped vertically to match Accessibility's top-left origin.
 
-Enjoy a cleaner Mission Control experience!
+If something doesn't work, **About → Copy Diagnostics** copies what MissionStrike saw (never window titles) for a bug report.
