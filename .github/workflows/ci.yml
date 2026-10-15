@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+    # Third-party actions are pinned to full commit SHAs so a moved tag cannot change them.
+    - name: Checkout Repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Swift
+      uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+      with:
+        swift-version: '6'
+
+    # Warnings are reported but only errors fail the build.
+    - name: Lint
+      run: |
+        brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+        cd MissionStrike
+        swiftlint lint --reporter github-actions-logging
+
+    - name: Run tests
+      run: |
+        cd MissionStrike
+        swift test
