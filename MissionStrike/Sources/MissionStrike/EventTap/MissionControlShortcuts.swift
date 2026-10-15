@@ -19,6 +19,13 @@ enum MissionControlShortcut: Sendable {
         default: return nil
         }
     }
+
+    /// The shortcut for a key press with exactly ⌘ held; nil for anything else.
+    init?(keyCode: Int64, flags: CGEventFlags) {
+        let modifiers = flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
+        guard modifiers == .maskCommand else { return nil }
+        self.init(keyCode: keyCode)
+    }
 }
 
 /// ⌘W / ⌘M / ⌘H / ⌘Q act on the hovered thumbnail while Mission Control is open.
@@ -26,9 +33,10 @@ enum MissionControlShortcut: Sendable {
 /// Runs on the event tap callback, so the cheap key checks come before the Mission Control check.
 func handleMissionControlShortcut(_ event: CGEvent) -> Unmanaged<CGEvent>? {
     let pass = Unmanaged.passUnretained(event)
-    let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
-    guard modifiers == .maskCommand,
-          let shortcut = MissionControlShortcut(keyCode: event.getIntegerValueField(.keyboardEventKeycode)),
+    guard let shortcut = MissionControlShortcut(
+            keyCode: event.getIntegerValueField(.keyboardEventKeycode),
+            flags: event.flags
+          ),
           UserDefaults.standard.bool(forKey: "enableKeyboardShortcuts"),
           MissionControlActiveChecker().isActive() else {
         return pass

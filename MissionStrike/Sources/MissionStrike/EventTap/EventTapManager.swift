@@ -117,9 +117,8 @@ private let debounceInterval: TimeInterval = MissionStrikeConfig.default.debounc
 /// Only accessed from the run-loop thread (event tap callback), so no lock is needed.
 nonisolated(unsafe) private var lastProcessedClickTime: UInt64 = 0
 
-/// Mouse-up types whose mouse-down was swallowed for the context menu. The ups are
-/// swallowed too; otherwise they reach Mission Control (or land on the fresh menu).
-nonisolated(unsafe) private var mouseUpsToSwallow: Set<CGEventType> = []
+/// Releases of swallowed presses. Only accessed from the run-loop thread (event tap callback).
+nonisolated(unsafe) private var swallowedMouseUps = SwallowedMouseUps()
 
 // MARK: - Event Tap Callback
 
@@ -137,10 +136,10 @@ private func eventTapCallback(
         return handleKeyboardEvent(type: type, event: event)
     }
 
-    if isMouseUp(type) {
-        return mouseUpsToSwallow.remove(type) == nil ? Unmanaged.passUnretained(event) : nil
+    if SwallowedMouseUps.isMouseUp(type) {
+        return swallowedMouseUps.consume(type) ? nil : Unmanaged.passUnretained(event)
     }
-    forgetLostMouseUp(beforePress: type)
+    swallowedMouseUps.forgetLostRelease(beforePress: type)
 
     if MissionControlContextMenu.isOpen {
         return handleMouseWhileMenuOpen(type: type, event: event)
@@ -151,30 +150,18 @@ private func eventTapCallback(
     }
 
     if type == .otherMouseDown, handleDockMiddleClick(event) {
-        mouseUpsToSwallow.insert(.otherMouseUp)
+        swallowedMouseUps.swallowRelease(of: type)
         return nil
     }
 
-    // Determine if this event matches a configured trigger
     let flags = event.flags
-    let isTrigger: Bool
-
-    if type == .otherMouseDown && event.getIntegerValueField(.mouseEventButtonNumber) == 2 {
-        // Middle click — check if enabled in preferences
-        isTrigger = UserDefaults.standard.bool(forKey: "enableMiddleClick")
-    } else if type == .leftMouseDown {
-        // Left click — check configured modifier
-        let modifierRaw = UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option"
-        if let modifier = TriggerModifier(rawValue: modifierRaw),
-           let mask = modifier.eventFlagMask {
-            isTrigger = flags.contains(mask)
-        } else {
-            isTrigger = false
-        }
-    } else {
-        isTrigger = false
-    }
-
+    let isTrigger = ClickTrigger.matches(
+        type: type,
+        buttonNumber: event.getIntegerValueField(.mouseEventButtonNumber),
+        flags: flags,
+        middleClickEnabled: UserDefaults.standard.bool(forKey: "enableMiddleClick"),
+        leftClickModifier: TriggerModifier(rawValue: UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option")
+    )
     guard isTrigger else {
         return Unmanaged.passUnretained(event)
     }
@@ -193,25 +180,18 @@ private func eventTapCallback(
     let isActive = MissionControlActiveChecker().isActive()
 
     if isActive {
-        // Single resolve from the live cursor. HitTester applies an OS-gated Y-flip
-        // when Mission Control’s AX space is mirrored vs click coordinates (macOS 27+).
-        let clickPoint = NSEvent.mouseLocation
-        let resolution = MissionControlHitTester.resolve(clickPoint: clickPoint)
-        Diagnostics.shared.record(type == .otherMouseDown ? "middle-click" : "modifier-click", resolution: resolution)
-
         lastProcessedClickTime = now
-
-        if let resolution {
-            let action: MouseAction
-            if flags.contains(.maskCommand) {
-                action = .closeAll
-            } else if flags.contains(.maskShift) {
-                action = .minimize
-            } else {
-                action = .close
-            }
-
-            Task { @MainActor in
+        // Hit-testing asks the Dock and WindowManager through Accessibility, which can be
+        // slow. The click is swallowed whatever it hits, so resolve after the callback returns
+        // rather than holding up input. HitTester applies an OS-gated Y-flip when Mission
+        // Control's AX space is mirrored vs click coordinates (macOS 27+).
+        let clickPoint = NSEvent.mouseLocation
+        let input = type == .otherMouseDown ? "middle-click" : "modifier-click"
+        let action = MouseAction(flags: flags)
+        Task { @MainActor in
+            let resolution = MissionControlHitTester.resolve(clickPoint: clickPoint)
+            Diagnostics.shared.record(input, resolution: resolution)
+            if let resolution {
                 MissionControlManager.shared.perform(resolution: resolution, action: action)
             }
         }
@@ -262,19 +242,14 @@ private func handleRightMouseDown(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         return Unmanaged.passUnretained(event)
     }
 
-    let target = contextMenuTarget(at: NSEvent.mouseLocation)
-    mouseUpsToSwallow.insert(.rightMouseUp)
-    // Async: popUp runs a nested run loop and must not block this callback.
+    let point = NSEvent.mouseLocation
+    swallowedMouseUps.swallowRelease(of: .rightMouseDown)
+    // Async: popUp runs a nested run loop and must not block this callback, and the
+    // menu hit-tests the point itself, after the callback returns.
     Task { @MainActor in
-        MissionControlContextMenu.shared.show(for: target)
+        MissionControlContextMenu.shared.show(at: point)
     }
     return nil
-}
-
-private func contextMenuTarget(at point: CGPoint) -> ContextMenuTarget {
-    let resolution = MissionControlHitTester.resolve(clickPoint: point)
-    Diagnostics.shared.record("right-click", resolution: resolution)
-    return resolution.map(ContextMenuTarget.thumbnail) ?? .background
 }
 
 /// While the context menu is open: clicks on the menu work as usual, a right-click
@@ -285,41 +260,14 @@ private func handleMouseWhileMenuOpen(type: CGEventType, event: CGEvent) -> Unma
         return Unmanaged.passUnretained(event)
     }
 
-    var next: ContextMenuTarget?
-    switch type {
-    case .rightMouseDown:
-        mouseUpsToSwallow.insert(.rightMouseUp)
-        next = contextMenuTarget(at: NSEvent.mouseLocation)
-    case .leftMouseDown:
-        mouseUpsToSwallow.insert(.leftMouseUp)
-    default:
-        mouseUpsToSwallow.insert(.otherMouseUp)
-    }
-    let target = next
+    swallowedMouseUps.swallowRelease(of: type)
+    let next: CGPoint? = type == .rightMouseDown ? NSEvent.mouseLocation : nil
     // The tap's run loop source lives on the main run loop, so this already runs on
     // the main thread inside the menu's tracking loop.
     MainActor.assumeIsolated {
-        MissionControlContextMenu.shared.replace(with: target)
+        MissionControlContextMenu.shared.replace(withMenuAt: next)
     }
     return nil
-}
-
-private func isMouseUp(_ type: CGEventType) -> Bool {
-    switch type {
-    case .leftMouseUp, .rightMouseUp, .otherMouseUp: true
-    default: false
-    }
-}
-
-/// A new press means any up still pending from an earlier swallowed press was lost
-/// (e.g. while the tap was disabled). Forget it so it can't eat this press's release.
-private func forgetLostMouseUp(beforePress type: CGEventType) {
-    switch type {
-    case .leftMouseDown: mouseUpsToSwallow.remove(.leftMouseUp)
-    case .rightMouseDown: mouseUpsToSwallow.remove(.rightMouseUp)
-    case .otherMouseDown: mouseUpsToSwallow.remove(.otherMouseUp)
-    default: break
-    }
 }
 
 /// Converts a `mach_absolute_time` delta to nanoseconds.

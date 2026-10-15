@@ -15,6 +15,9 @@ extension UserDefaults {
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Seconds an Accessibility call may wait for an app to answer.
+    private static let accessibilityTimeout: Float = 0.5
+
     var settingsWindow: NSWindow?
     var onboardingWindow: NSWindow?
     var aboutWindow: NSWindow?
@@ -37,6 +40,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             options: .userInitiated,
             reason: "Event tap must remain responsive for Mission Control clicks"
         )
+
+        // Accessibility calls wait up to ~6s for an app that doesn't answer. Cap that for
+        // every element (the system-wide one sets the global timeout) so a hung app can't
+        // stall a close or the background menu, which asks every running app for its windows.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), Self.accessibilityTimeout)
 
         IdentifierMigration.migrateIfNeeded()
 
@@ -202,7 +210,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             + "until permissions are restored. Re-enable in System Settings → Privacy & Security → Accessibility."
         content.sound = .default
 
-        let request = UNNotificationRequest(identifier: "io.github.schoofsebert.missionstrike.permissionLost", content: content, trigger: nil)
+        let request = UNNotificationRequest(
+            identifier: "io.github.schoofsebert.missionstrike.permissionLost",
+            content: content,
+            trigger: nil
+        )
         Task {
             let center = UNUserNotificationCenter.current()
             // The orange menu bar icon still shows the state when notifications are off.

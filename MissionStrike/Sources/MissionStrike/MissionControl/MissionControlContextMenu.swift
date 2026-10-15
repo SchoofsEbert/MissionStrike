@@ -32,19 +32,20 @@ final class MissionControlContextMenu: NSObject {
     private var windowlessApps: [NSRunningApplication] = []
 
     private var openMenu: NSMenu?
-    /// Target to open next once the current menu has closed (right-click elsewhere).
-    private var pending: ContextMenuTarget?
+    /// Point to open the next menu at once the current menu has closed (right-click elsewhere).
+    private var pending: CGPoint?
 
-    /// Pops up the menu at the cursor. Blocks in a nested run loop until it closes; the
-    /// event tap keeps running meanwhile because its source is in the common modes.
-    func show(for target: ContextMenuTarget) {
+    /// Pops up the menu for whatever is under `point`. Blocks in a nested run loop until it
+    /// closes; the event tap keeps running meanwhile because its source is in the common modes.
+    func show(at point: CGPoint) {
         if openMenu != nil {
-            replace(with: target)
+            replace(withMenuAt: point)
             return
         }
-        var next: ContextMenuTarget? = target
-        while let current = next {
+        var next: CGPoint? = point
+        while let point = next {
             next = nil
+            let current = Self.target(at: point)
             guard let menu = makeMenu(for: current) else { break }
             if case .thumbnail(let resolution) = current {
                 self.resolution = resolution
@@ -59,10 +60,16 @@ final class MissionControlContextMenu: NSObject {
         }
     }
 
-    /// Closes the open menu and, if `target` is given, opens that target's menu next.
-    func replace(with target: ContextMenuTarget?) {
-        pending = target
+    /// Closes the open menu and, if `point` is given, opens the menu for that point next.
+    func replace(withMenuAt point: CGPoint?) {
+        pending = point
         openMenu?.cancelTrackingWithoutAnimation()
+    }
+
+    private static func target(at point: CGPoint) -> ContextMenuTarget {
+        let resolution = MissionControlHitTester.resolve(clickPoint: point)
+        Diagnostics.shared.record("right-click", resolution: resolution)
+        return resolution.map(ContextMenuTarget.thumbnail) ?? .background
     }
 
     /// Whether a point (Quartz global coordinates) lies on one of our menu windows.

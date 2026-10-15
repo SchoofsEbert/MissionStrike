@@ -6,14 +6,14 @@ enum HoverBadgeStyle: Equatable {
     case close
     case minimize
     case closeAll
+    /// Flashed after a close when the app put up a sheet (unsaved changes, running processes).
+    case needsConfirmation
 
     init(flags: CGEventFlags) {
-        if flags.contains(.maskCommand) {
-            self = .closeAll
-        } else if flags.contains(.maskShift) {
-            self = .minimize
-        } else {
-            self = .close
+        switch MouseAction(flags: flags) {
+        case .close: self = .close
+        case .minimize: self = .minimize
+        case .closeAll: self = .closeAll
         }
     }
 }
@@ -34,6 +34,11 @@ final class HoverBadgeController {
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<HoverBadgeView>?
+    /// Separate from the hover badge so holding the trigger modifier doesn't cut a flash short.
+    private var flashPanel: NSPanel?
+    private var flashGeneration = 0
+    private static let flashPulses = 3
+    private static let flashPulseDuration: TimeInterval = 0.35
     private var timer: Timer?
     private var flags: CGEventFlags = []
     /// Thumbnail the badge is currently on; a different one gets a fresh fade-in.
@@ -79,7 +84,8 @@ final class HoverBadgeController {
     }
 
     private func show(style: HoverBadgeStyle, at thumbnail: CGRect) {
-        let panel = self.panel ?? makePanel()
+        let panel = self.panel ?? Self.makePanel()
+        self.panel = panel
         let view = HoverBadgeView(style: style)
         if let hostingView {
             hostingView.rootView = view
@@ -89,13 +95,7 @@ final class HoverBadgeController {
             self.hostingView = hostingView
         }
 
-        // Circle centre sits just inside the thumbnail's top-left corner, like a window's close button.
-        let size = hostingView?.fittingSize ?? .zero
-        let origin = NSPoint(
-            x: thumbnail.minX + Self.cornerInset - Self.circleCentre,
-            y: thumbnail.maxY - Self.cornerInset - size.height + Self.circleCentre
-        )
-        let badgeFrame = NSRect(origin: origin, size: size)
+        let badgeFrame = Self.badgeFrame(size: hostingView?.fittingSize ?? .zero, on: thumbnail)
         guard thumbnail != currentThumbnail else {
             // Same window, maybe another style (the "All" label changes the width).
             panel.setFrame(badgeFrame, display: true)
@@ -115,6 +115,51 @@ final class HoverBadgeController {
         }
     }
 
+    /// Pulses a badge on a thumbnail a few times, then fades it out. Mission Control stays open.
+    func flash(_ style: HoverBadgeStyle, on thumbnail: CGRect) {
+        let panel = flashPanel ?? Self.makePanel()
+        flashPanel = panel
+        let hostingView = NSHostingView(rootView: HoverBadgeView(style: style))
+        panel.contentView = hostingView
+        panel.setFrame(Self.badgeFrame(size: hostingView.fittingSize, on: thumbnail), display: true)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+
+        flashGeneration += 1
+        let generation = flashGeneration
+        Task { @MainActor in
+            for _ in 0..<Self.flashPulses {
+                for alpha: CGFloat in [1, 0.35] {
+                    NSAnimationContext.runAnimationGroup({ context in
+                        context.duration = Self.flashPulseDuration
+                        panel.animator().alphaValue = alpha
+                    }, completionHandler: nil)
+                    try? await Task.sleep(for: .seconds(Self.flashPulseDuration))
+                    guard generation == flashGeneration else { return }
+                }
+            }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = Self.flashPulseDuration
+                panel.animator().alphaValue = 0
+            }, completionHandler: {
+                MainActor.assumeIsolated {
+                    if generation == HoverBadgeController.shared.flashGeneration {
+                        panel.orderOut(nil)
+                    }
+                }
+            })
+        }
+    }
+
+    /// Circle centre sits just inside the thumbnail's top-left corner, like a window's close button.
+    private static func badgeFrame(size: CGSize, on thumbnail: CGRect) -> NSRect {
+        let origin = NSPoint(
+            x: thumbnail.minX + cornerInset - circleCentre,
+            y: thumbnail.maxY - cornerInset - size.height + circleCentre
+        )
+        return NSRect(origin: origin, size: size)
+    }
+
     private func hide() {
         currentThumbnail = nil
         panel?.orderOut(nil)
@@ -126,7 +171,7 @@ final class HoverBadgeController {
         hide()
     }
 
-    private func makePanel() -> NSPanel {
+    private static func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -143,12 +188,11 @@ final class HoverBadgeController {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .none
-        self.panel = panel
         return panel
     }
 }
 
-/// Traffic-light circle with the action's glyph; "All" is added for close-all.
+/// Traffic-light circle with the action's glyph; close-all and confirmation badges add a label.
 struct HoverBadgeView: View {
     static let diameter: CGFloat = 22
     /// Room around the circle for its shadow.
@@ -161,7 +205,7 @@ struct HoverBadgeView: View {
             Circle()
                 .fill(color.gradient)
                 .overlay(
-                    Image(systemName: style == .minimize ? "minus" : "xmark")
+                    Image(systemName: glyph)
                         .font(.system(size: 10, weight: .heavy))
                         .foregroundStyle(.black.opacity(0.55))
                 )
@@ -169,8 +213,8 @@ struct HoverBadgeView: View {
                 .frame(width: Self.diameter, height: Self.diameter)
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
 
-            if style == .closeAll {
-                Text("All")
+            if let label {
+                Text(label)
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -181,9 +225,26 @@ struct HoverBadgeView: View {
         .padding(Self.padding)
     }
 
+    private var glyph: String {
+        switch style {
+        case .minimize: "minus"
+        case .needsConfirmation: "exclamationmark"
+        case .close, .closeAll: "xmark"
+        }
+    }
+
+    private var label: String? {
+        switch style {
+        case .closeAll: "All"
+        case .needsConfirmation: "Needs Confirmation"
+        case .close, .minimize: nil
+        }
+    }
+
     private var color: Color {
-        style == .minimize
-            ? Color(red: 1.0, green: 0.74, blue: 0.18)
-            : Color(red: 1.0, green: 0.37, blue: 0.34)
+        switch style {
+        case .minimize, .needsConfirmation: Color(red: 1.0, green: 0.74, blue: 0.18)
+        case .close, .closeAll: Color(red: 1.0, green: 0.37, blue: 0.34)
+        }
     }
 }
