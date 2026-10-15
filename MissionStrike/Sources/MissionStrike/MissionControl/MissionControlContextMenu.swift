@@ -138,18 +138,38 @@ final class MissionControlContextMenu: NSObject {
         return menu
     }
 
+    /// Lists the windowless apps by name and icon: click one to quit just that app,
+    /// or quit them all at once.
     private func backgroundMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         windowlessApps = AppHousekeeping.appsWithoutWindows()
-        let names = windowlessApps.compactMap(\.localizedName).sorted()
-        let quit = item(
-            names.isEmpty ? "No Apps Without Windows" : "Quit \(names.count) Apps With No Windows",
+            .sorted { ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "") == .orderedAscending }
+
+        guard !windowlessApps.isEmpty else {
+            let none = NSMenuItem(title: "No Apps Without Windows", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+            return menu
+        }
+
+        menu.addItem(.sectionHeader(title: "Apps With No Windows"))
+        for app in windowlessApps {
+            let appItem = item(app.localizedName ?? "Unknown App", #selector(quitWindowlessApp(_:)))
+            appItem.representedObject = app
+            appItem.toolTip = "Quit \(app.localizedName ?? "this app")"
+            if let icon = app.icon?.copy() as? NSImage {
+                icon.size = NSSize(width: 16, height: 16)
+                appItem.image = icon
+            }
+            menu.addItem(appItem)
+        }
+        menu.addItem(.separator())
+        let count = windowlessApps.count
+        menu.addItem(item(
+            count == 1 ? "Quit \(windowlessApps[0].localizedName ?? "App")" : "Quit All \(count) Apps",
             #selector(quitWindowlessApps)
-        )
-        quit.isEnabled = !names.isEmpty
-        quit.toolTip = names.joined(separator: ", ")
-        menu.addItem(quit)
+        ))
         return menu
     }
 
@@ -189,6 +209,10 @@ final class MissionControlContextMenu: NSObject {
     @objc private func hideOtherApps() {
         guard let app else { return }
         AppHousekeeping.hideOthers(except: app.processIdentifier)
+    }
+
+    @objc private func quitWindowlessApp(_ sender: NSMenuItem) {
+        (sender.representedObject as? NSRunningApplication)?.terminate()
     }
 
     @objc private func quitWindowlessApps() {

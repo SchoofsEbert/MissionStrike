@@ -4,7 +4,7 @@ import ApplicationServices
 /// App-wide tidy-up actions offered from the Mission Control right-click menu.
 @MainActor
 enum AppHousekeeping {
-    /// Apps never offered for "Quit Apps With No Windows": Finder normally has no windows
+    /// Apps never offered for the background menu's list of apps with no windows: Finder normally has no windows
     /// and quitting it only makes it relaunch.
     private static let keptRunning: Set<String> = ["com.apple.finder"]
 
