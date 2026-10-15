@@ -58,6 +58,8 @@ class EventTapManager {
             | (1 << CGEventType.otherMouseUp.rawValue)
             | (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << systemDefinedEventType)
+            | (1 << dockGestureEventType)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -120,6 +122,11 @@ nonisolated(unsafe) private var lastProcessedClickTime: UInt64 = 0
 /// Releases of swallowed presses. Only accessed from the run-loop thread (event tap callback).
 nonisolated(unsafe) private var swallowedMouseUps = SwallowedMouseUps()
 
+/// Media and special keys, including the Mission Control key (`NX_SYSDEFINED`).
+private let systemDefinedEventType: UInt32 = 14
+/// Trackpad swipes that drive Mission Control and Spaces (private `kCGSEventDockControl`).
+private let dockGestureEventType: UInt32 = 30
+
 // MARK: - Event Tap Callback
 
 private func eventTapCallback(
@@ -131,6 +138,29 @@ private func eventTapCallback(
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         return handleTapDisabled(event: event, refcon: refcon)
     }
+    if type.rawValue == systemDefinedEventType || type.rawValue == dockGestureEventType {
+        dismissConfirmationBadge()
+        return Unmanaged.passUnretained(event)
+    }
+
+    let result = handleInput(type: type, event: event)
+    // A press MissionStrike lets through can close Mission Control (Esc, a click on a window or
+    // the background). Mission Control's windows only go once its closing animation is over,
+    // so drop the confirmation badge now rather than waiting for them.
+    if result != nil, type == .keyDown || type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
+        dismissConfirmationBadge()
+    }
+    return result
+}
+
+private func dismissConfirmationBadge() {
+    // The tap's run loop source lives on the main run loop.
+    MainActor.assumeIsolated {
+        HoverBadgeController.shared.dismissFlash()
+    }
+}
+
+private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
 
     if type == .keyDown || type == .flagsChanged {
         return handleKeyboardEvent(type: type, event: event)

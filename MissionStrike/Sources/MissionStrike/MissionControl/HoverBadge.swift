@@ -39,7 +39,7 @@ final class HoverBadgeController {
     private var flashGeneration = 0
     private static let flashPulses = 3
     private static let flashPulseDuration: TimeInterval = 0.35
-    private static let flashFadeOutDuration: TimeInterval = 0.15
+    private static let flashFadeOutDuration: TimeInterval = 0.12
     private static let flashFrameInterval: Duration = .milliseconds(16)
     private static let flashPendingCheckInterval: Duration = .milliseconds(300)
     private var timer: Timer?
@@ -158,10 +158,25 @@ final class HoverBadgeController {
                 try? await Task.sleep(for: Self.flashFrameInterval)
             }
             guard generation == flashGeneration else { return }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = Self.flashFadeOutDuration
-                panel.animator().alphaValue = 0
-            }, completionHandler: nil)
+            fadeOutFlash()
+        }
+    }
+
+    /// Hides the confirmation badge, e.g. when input is about to close Mission Control.
+    func dismissFlash() {
+        guard flashPanel?.isVisible == true else { return }
+        flashGeneration += 1
+        fadeOutFlash()
+    }
+
+    private func fadeOutFlash() {
+        guard let panel = flashPanel else { return }
+        let generation = flashGeneration
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.flashFadeOutDuration
+            panel.animator().alphaValue = 0
+        }, completionHandler: nil)
+        Task { @MainActor in
             try? await Task.sleep(for: .seconds(Self.flashFadeOutDuration))
             if generation == flashGeneration {
                 panel.orderOut(nil)
