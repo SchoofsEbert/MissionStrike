@@ -35,7 +35,7 @@ struct ClickTriggerTests {
         button: Int64 = 0,
         flags: CGEventFlags = [],
         middleClick: Bool = true,
-        modifier: TriggerModifier? = .option
+        modifier: TriggerModifier? = TriggerModifier.option
     ) -> Bool {
         ClickTrigger.matches(
             type: type,
@@ -59,12 +59,12 @@ struct ClickTriggerTests {
         #expect(matches(.leftMouseDown, flags: [.maskAlternate, .maskShift]))
         #expect(!matches(.leftMouseDown))
         #expect(!matches(.leftMouseDown, flags: .maskControl))
-        #expect(matches(.leftMouseDown, flags: .maskControl, modifier: .control))
+        #expect(matches(.leftMouseDown, flags: .maskControl, modifier: TriggerModifier.control))
     }
 
     @Test("A disabled or unknown modifier never triggers")
     func disabledModifier() {
-        #expect(!matches(.leftMouseDown, flags: .maskAlternate, modifier: .disabled))
+        #expect(!matches(.leftMouseDown, flags: .maskAlternate, modifier: TriggerModifier.disabled))
         #expect(!matches(.leftMouseDown, flags: .maskAlternate, modifier: nil))
     }
 
