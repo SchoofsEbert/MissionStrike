@@ -108,7 +108,8 @@ extension MissionControlManager {
                     case .needsConfirmation:
                         logger.debug("Close is waiting on a confirmation sheet.")
                         guard let thumbnail = close.thumbnail ?? anchor else { break }
-                        HoverBadgeController.shared.flash(.needsConfirmation, on: thumbnail) {
+                        let appName = NSRunningApplication(processIdentifier: close.pid)?.localizedName
+                        HoverBadgeController.shared.flash(.needsConfirmation(appName: appName), on: thumbnail) {
                             close.state() == .open(hasSheet: true)
                         }
                     case .failed:

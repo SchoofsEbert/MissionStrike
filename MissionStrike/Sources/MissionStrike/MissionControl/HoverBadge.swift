@@ -8,7 +8,7 @@ enum HoverBadgeStyle: Equatable {
     case minimize
     case closeAll
     /// Flashed after a close when the app put up a sheet (unsaved changes, running processes).
-    case needsConfirmation
+    case needsConfirmation(appName: String?)
     /// Shaken when an action didn't go through.
     case failed
 
@@ -18,6 +18,21 @@ enum HoverBadgeStyle: Equatable {
         case .minimize: self = .minimize
         case .closeAll: self = .closeAll
         }
+    }
+
+    /// Text next to the circle, if any.
+    var label: String? {
+        switch self {
+        case .closeAll: "All"
+        case .needsConfirmation(let appName): "\(appName ?? "The app") asks before closing"
+        case .close, .minimize, .failed: nil
+        }
+    }
+
+    /// What VoiceOver says when the badge appears; nil for badges that follow the pointer.
+    var announcement: String? {
+        guard case .needsConfirmation(let appName) = self else { return nil }
+        return "\(appName ?? "The app") asks before closing the window."
     }
 }
 
@@ -163,6 +178,12 @@ final class HoverBadgeController {
         panel.alphaValue = 1
         hostingView.layer?.add(ActionFeedback.reduceMotion ? Self.fadeIn() : Self.pulse(), forKey: "pulse")
         panel.orderFrontRegardless()
+        if let announcement = style.announcement {
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+                .announcement: announcement,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue
+            ])
+        }
 
         flashGeneration += 1
         let generation = flashGeneration
@@ -315,6 +336,8 @@ struct HoverBadgeView: View {
     static let padding: CGFloat = 4
 
     let style: HoverBadgeStyle
+    /// Increase Contrast (System Settings › Accessibility › Display) draws stronger edges.
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 4) {
@@ -323,44 +346,43 @@ struct HoverBadgeView: View {
                 .overlay(
                     Image(systemName: glyph)
                         .font(.system(size: 10, weight: .heavy))
-                        .foregroundStyle(.black.opacity(0.55))
+                        .foregroundStyle(.black.opacity(highContrast ? 0.85 : 0.55))
                 )
-                .overlay(Circle().strokeBorder(.black.opacity(0.18), lineWidth: 0.5))
+                .overlay(Circle().strokeBorder(.black.opacity(highContrast ? 0.7 : 0.18), lineWidth: highContrast ? 1 : 0.5))
                 .frame(width: Self.diameter, height: Self.diameter)
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
 
-            if let label {
+            if let label = style.label {
                 Text(label)
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(.primary.opacity(highContrast ? 0.6 : 0), lineWidth: 1))
                     .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
             }
         }
         .padding(Self.padding)
     }
 
+    private var highContrast: Bool {
+        contrast == .increased
+    }
+
     private var glyph: String {
         switch style {
         case .minimize: "minus"
-        case .needsConfirmation: "exclamationmark"
+        case .needsConfirmation: "questionmark"
         case .close, .closeAll, .failed: "xmark"
         }
     }
 
-    private var label: String? {
-        switch style {
-        case .closeAll: "All"
-        case .needsConfirmation: "Needs Confirmation"
-        case .close, .minimize, .failed: nil
-        }
-    }
-
+    /// System colours, so Increase Contrast and the accessibility colour filters apply.
     private var color: Color {
         switch style {
-        case .minimize, .needsConfirmation: Color(red: 1.0, green: 0.74, blue: 0.18)
-        case .close, .closeAll: Color(red: 1.0, green: 0.37, blue: 0.34)
+        case .minimize: Color(nsColor: .systemYellow)
+        case .needsConfirmation: Color(nsColor: .systemOrange)
+        case .close, .closeAll: Color(nsColor: .systemRed)
         case .failed: Color(nsColor: .systemGray)
         }
     }

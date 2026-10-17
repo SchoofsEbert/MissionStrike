@@ -21,4 +21,14 @@ struct CloseFeedbackTests {
         #expect(CloseOutcome.decide(.open(hasSheet: false), timedOut: false) == nil)
         #expect(CloseOutcome.decide(.open(hasSheet: false), timedOut: true) == .failed)
     }
+
+    @Test("The confirmation badge names the app, and VoiceOver hears it too")
+    func confirmationCopy() {
+        let style = HoverBadgeStyle.needsConfirmation(appName: "TextEdit")
+        #expect(style.label == "TextEdit asks before closing")
+        #expect(style.announcement == "TextEdit asks before closing the window.")
+        #expect(HoverBadgeStyle.needsConfirmation(appName: nil).label == "The app asks before closing")
+        #expect(HoverBadgeStyle.close.announcement == nil)
+        #expect(HoverBadgeStyle.failed.label == nil)
+    }
 }
