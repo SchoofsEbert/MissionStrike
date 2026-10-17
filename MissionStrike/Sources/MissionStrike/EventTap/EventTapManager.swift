@@ -193,9 +193,7 @@ extension EventTapManager {
             break
 
         case .modifiersChanged(let flags):
-            Task { @MainActor in
-                HoverBadgeController.shared.modifiersChanged(flags)
-            }
+            HoverBadgeController.shared.modifiersChanged(flags)
 
         case .missionControlClick(let action, let input, let probeDock):
             let dockCandidates = DockMiddleClick.candidates(location: tapEvent.location, pointer: pointer)

@@ -25,6 +25,7 @@ class MissionControlManager {
 
     /// Performs a pre-resolved hit.
     func perform(resolution: MissionControlHitTester.Resolution, action: MouseAction) {
+        defer { HoverBadgeController.shared.layoutMayHaveChanged() }
         if action != .minimize, !isDesktop(resolution) {
             CloseEffect.play(for: resolution)
         }
@@ -72,6 +73,7 @@ class MissionControlManager {
         let result = button.perform("AXRemoveDesktop")
         if result == .success {
             MissionControlSession.current?.forgetSpaces()
+            HoverBadgeController.shared.layoutMayHaveChanged()
             CloseEffect.play(at: NSEvent.mouseLocation)
             logger.debug("Closed Space via AXRemoveDesktop.")
         } else {
@@ -134,6 +136,7 @@ class MissionControlManager {
             }
         }
         logger.debug("Closed \(closedCount)/\(windows.count) windows for PID \(pid).")
+        HoverBadgeController.shared.layoutMayHaveChanged()
     }
 
     // MARK: - AX window helpers

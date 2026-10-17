@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// What a modifier-click would do to the hovered thumbnail, shown as a traffic-light badge.
@@ -31,6 +32,9 @@ final class HoverBadgeController {
     /// Circle centre measured from the badge view's top-left (padding + radius).
     private static let circleCentre = HoverBadgeView.padding + HoverBadgeView.diameter / 2
     private static let pollInterval: TimeInterval = 1.0 / 30
+    /// While the pointer rests, hit-test again this often anyway: Mission Control re-lays out
+    /// its thumbnails when a window opens or closes.
+    private static let refreshInterval: Duration = .milliseconds(300)
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<HoverBadgeView>?
@@ -39,14 +43,18 @@ final class HoverBadgeController {
     private var flashGeneration = 0
     private static let flashPulses = 3
     private static let flashPulseDuration: TimeInterval = 0.35
-    private static let flashFrameInterval: Duration = .milliseconds(16)
-    private static let flashPendingCheckInterval: Duration = .milliseconds(300)
+    private static let flashCheckInterval: Duration = .milliseconds(250)
     private var timer: Timer?
     private var flags: CGEventFlags = []
     /// Thumbnail the badge is currently on; a different one gets a fresh fade-in.
     private var currentThumbnail: CGRect?
+    private var currentStyle: HoverBadgeStyle?
+    /// Where the pointer was at the last hit-test, and when that was.
+    private var lastPointer: CGPoint?
+    private var lastResolve: ContinuousClock.Instant?
 
-    /// Called from the event tap on every modifier change.
+    /// Called from the event tap on every modifier change. Cheap: hit-testing waits for the
+    /// timer, which fires once the callback has returned.
     func modifiersChanged(_ flags: CGEventFlags) {
         self.flags = flags
         guard isTriggerHeld, MissionControlSession.isActive() else {
@@ -61,7 +69,13 @@ final class HoverBadgeController {
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
         }
-        update()
+        // Show or restyle the badge right away rather than on the next tick.
+        timer?.fireDate = .now
+    }
+
+    /// A window was closed or minimized: thumbnails move, so hit-test again on the next tick.
+    func layoutMayHaveChanged() {
+        lastResolve = nil
     }
 
     private var isTriggerHeld: Bool {
@@ -77,16 +91,31 @@ final class HoverBadgeController {
             stop()
             return
         }
-        guard let frame = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation)?.thumbnailFrame else {
+        let style = HoverBadgeStyle(flags: flags)
+        let pointer = NSEvent.mouseLocation
+        let resolvedRecently = lastResolve.map { ContinuousClock.now - $0 < Self.refreshInterval } ?? false
+        let onSameThumbnail = pointer == lastPointer
+            || currentThumbnail.flatMap(MissionControlHitTester.thumbnailHitArea)?.contains(pointer) == true
+        if resolvedRecently, onSameThumbnail {
+            // Not moved, or still on the same thumbnail: no new hit-test needed.
+            if let currentThumbnail, style != currentStyle {
+                show(style: style, at: currentThumbnail)
+            }
+            return
+        }
+        lastPointer = pointer
+        lastResolve = .now
+        guard let frame = MissionControlHitTester.resolve(clickPoint: pointer)?.thumbnailFrame else {
             hide()
             return
         }
-        show(style: HoverBadgeStyle(flags: flags), at: frame)
+        show(style: style, at: frame)
     }
 
     private func show(style: HoverBadgeStyle, at thumbnail: CGRect) {
         let panel = self.panel ?? Self.makePanel()
         self.panel = panel
+        currentStyle = style
         let view = HoverBadgeView(style: style)
         if let hostingView {
             hostingView.rootView = view
@@ -122,42 +151,41 @@ final class HoverBadgeController {
         let panel = flashPanel ?? Self.makePanel()
         flashPanel = panel
         let hostingView = NSHostingView(rootView: HoverBadgeView(style: style))
+        hostingView.wantsLayer = true
         panel.contentView = hostingView
         let size = hostingView.fittingSize
         panel.setFrame(NSRect(x: thumbnail.midX - size.width / 2, y: thumbnail.midY - size.height / 2,
                               width: size.width, height: size.height), display: true)
-        panel.alphaValue = 0
+        panel.alphaValue = 1
+        hostingView.layer?.add(Self.pulse(), forKey: "pulse")
         panel.orderFrontRegardless()
 
         flashGeneration += 1
         let generation = flashGeneration
         Task { @MainActor in
-            let start = ContinuousClock.now
-            var lastPendingCheck = start
-            var dimmed: Bool?
-            // Mission Control is checked every frame: its WindowManager overlays vanish as soon
-            // as it starts closing, so the badge can fade out with Mission Control, not after it.
-            while generation == flashGeneration, MissionControlSession.isActive() {
-                let now = ContinuousClock.now
-                if now - lastPendingCheck >= Self.flashPendingCheckInterval {
-                    lastPendingCheck = now
-                    guard isPending() else { break }
-                }
-                // Alternate bright and dim for the first pulses, then hold steady.
-                let step = Int((now - start) / .seconds(Self.flashPulseDuration))
-                let dim = step < Self.flashPulses * 2 && !step.isMultiple(of: 2)
-                if dim != dimmed {
-                    dimmed = dim
-                    NSAnimationContext.runAnimationGroup({ context in
-                        context.duration = Self.flashPulseDuration
-                        panel.animator().alphaValue = dim ? 0.35 : 1
-                    }, completionHandler: nil)
-                }
-                try? await Task.sleep(for: Self.flashFrameInterval)
+            // Input that closes Mission Control hides the badge straight away (`dismissFlash`);
+            // this catches the rest, like the sheet being answered behind Mission Control.
+            while generation == flashGeneration {
+                try? await Task.sleep(for: Self.flashCheckInterval)
+                guard generation == flashGeneration else { return }
+                guard MissionControlSession.isActive(), isPending() else { break }
             }
             guard generation == flashGeneration else { return }
             hideFlash()
         }
+    }
+
+    /// Fades in, alternates dim and bright for the first pulses, then holds bright.
+    private static func pulse() -> CAKeyframeAnimation {
+        let values: [Float] = [0, 1] + Array(repeating: [0.35, 1], count: flashPulses).flatMap { $0 }
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        animation.values = values
+        animation.duration = flashPulseDuration * Double(values.count - 1)
+        animation.timingFunctions = Array(
+            repeating: CAMediaTimingFunction(name: .easeInEaseOut),
+            count: values.count - 1
+        )
+        return animation
     }
 
     /// Hides the confirmation badge, e.g. when input is about to close Mission Control.
@@ -183,12 +211,15 @@ final class HoverBadgeController {
 
     private func hide() {
         currentThumbnail = nil
+        currentStyle = nil
         panel?.orderOut(nil)
     }
 
     private func stop() {
         timer?.invalidate()
         timer = nil
+        lastPointer = nil
+        lastResolve = nil
         hide()
     }
 
