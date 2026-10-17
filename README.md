@@ -23,15 +23,19 @@ In Mission Control, point at a window or Space and:
 | Hold **⌘ Command** while you middle-click or ⌥-click | Close all of that app's windows |
 | **⌘W / ⌘M / ⌘H / ⌘Q** | Close, minimize, hide or quit |
 | **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to close or minimize every window shown (macOS 27 and later) or to quit apps with no windows. |
-
-Hold your modifier key and a small badge shows which window a click will hit. If an app asks to confirm a close, such as to save changes, an orange badge on the window says so, and Mission Control stays open. Click the badge to go to the window and answer. A trackpad tap confirms each close or minimize, and a grey badge shakes when one doesn't go through. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
-| **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to quit apps with no windows. |
 | **F**, then a label | Pick a window with the keyboard (see [Keyboard hints](#keyboard-hints)) |
 | **?** | A cheat sheet of every gesture |
+
 Hold your modifier key and a small badge shows which window a click will hit, while each window shows its app and how many of that app's windows are in view, so you know what ⌘ will close. Keep holding for a second, or press **?**, for a cheat sheet of every gesture.
-If an app asks to confirm a close, such as to save changes, a badge on the window says so, and Mission Control stays open. The first few times you open Mission Control, a tip at the bottom shows how to close a window. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
+
+If an app asks to confirm a close, such as to save changes, an orange badge on the window says so, and Mission Control stays open. Click the badge to go to the window and answer. A trackpad tap confirms each close or minimize, and a grey badge shakes when one doesn't go through.
+
+The first few times you open Mission Control, a tip at the bottom shows how to close a window. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
+
 ### Keyboard hints
+
 Press **F** in Mission Control and every window gets a label of one or two letters. Type a label to select that window, then:
+
 | Key | Does |
 |---|---|
 | **W** | Close the window |
@@ -42,6 +46,7 @@ Press **F** in Mission Control and every window gets a label of one or two lette
 | **Return** | Open it and leave Mission Control |
 | **Arrow keys** | Move the selection |
 | **Esc** or **F** | Stop |
+
 Labels never contain W, M, H, Q, A or F, so you can type them in one go: `sw` closes the window labelled S. Spaces get labels too, so W can close one. Keyboard hints and window counts need macOS 27 or later.
 
 ## Installation
