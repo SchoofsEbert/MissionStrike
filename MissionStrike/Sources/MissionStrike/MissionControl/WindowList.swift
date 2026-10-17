@@ -31,4 +31,32 @@ enum WindowList {
         }
         return nil
     }
+
+    /// Windows smaller than this are helpers and status items, not something to look at.
+    private static let minimumVisibleSize: CGFloat = 50
+
+    /// Which apps own any window at all (minimized, hidden or on another Space included), and
+    /// which have a normal window on screen, from one copy of the window list.
+    static func ownership() -> (owning: Set<pid_t>, showing: Set<pid_t>) {
+        ownership(in: CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? [])
+    }
+
+    static func ownership(in windowList: [[String: Any]]) -> (owning: Set<pid_t>, showing: Set<pid_t>) {
+        var owning: Set<pid_t> = []
+        var showing: Set<pid_t> = []
+        for info in windowList {
+            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != 0 else { continue }
+            owning.insert(pid)
+            guard info[kCGWindowIsOnscreen as String] as? Bool == true,
+                  info[kCGWindowLayer as String] as? Int == 0,
+                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
+                  bounds.width >= minimumVisibleSize, bounds.height >= minimumVisibleSize else {
+                continue
+            }
+            showing.insert(pid)
+        }
+        return (owning, showing)
+    }
 }

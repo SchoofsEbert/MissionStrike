@@ -100,3 +100,30 @@ struct DockSnapshotTests {
         #expect(!DockSnapshot(listFrames: [], runningAppIcons: []).isShown(on: [screen]))
     }
 }
+
+@Suite("Window Ownership")
+struct WindowOwnershipTests {
+    private func window(pid: pid_t, onscreen: Bool, layer: Int = 0, size: CGFloat = 400, alpha: Double = 1) -> [String: Any] {
+        [
+            kCGWindowOwnerPID as String: pid,
+            kCGWindowIsOnscreen as String: onscreen,
+            kCGWindowLayer as String: layer,
+            kCGWindowAlpha as String: alpha,
+            kCGWindowBounds as String: ["X": 0, "Y": 0, "Width": size, "Height": size]
+        ]
+    }
+
+    @Test("Only normal on-screen windows count as showing; any window counts as owned")
+    func ownership() {
+        let list = [
+            window(pid: 1, onscreen: true),
+            window(pid: 2, onscreen: false),
+            window(pid: 3, onscreen: true, layer: 25),
+            window(pid: 4, onscreen: true, size: 20),
+            window(pid: 5, onscreen: true, alpha: 0)
+        ]
+        let result = WindowList.ownership(in: list)
+        #expect(result.owning == [1, 2, 3, 4, 5])
+        #expect(result.showing == [1])
+    }
+}
