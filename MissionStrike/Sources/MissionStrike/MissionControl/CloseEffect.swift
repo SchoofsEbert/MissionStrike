@@ -15,11 +15,6 @@ enum CloseEffect {
         byReference: true
     )
 
-    static func play(for resolution: MissionControlHitTester.Resolution) {
-        let point = resolution.thumbnailFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
-        play(at: point)
-    }
-
     /// `point` is in AppKit screen coordinates.
     static func play(at point: NSPoint) {
         guard SettingsStore.shared.current.poofOnClose else { return }

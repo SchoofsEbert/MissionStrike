@@ -216,7 +216,7 @@ final class MissionControlContextMenu: NSObject {
 
     @objc private func closeOtherWindows() {
         guard let resolution, case .window(let pid, _, let windowID) = resolution.target else { return }
-        MissionControlManager.shared.closeAllWindows(forPID: pid, except: windowID)
+        MissionControlManager.shared.closeAllWindows(forPID: pid, except: windowID, anchor: resolution.feedbackAnchor)
     }
 
     @objc private func hideOtherApps() {

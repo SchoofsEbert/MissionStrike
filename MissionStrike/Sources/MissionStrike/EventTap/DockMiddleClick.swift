@@ -20,13 +20,14 @@ enum DockMiddleClick {
         guard let hit = DockHitTester.runningApp(at: candidates) else {
             return false
         }
+        let icon = ScreenCoordinates.yFlipped(hit.iconFrame)
         if closeWindowsOnly {
-            MissionControlManager.shared.closeAllWindows(forPID: hit.app.processIdentifier)
+            // Poofs on the icon once a window has actually closed.
+            MissionControlManager.shared.closeAllWindows(forPID: hit.app.processIdentifier, anchor: icon)
         } else {
             hit.app.terminate()
+            CloseEffect.play(at: NSPoint(x: icon.midX, y: icon.midY))
         }
-        let icon = ScreenCoordinates.yFlipped(hit.iconFrame)
-        CloseEffect.play(at: NSPoint(x: icon.midX, y: icon.midY))
         return true
     }
 }

@@ -43,7 +43,7 @@ class MissionControlManager {
                 logger.debug("Closing wid \(windowID) (\(ownerName), pid \(pid)).")
                 closeWindowByWindowID(pid: pid, targetWindowID: windowID, resolution: resolution)
             case .closeAll:
-                closeAllWindows(forPID: pid)
+                closeAllWindows(forPID: pid, anchor: resolution.feedbackAnchor)
             case .minimize:
                 minimizeWindow(pid: pid, windowID: windowID)
             }
@@ -54,15 +54,11 @@ class MissionControlManager {
                 closeLegacyAXWindow(window, resolution: resolution)
             case .closeAll:
                 if let pid = window.pid {
-                    closeAllWindows(forPID: pid)
+                    closeAllWindows(forPID: pid, anchor: resolution.feedbackAnchor)
                 }
             case .minimize:
                 minimize(window)
             }
-        }
-        // After the action, so drawing the poof never holds up the close.
-        if action != .minimize, !isDesktop(resolution) {
-            CloseEffect.play(for: resolution)
         }
     }
 
@@ -88,11 +84,6 @@ class MissionControlManager {
         }
     }
 
-    private func isDesktop(_ resolution: MissionControlHitTester.Resolution) -> Bool {
-        if case .removeDesktop = resolution.target { return true }
-        return false
-    }
-
     /// Owning app of a window hit; nil for Spaces or when the window is gone.
     func pid(for resolution: MissionControlHitTester.Resolution) -> pid_t? {
         switch resolution.target {
@@ -113,10 +104,8 @@ class MissionControlManager {
             return
         }
         guard pressCloseButton(of: window) else { return }
-        logger.debug("Closed CGWindow \(targetWindowID) on PID \(pid).")
-        flashIfConfirmationNeeded(resolution) { [weak self] in
-            self?.axWindow(pid: pid, windowID: targetWindowID)
-        }
+        logger.debug("Pressed close on CGWindow \(targetWindowID), PID \(pid).")
+        watch([PendingClose(window: window, pid: pid, thumbnail: resolution.thumbnailFrame)], anchor: resolution.feedbackAnchor)
     }
 
     private func minimizeWindow(pid: Int32, windowID: CGWindowID) {
@@ -127,23 +116,24 @@ class MissionControlManager {
         minimize(window)
     }
 
-    /// Closes every window of the app, optionally keeping one ("Close Other Windows").
-    func closeAllWindows(forPID pid: pid_t, except keptWindowID: CGWindowID? = nil) {
+    /// Closes every window of the app, optionally keeping one ("Close Other Windows"). Feedback
+    /// for windows without a known thumbnail goes to `anchor` (AppKit screen coordinates).
+    func closeAllWindows(forPID pid: pid_t, except keptWindowID: CGWindowID? = nil, anchor: CGRect?) {
         guard let windows = AXElement.application(pid).windows else {
             logger.warning("Could not enumerate windows for close-all on PID \(pid).")
             return
         }
-        var closedCount = 0
+        var pressed: [PendingClose] = []
         for window in windows {
             if let keptWindowID, window.windowID == keptWindowID {
                 continue
             }
             if pressCloseButton(of: window) {
-                closedCount += 1
+                pressed.append(PendingClose(window: window, pid: pid))
             }
         }
-        logger.debug("Closed \(closedCount)/\(windows.count) windows for PID \(pid).")
-        HoverBadgeController.shared.layoutMayHaveChanged()
+        logger.debug("Pressed close on \(pressed.count)/\(windows.count) windows for PID \(pid).")
+        watch(pressed, anchor: anchor)
     }
 
     // MARK: - AX window helpers
@@ -180,32 +170,7 @@ class MissionControlManager {
         }
     }
 
-    // MARK: - Confirmation dialogs
-
-    /// How long an app gets to either close the window or put up a sheet.
-    private static let confirmationCheckDelay: Duration = .milliseconds(400)
-
-    /// A close that asks for confirmation (unsaved changes, running processes) opens a sheet
-    /// the user can't see behind Mission Control. Show a badge on the thumbnail until the sheet
-    /// goes or Mission Control closes, so the window doesn't look like it ignored the click.
-    private func flashIfConfirmationNeeded(
-        _ resolution: MissionControlHitTester.Resolution,
-        findWindow: @escaping @MainActor () -> AXElement?
-    ) {
-        Task { @MainActor in
-            try? await Task.sleep(for: Self.confirmationCheckDelay)
-            guard let window = findWindow(), Self.hasSheet(window) else { return }
-            logger.debug("Close is waiting on a confirmation sheet.")
-            let thumbnail = resolution.thumbnailFrame ?? CGRect(origin: resolution.point, size: .zero)
-            HoverBadgeController.shared.flash(.needsConfirmation, on: thumbnail) {
-                findWindow().map(Self.hasSheet) ?? false
-            }
-        }
-    }
-
-    private static func hasSheet(_ window: AXElement) -> Bool {
-        window.children.contains { $0.role == kAXSheetRole }
-    }
+    // MARK: - Legacy windows
 
     private func closeLegacyAXWindow(_ window: AXElement, resolution: MissionControlHitTester.Resolution) {
         var closed = false
@@ -218,8 +183,16 @@ class MissionControlManager {
                 logger.warning("AXClose failed: \(result.rawValue)")
             }
         }
-        guard closed else { return }
-        logger.debug("Closed legacy AXWindow.")
-        flashIfConfirmationNeeded(resolution) { window }
+        guard closed, let pid = window.pid else { return }
+        logger.debug("Pressed close on legacy AXWindow.")
+        watch([PendingClose(window: window, pid: pid)], anchor: resolution.feedbackAnchor)
+    }
+}
+
+extension HitResolution {
+    /// Where feedback for this hit goes, in AppKit screen coordinates: the thumbnail, or the
+    /// clicked point where the thumbnail isn't known (pre-27 Mission Control doesn't flip it).
+    var feedbackAnchor: CGRect {
+        thumbnailFrame ?? CGRect(origin: point, size: .zero)
     }
 }
