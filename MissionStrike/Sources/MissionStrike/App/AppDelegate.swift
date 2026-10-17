@@ -102,23 +102,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Request notification permission for permission-loss alerts.
-        // UNUserNotificationCenter requires a proper .app bundle; skip when running via `swift run`.
-        if Bundle.main.bundleIdentifier != nil {
-            requestNotificationAuthorizationIfNeeded()
-        } else {
-            logger.info("No bundle identifier — skipping notification permission request (running outside .app bundle).")
-        }
-
-        // Request Accessibility permissions if needed
-        checkAccessibilityPermissions()
+        // On first launch the onboarding asks for Accessibility once it has explained why.
+        let isFirstLaunch = !UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
+        checkAccessibilityPermissions(prompt: !isFirstLaunch)
 
         // Start Event Tap
         EventTapManager.shared.start()
 
         // Only show onboarding on first launch, not on subsequent auto-starts (e.g., Login Items)
-        let hasLaunchedBefore = UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
-        if !hasLaunchedBefore {
+        if isFirstLaunch {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
             openOnboardingWindow()
         }
@@ -157,6 +149,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Permission was granted
             logger.info("Accessibility permissions granted.")
             UserDefaults.standard.set(true, forKey: Self.accessibilityWasGrantedKey)
+            AccessibilityPermission.markPromptShown()
             EventTapManager.shared.start()
         } else if isNowEnabled && !EventTapManager.shared.isRunning {
             // Trusted but tap never started (e.g. grant raced the first check).
@@ -175,26 +168,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Asks for notification permission only while the user hasn't decided yet. Once
-    /// notifications are off, asking again fails with "not allowed" on every launch.
-    private func requestNotificationAuthorizationIfNeeded() {
-        Task {
-            let center = UNUserNotificationCenter.current()
-            let status = await center.notificationSettings().authorizationStatus
-            guard status == .notDetermined else {
-                if status == .denied {
-                    logger.info("Notifications are off — permission-loss alerts will not be shown.")
-                }
-                return
-            }
+    /// Whether notifications may be posted. Asks only while the user hasn't decided yet,
+    /// which is the first time one is needed; once off, asking again fails with "not allowed".
+    private func notificationsAllowed() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized:
+            return true
+        case .notDetermined:
             do {
                 let granted = try await center.requestAuthorization(options: [.alert, .sound])
                 if !granted {
                     logger.info("User declined notification permissions — permission-loss alerts will not be shown.")
                 }
+                return granted
             } catch {
                 logger.warning("Notification authorization failed: \(error.localizedDescription)")
+                return false
             }
+        default:
+            return false
         }
     }
 
@@ -216,14 +209,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             trigger: nil
         )
         Task {
-            let center = UNUserNotificationCenter.current()
-            // The orange menu bar icon still shows the state when notifications are off.
-            guard await center.notificationSettings().authorizationStatus == .authorized else {
+            // The menu bar icon's warning badge still shows the state when notifications are off.
+            guard await notificationsAllowed() else {
                 logger.info("Notifications are off — skipping permission-loss notification.")
                 return
             }
             do {
-                try await center.add(request)
+                try await UNUserNotificationCenter.current().add(request)
             } catch {
                 logger.error("Failed to deliver permission-loss notification: \(error.localizedDescription)")
             }
@@ -314,7 +306,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
     }
 
-    private func checkAccessibilityPermissions() {
+    /// Records the current grant and, when `prompt` is set and access is missing, asks for it.
+    private func checkAccessibilityPermissions(prompt: Bool) {
         let accessEnabled = AXIsProcessTrusted()
         let previouslyGranted = UserDefaults.standard.bool(forKey: Self.accessibilityWasGrantedKey)
         let isSelfUpdateRelaunch = UserDefaults.standard.bool(forKey: "pendingSelfUpdate")
@@ -327,6 +320,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if accessEnabled {
             // All good — remember the grant
             UserDefaults.standard.set(true, forKey: Self.accessibilityWasGrantedKey)
+            AccessibilityPermission.markPromptShown()
+            return
+        }
+
+        guard prompt else {
+            logger.info("Accessibility not enabled. Leaving the request to onboarding.")
             return
         }
 
@@ -337,13 +336,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             logger.info("Accessibility invalidated after update — resetting TCC and re-prompting.")
             resetTCCEntry()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-                _ = AXIsProcessTrustedWithOptions(options)
+                AccessibilityPermission.showSystemPrompt()
             }
         } else {
-            // First time — use the standard system prompt
-            let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-            _ = AXIsProcessTrustedWithOptions(options)
+            // Never granted — use the standard system prompt
+            AccessibilityPermission.showSystemPrompt()
             logger.warning("Accessibility not enabled. Prompting user.")
         }
     }
