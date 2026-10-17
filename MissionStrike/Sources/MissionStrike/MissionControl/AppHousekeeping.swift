@@ -25,18 +25,8 @@ enum AppHousekeeping {
                   !keptRunning.contains(app.bundleIdentifier ?? "") else {
                 return false
             }
-            return windowCount(of: app.processIdentifier) == 0
+            // Nil (the app can't be asked) is not the same as no windows.
+            return AXElement.application(app.processIdentifier).windows?.isEmpty == true
         }
-    }
-
-    /// Number of windows the app reports through Accessibility; nil if it can't be asked.
-    private static func windowCount(of pid: pid_t) -> Int? {
-        var windowsRef: CFTypeRef?
-        let appElement = AXUIElementCreateApplication(pid)
-        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-              let windows = windowsRef as? [AXUIElement] else {
-            return nil
-        }
-        return windows.count
     }
 }

@@ -68,21 +68,18 @@ final class Diagnostics: @unchecked Sendable {
 
     /// Role chain from the element under the point up to its ancestors, without titles.
     private static func axChain(at point: CGPoint) -> String {
-        guard var element = MissionControlHitTester.element(at: point) else { return "no element" }
+        guard var element = AXElement.at(point) else { return "no element" }
         var parts: [String] = []
         for _ in 0..<5 {
-            var subrole: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
-            var part = MissionControlHitTester.role(of: element)
-            if let subrole = subrole as? String { part += "/\(subrole)" }
-            if let wid = MissionControlHitTester.readWid(element) { part += " wid=\(wid)" }
-            if let frame = MissionControlHitTester.frame(of: element) { part += " \(format(frame))" }
+            var part = element.role ?? ""
+            if let subrole = element.subrole { part += "/\(subrole)" }
+            if let wid = element.thumbnailWindowID { part += " wid=\(wid)" }
+            if let frame = element.frame { part += " \(format(frame))" }
             parts.append(part)
-            guard let parent = MissionControlHitTester.parent(of: element) else { break }
+            guard let parent = element.parent else { break }
             element = parent
         }
-        var pid: pid_t = 0
-        AXUIElementGetPid(element, &pid)
+        let pid = element.pid ?? 0
         let owner = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
         return parts.joined(separator: " < ") + " [\(owner)]"
     }

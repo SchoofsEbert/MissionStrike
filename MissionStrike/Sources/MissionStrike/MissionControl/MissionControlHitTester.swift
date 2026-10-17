@@ -2,120 +2,283 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
-/// Synchronous hit testing for the event tap (must stay fast — runs on the tap callback).
+/// What a click or shortcut in Mission Control landed on.
+struct HitResolution<Element: AccessibilityElement> {
+    enum Target {
+        case removeDesktop(Element)
+        case window(pid: Int32, ownerName: String, windowID: CGWindowID)
+        /// Pre-wid Mission Control (≤ macOS 26): the enclosing `AXWindow`.
+        case legacyAXWindow(Element)
+    }
+
+    let target: Target
+    /// Point in AX hit-test space (after any OS-gated Y-flip).
+    let point: CGPoint
+    /// Thumbnail frame in AppKit screen coordinates, when known (macOS 27+ window tiles).
+    var thumbnailFrame: CGRect?
+}
+
+extension HitResolution: Sendable where Element: Sendable {}
+extension HitResolution.Target: Sendable where Element: Sendable {}
+
+/// An app window found in the window list.
+struct AppWindow: Equatable, Sendable {
+    let pid: Int32
+    let ownerName: String
+    let windowID: CGWindowID
+}
+
+/// What hit-testing needs besides the elements themselves. The live environment asks
+/// Accessibility and the window list; tests answer from fake trees.
+@MainActor
+protocol HitTestEnvironment {
+    associatedtype Element: AccessibilityElement
+
+    /// macOS 27+ Mission Control reports click Y mirrored vs AX frames.
+    var flipsY: Bool { get }
+    /// Height of the primary display, for the Y-flip.
+    var mainDisplayHeight: CGFloat { get }
+    func element(at point: CGPoint) -> Element?
+    /// WindowManager's Spaces Bar, when it has one.
+    func spacesBar() -> Element?
+    /// The buttons that can remove a Space (`AXRemoveDesktop`).
+    func removableDesktopButtons() -> [Element]
+    /// The app window behind a thumbnail's CGWindowID; nil for system windows.
+    func appWindow(withID windowID: CGWindowID) -> AppWindow?
+    /// Whether the element belongs to the Dock, WindowManager or another system overlay.
+    func isSystemOverlay(_ element: Element) -> Bool
+}
+
+/// Hit testing for clicks, shortcuts and the hover badge in Mission Control. Asks other
+/// apps through Accessibility, so it never runs inside the event tap callback.
 ///
 /// **macOS 27+:** Mission Control thumbnails are WindowManager `AXButton`s with an
 /// undocumented `wid` (CGWindowID). Click Y is mirrored vs AX frames, so we Y-flip once.
 ///
 /// **macOS ≤26:** Dock-era UI exposes real `AXWindow`s; no Y-flip, legacy close path.
+@MainActor
 enum MissionControlHitTester {
-
-    enum Target: @unchecked Sendable {
-        case removeDesktop(AXUIElement)
-        case window(pid: Int32, ownerName: String, windowID: CGWindowID)
-        case legacyAXWindow
-    }
-
-    struct Resolution: @unchecked Sendable {
-        let target: Target
-        /// Point in AX hit-test space (after any OS-gated Y-flip).
-        let point: CGPoint
-        /// Thumbnail frame in AppKit screen coordinates, when known (macOS 27+ window tiles).
-        var thumbnailFrame: CGRect?
-    }
+    typealias Resolution = HitResolution<AXElement>
+    typealias Target = Resolution.Target
 
     /// Reject AX padding around thumbnail buttons (greedy hit targets on 27).
-    private static let thumbnailEdgeInsetFraction: CGFloat = 0.10
+    static let thumbnailEdgeInsetFraction: CGFloat = 0.10
 
     /// Below this Y (AX space), treat the click as Spaces-strip only — never a window.
-    private static let spacesStripMaxY: CGFloat = 140
+    static let spacesStripMaxY: CGFloat = 140
+    /// Below this Y (AX space), a click may be on a Space's button.
+    static let spaceButtonMaxY: CGFloat = spacesStripMaxY + 40
+
+    /// How many elements, from the one under the pointer up, to search for a Space or thumbnail.
+    private static let ancestorLimit = 8
 
     // MARK: - Public API
 
     /// - Parameter clickPoint: Cursor position (`NSEvent.mouseLocation` space).
     static func resolve(clickPoint: CGPoint) -> Resolution? {
-        let useFlip = shouldYFlipForMissionControl()
-        let point = useFlip ? ScreenCoordinates.yFlipped(clickPoint) : clickPoint
+        resolve(clickPoint: clickPoint, in: LiveHitTestEnvironment())
+    }
 
-        if let button = spaceButton(at: point) {
-            return Resolution(target: .removeDesktop(button), point: point)
+    static func resolve<Environment: HitTestEnvironment>(
+        clickPoint: CGPoint,
+        in environment: Environment
+    ) -> HitResolution<Environment.Element>? {
+        let useFlip = environment.flipsY
+        let height = environment.mainDisplayHeight
+        let point = useFlip ? ScreenCoordinates.yFlipped(clickPoint, mainDisplayHeight: height) : clickPoint
+        // Every step below starts from the element under the point; ask for it once.
+        let hit = environment.element(at: point)
+
+        if let button = spaceButton(at: point, hit: hit, in: environment) {
+            return HitResolution(target: .removeDesktop(button), point: point)
         }
 
         // Missed a desktop but still in the Spaces strip → do not close a window.
-        if point.y < spacesStripMaxY, isInSpacesStrip(point) {
+        if point.y < spacesStripMaxY, isInSpacesStrip(point, hit: hit, in: environment) {
             return nil
         }
 
-        if let window = resolveThumbnailWindow(at: point) {
-            return Resolution(
+        if let hit, let (window, frame) = thumbnailWindow(at: point, hit: hit, in: environment) {
+            return HitResolution(
                 target: .window(pid: window.pid, ownerName: window.ownerName, windowID: window.windowID),
                 point: point,
-                thumbnailFrame: useFlip ? ScreenCoordinates.yFlipped(window.frame) : window.frame
+                thumbnailFrame: useFlip ? ScreenCoordinates.yFlipped(frame, mainDisplayHeight: height) : frame
             )
         }
 
         // Pre-wid Mission Control (≤26): enclosing AXWindow, unflipped path only.
-        if !useFlip, resolveLegacyAXWindow(at: point) != nil {
-            return Resolution(target: .legacyAXWindow, point: point)
+        if !useFlip, let hit, let window = legacyWindow(hit: hit, in: environment) {
+            return HitResolution(target: .legacyAXWindow(window), point: point)
         }
         return nil
-    }
-
-    /// Desktop button for `AXRemoveDesktop` at an AX-space point.
-    private static func spaceButton(at point: CGPoint) -> AXUIElement? {
-        guard point.y < spacesStripMaxY + 40 else { return nil }
-
-        // Prefer live hit-test once the Spaces Bar is revealed.
-        if let hit = element(at: point) {
-            var cur: AXUIElement? = hit
-            for _ in 0..<8 {
-                guard let elem = cur else { break }
-                if hasAction(elem, "AXRemoveDesktop") {
-                    return elem
-                }
-                if title(of: elem) == "Spaces Bar" {
-                    return nearestDesktop(in: removableDesktopButtons(in: elem), to: point)
-                }
-                cur = parent(of: elem)
-            }
-        }
-
-        return nearestDesktop(in: allRemovableDesktopButtons(), to: point)
     }
 
     // MARK: - Y-flip gate
 
     /// macOS 27+ Mission Control reports click Y mirrored vs AX frames.
-    static func shouldYFlipForMissionControl() -> Bool {
+    nonisolated static func shouldYFlipForMissionControl() -> Bool {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+    }
+
+    // MARK: - Spaces
+
+    /// Desktop button for `AXRemoveDesktop` at an AX-space point.
+    private static func spaceButton<Environment: HitTestEnvironment>(
+        at point: CGPoint,
+        hit: Environment.Element?,
+        in environment: Environment
+    ) -> Environment.Element? {
+        guard point.y < spaceButtonMaxY else { return nil }
+
+        // Prefer live hit-test once the Spaces Bar is revealed.
+        for element in ancestors(of: hit) {
+            if element.hasAction("AXRemoveDesktop") {
+                return element
+            }
+            if element.title == "Spaces Bar" {
+                return nearestDesktop(in: framed(removableDesktopButtons(in: element)), to: point)
+            }
+        }
+        return nearestDesktop(in: framed(environment.removableDesktopButtons()), to: point)
+    }
+
+    private static func isInSpacesStrip<Environment: HitTestEnvironment>(
+        _ point: CGPoint,
+        hit: Environment.Element?,
+        in environment: Environment
+    ) -> Bool {
+        if let bar = environment.spacesBar()?.frame, bar.insetBy(dx: 0, dy: -32).contains(point) {
+            return true
+        }
+        return ancestors(of: hit).contains { $0.title == "Spaces Bar" || $0.hasAction("AXRemoveDesktop") }
+    }
+
+    /// Nearest desktop whose inflated frame contains the point, else nil.
+    static func nearestDesktop<Element>(in desktops: [(element: Element, frame: CGRect)], to point: CGPoint) -> Element? {
+        desktops
+            // AX frames are smaller than the visible Space preview.
+            .filter { $0.frame.insetBy(dx: -16, dy: -28).contains(point) }
+            .min { distance($0.frame, point) < distance($1.frame, point) }?
+            .element
+    }
+
+    private static func distance(_ frame: CGRect, _ point: CGPoint) -> CGFloat {
+        hypot(frame.midX - point.x, frame.midY - point.y)
+    }
+
+    private static func framed<Element: AccessibilityElement>(_ elements: [Element]) -> [(element: Element, frame: CGRect)] {
+        elements.compactMap { element in element.frame.map { (element, $0) } }
+    }
+
+    /// Every element under `root` that can remove a Space.
+    static func removableDesktopButtons<Element: AccessibilityElement>(in root: Element) -> [Element] {
+        var result: [Element] = []
+        func walk(_ element: Element) {
+            if element.hasAction("AXRemoveDesktop") {
+                result.append(element)
+            }
+            for child in element.children {
+                walk(child)
+            }
+        }
+        walk(root)
+        return result
+    }
+
+    /// First element in `root`'s tree, depth first, that matches.
+    static func descendant<Element: AccessibilityElement>(
+        in root: Element,
+        matching predicate: (Element) -> Bool
+    ) -> Element? {
+        if predicate(root) { return root }
+        for child in root.children {
+            if let found = descendant(in: child, matching: predicate) {
+                return found
+            }
+        }
+        return nil
     }
 
     // MARK: - Windows (wid)
 
-    private static func resolveThumbnailWindow(
-        at point: CGPoint
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID, frame: CGRect)? {
-        guard let hit = element(at: point),
-              let button = ancestorWithWid(from: hit),
-              let windowID = readWid(button),
-              let buttonFrame = frame(of: button) else {
+    private static func thumbnailWindow<Environment: HitTestEnvironment>(
+        at point: CGPoint,
+        hit: Environment.Element,
+        in environment: Environment
+    ) -> (AppWindow, CGRect)? {
+        guard let button = ancestors(of: hit).first(where: { $0.thumbnailWindowID != nil }),
+              let windowID = button.thumbnailWindowID,
+              let buttonFrame = button.frame,
+              thumbnailHitArea(of: buttonFrame)?.contains(point) == true,
+              let window = environment.appWindow(withID: windowID) else {
             return nil
         }
+        return (window, buttonFrame)
+    }
 
+    /// The part of a thumbnail button that counts as a hit, or nil when too small to trust.
+    static func thumbnailHitArea(of buttonFrame: CGRect) -> CGRect? {
         let inset = buttonFrame.insetBy(
             dx: buttonFrame.width * thumbnailEdgeInsetFraction,
             dy: buttonFrame.height * thumbnailEdgeInsetFraction
         )
-        guard inset.width > 8, inset.height > 8, inset.contains(point),
-              let window = lookupWindow(id: windowID) else {
-            return nil
-        }
-        return (window.pid, window.ownerName, window.windowID, buttonFrame)
+        return inset.width > 8 && inset.height > 8 ? inset : nil
     }
 
-    private static func lookupWindow(
-        id windowID: CGWindowID
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
+    // MARK: - Legacy ≤26
+
+    private static func legacyWindow<Environment: HitTestEnvironment>(
+        hit: Environment.Element,
+        in environment: Environment
+    ) -> Environment.Element? {
+        guard !ancestors(of: hit).contains(where: { $0.thumbnailWindowID != nil }),
+              !environment.isSystemOverlay(hit) else {
+            return nil
+        }
+        var current: Environment.Element? = hit
+        while let element = current {
+            if element.role == kAXWindowRole { return element }
+            current = element.parent
+        }
+        return nil
+    }
+
+    // MARK: - Tree
+
+    /// The element and its ancestors, nearest first, `ancestorLimit` at most.
+    private static func ancestors<Element: AccessibilityElement>(of element: Element?) -> [Element] {
+        var result: [Element] = []
+        var current = element
+        while let element = current, result.count < ancestorLimit {
+            result.append(element)
+            current = element.parent
+        }
+        return result
+    }
+}
+
+/// Hit testing against the live Accessibility tree and window list.
+@MainActor
+struct LiveHitTestEnvironment: HitTestEnvironment {
+    var flipsY: Bool { MissionControlHitTester.shouldYFlipForMissionControl() }
+
+    var mainDisplayHeight: CGFloat { ScreenCoordinates.mainDisplayHeight }
+
+    func element(at point: CGPoint) -> AXElement? {
+        AXElement.at(point)
+    }
+
+    func spacesBar() -> AXElement? {
+        guard let root = Self.windowManager() else { return nil }
+        return MissionControlHitTester.descendant(in: root) { $0.title == "Spaces Bar" }
+    }
+
+    func removableDesktopButtons() -> [AXElement] {
+        guard let root = Self.windowManager() else { return [] }
+        return MissionControlHitTester.removableDesktopButtons(in: root)
+    }
+
+    func appWindow(withID windowID: CGWindowID) -> AppWindow? {
         let ignored = MissionStrikeConfig.default.ignoredWindowOwners
         for options: CGWindowListOption in [.optionOnScreenOnly, .optionAll] {
             guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]],
@@ -126,219 +289,26 @@ enum MissionControlHitTester {
                   ) else {
                 continue
             }
-            return found
+            return AppWindow(pid: found.pid, ownerName: found.ownerName, windowID: found.windowID)
         }
         return nil
     }
 
-    private static func ancestorWithWid(from element: AXUIElement) -> AXUIElement? {
-        var current: AXUIElement? = element
-        var depth = 0
-        while let elem = current, depth < 8 {
-            if let wid = readWid(elem), wid != 0 {
-                return elem
-            }
-            current = parent(of: elem)
-            depth += 1
-        }
-        return nil
-    }
-
-    // MARK: - Spaces
-
-    private static func isInSpacesStrip(_ point: CGPoint) -> Bool {
-        if let bar = findSpacesBar(), let f = frame(of: bar),
-           f.insetBy(dx: 0, dy: -32).contains(point) {
-            return true
-        }
-        if let hit = element(at: point) {
-            var cur: AXUIElement? = hit
-            for _ in 0..<8 {
-                guard let elem = cur else { break }
-                if title(of: elem) == "Spaces Bar" || hasAction(elem, "AXRemoveDesktop") {
-                    return true
-                }
-                cur = parent(of: elem)
-            }
-        }
-        return false
-    }
-
-    /// Nearest desktop whose inflated frame contains the point, else nil.
-    private static func nearestDesktop(in desktops: [AXUIElement], to point: CGPoint) -> AXUIElement? {
-        guard !desktops.isEmpty else { return nil }
-
-        var containing: [(AXUIElement, CGFloat)] = []
-        for button in desktops {
-            guard let f = frame(of: button) else { continue }
-            // AX frames are smaller than the visible Space preview.
-            let hitFrame = f.insetBy(dx: -16, dy: -28)
-            guard hitFrame.contains(point) else { continue }
-            containing.append((button, hypot(f.midX - point.x, f.midY - point.y)))
-        }
-        return containing.min(by: { $0.1 < $1.1 })?.0
-    }
-
-    private static func findSpacesBar() -> AXUIElement? {
-        guard let root = windowManagerApplication() else { return nil }
-        return descendant(in: root) { title(of: $0) == "Spaces Bar" }
-    }
-
-    private static func allRemovableDesktopButtons() -> [AXUIElement] {
-        if let root = windowManagerApplication() {
-            let buttons = removableDesktopButtons(in: root)
-            if !buttons.isEmpty { return buttons }
-        }
-        return []
-    }
-
-    private static func windowManagerApplication() -> AXUIElement? {
-        let apps = NSWorkspace.shared.runningApplications
-        guard let app = apps.first(where: {
-            $0.localizedName == "WindowManager" || $0.bundleIdentifier == "com.apple.WindowManager"
-        }) else {
-            return nil
-        }
-        return AXUIElementCreateApplication(app.processIdentifier)
-    }
-
-    private static func removableDesktopButtons(in root: AXUIElement) -> [AXUIElement] {
-        var result: [AXUIElement] = []
-        func walk(_ element: AXUIElement) {
-            if hasAction(element, "AXRemoveDesktop") {
-                result.append(element)
-            }
-            for child in children(of: element) {
-                walk(child)
-            }
-        }
-        walk(root)
-        return result
-    }
-
-    private static func descendant(
-        in root: AXUIElement,
-        matching predicate: (AXUIElement) -> Bool
-    ) -> AXUIElement? {
-        if predicate(root) { return root }
-        for child in children(of: root) {
-            if let found = descendant(in: child, matching: predicate) {
-                return found
-            }
-        }
-        return nil
-    }
-
-    // MARK: - Legacy ≤26
-
-    private static func resolveLegacyAXWindow(at point: CGPoint) -> AXUIElement? {
-        guard let element = element(at: point),
-              readWid(element) == nil,
-              ancestorWithWid(from: element) == nil,
-              !isSystemOverlayApp(element) else {
-            return nil
-        }
-        return enclosingWindow(from: element)
-    }
-
-    // MARK: - AX helpers
-
-    static func element(at point: CGPoint) -> AXUIElement? {
-        let systemWide = AXUIElementCreateSystemWide()
-        var element: AXUIElement?
-        let result = AXUIElementCopyElementAtPosition(
-            systemWide, Float(point.x), Float(point.y), &element
-        )
-        guard result == .success else { return nil }
-        return element
-    }
-
-    static func parent(of element: AXUIElement) -> AXUIElement? {
-        var parentRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
-              let parentRef else {
-            return nil
-        }
-        return (parentRef as! AXUIElement)
-    }
-
-    static func role(of element: AXUIElement) -> String {
-        var value: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
-        return (value as? String) ?? ""
-    }
-
-    private static func title(of element: AXUIElement) -> String {
-        var value: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &value)
-        return (value as? String) ?? ""
-    }
-
-    static func readWid(_ element: AXUIElement) -> CGWindowID? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, "wid" as CFString, &value) == .success,
-              let value,
-              CFGetTypeID(value) == CFNumberGetTypeID() else {
-            return nil
-        }
-        var number: Int64 = 0
-        guard CFNumberGetValue((value as! CFNumber), .sInt64Type, &number), number > 0 else {
-            return nil
-        }
-        return CGWindowID(number)
-    }
-
-    static func frame(of element: AXUIElement) -> CGRect? {
-        var posRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let posRef, let sizeRef else {
-            return nil
-        }
-        var origin = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(posRef as! AXValue, .cgPoint, &origin),
-              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else {
-            return nil
-        }
-        let rect = CGRect(origin: origin, size: size)
-        guard rect.width > 1, rect.height > 1 else { return nil }
-        return rect
-    }
-
-    private static func children(of element: AXUIElement) -> [AXUIElement] {
-        var childrenRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef) == .success else {
-            return []
-        }
-        return (childrenRef as? [AXUIElement]) ?? []
-    }
-
-    private static func hasAction(_ element: AXUIElement, _ action: String) -> Bool {
-        var names: CFArray?
-        guard AXUIElementCopyActionNames(element, &names) == .success,
-              let actions = names as? [String] else {
-            return false
-        }
-        return actions.contains(action)
-    }
-
-    private static func isSystemOverlayApp(_ element: AXUIElement) -> Bool {
-        var pid: pid_t = 0
-        guard AXUIElementGetPid(element, &pid) == .success,
+    func isSystemOverlay(_ element: AXElement) -> Bool {
+        guard let pid = element.pid,
               let name = NSRunningApplication(processIdentifier: pid)?.localizedName else {
             return false
         }
         return MissionStrikeConfig.default.ignoredWindowOwners.contains(name)
     }
 
-    private static func enclosingWindow(from element: AXUIElement) -> AXUIElement? {
-        var current: AXUIElement? = element
-        while let elem = current {
-            if role(of: elem) == "AXWindow" { return elem }
-            current = parent(of: elem)
+    private static func windowManager() -> AXElement? {
+        let apps = NSWorkspace.shared.runningApplications
+        guard let app = apps.first(where: {
+            $0.localizedName == "WindowManager" || $0.bundleIdentifier == "com.apple.WindowManager"
+        }) else {
+            return nil
         }
-        return nil
+        return AXElement.application(app.processIdentifier)
     }
 }
