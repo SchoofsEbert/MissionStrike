@@ -72,9 +72,12 @@ struct AXElement: AccessibilityElement, @unchecked Sendable {
     /// Several attributes in one round trip to the app; missing ones are left out.
     func attributes(_ names: [String]) -> [String: CFTypeRef] {
         var values: CFArray?
-        guard AXUIElementCopyMultipleAttributeValues(ref, names as CFArray, AXCopyMultipleAttributeOptions(), &values) == .success,
-              let values = values as [AnyObject]?, values.count == names.count else {
-            return [:]
+        let error = AXUIElementCopyMultipleAttributeValues(ref, names as CFArray, AXCopyMultipleAttributeOptions(), &values)
+        guard error == .success, let values = values as [AnyObject]?, values.count == names.count else {
+            // A gone or unresponsive element won't answer one at a time either; anything else
+            // (an app that doesn't take batched reads) gets asked attribute by attribute.
+            guard error != .invalidUIElement, error != .cannotComplete else { return [:] }
+            return names.reduce(into: [:]) { result, name in result[name] = attribute(name) }
         }
         var result: [String: CFTypeRef] = [:]
         for (name, value) in zip(names, values) where !Self.isMissing(value) {
