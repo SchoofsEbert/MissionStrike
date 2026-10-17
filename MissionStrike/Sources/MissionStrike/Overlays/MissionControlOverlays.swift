@@ -14,16 +14,26 @@ extension Notification.Name {
 enum MissionControlOverlays {
     private static var observers: [NSObjectProtocol] = []
 
+    /// After Mission Control's key or a swipe, when to look whether it opened.
+    private static let openingChecks: [Duration] = [.milliseconds(350), .milliseconds(900)]
+    private static var lastOpeningSignal: ContinuousClock.Instant?
+    private static var isCheckingForOpening = false
+
     static func startObserving() {
         guard observers.isEmpty else { return }
         observers = [
+            observe(.missionControlDidOpen) {
+                FirstRunHint.shared.missionControlDidOpen()
+            },
             observe(.missionControlDidClose) {
                 WindowCountChips.shared.hide()
                 KeyboardHints.shared.cancel()
                 CheatSheet.shared.dismiss()
+                FirstRunHint.shared.missionControlDidClose()
                 MissionControlThumbnails.shared.forget()
             },
             observe(.missionStrikeActionSucceeded) {
+                FirstRunHint.shared.actionSucceeded()
                 MissionControlThumbnails.shared.forget()
                 WindowCountChips.shared.layoutMayHaveChanged()
             }
@@ -56,6 +66,26 @@ enum MissionControlOverlays {
         default:
             KeyboardHints.shared.cancel()
             CheatSheet.shared.dismiss()
+        }
+    }
+
+    /// Mission Control's key or a trackpad swipe may be opening Mission Control. Nothing else
+    /// would notice until the next click or key, so look shortly after, while the first-run tip
+    /// is still to be shown. Cheap: only notes the time, the checks run in a task.
+    static func missionControlMayOpen() {
+        guard FirstRunHint.shared.isPending else { return }
+        lastOpeningSignal = .now
+        guard !isCheckingForOpening else { return }
+        isCheckingForOpening = true
+        Task { @MainActor in
+            defer { isCheckingForOpening = false }
+            for delay in openingChecks {
+                // Swipes send a stream of events: count from the last one.
+                while let last = lastOpeningSignal, ContinuousClock.now < last + delay {
+                    try? await Task.sleep(until: last + delay, clock: .continuous)
+                }
+                if MissionControlSession.isActive(maxAge: .zero) { return }
+            }
         }
     }
 }

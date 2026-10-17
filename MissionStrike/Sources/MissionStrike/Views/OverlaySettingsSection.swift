@@ -8,6 +8,8 @@ struct OverlaySettingsSection: View {
     private var enableKeyboardHints = SettingKey.enableKeyboardHints.defaultBool
     @AppStorage(SettingKey.showCheatSheet.rawValue)
     private var showCheatSheet = SettingKey.showCheatSheet.defaultBool
+    @AppStorage(SettingKey.showFirstRunHint.rawValue)
+    private var showFirstRunHint = SettingKey.showFirstRunHint.defaultBool
 
     var body: some View {
         Section("Overlays") {
@@ -24,6 +26,11 @@ struct OverlaySettingsSection: View {
             Toggle(isOn: $showCheatSheet) {
                 Text("Cheat Sheet")
                 Text("Hold the modifier for a second, or press ?, to see every gesture.")
+            }
+
+            Toggle(isOn: $showFirstRunHint) {
+                Text("Getting Started Tip")
+                Text("The first few times Mission Control opens, show how to close a window.")
             }
         }
     }

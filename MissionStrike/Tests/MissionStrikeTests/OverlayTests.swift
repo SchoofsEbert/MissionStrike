@@ -73,6 +73,59 @@ struct OverlayTests {
         #expect(CheatSheet.notes(for: settings).first == "Click means a middle-click or ⌃-click.")
     }
 
+    // MARK: - First-run tip
+
+    @Test("The first-run tip names the clicks that are on")
+    func firstRunMessage() {
+        #expect(FirstRunHint.message(for: .defaults) == "Middle-click or ⌥-click a window to close it · Right-click for more")
+
+        var settings = Settings.defaults
+        settings.enableMiddleClick = false
+        settings.enableContextMenu = false
+        #expect(FirstRunHint.message(for: settings) == "⌥-click a window to close it")
+
+        settings.leftClickModifier = .disabled
+        #expect(FirstRunHint.message(for: settings) == nil)
+
+        settings.enableContextMenu = true
+        #expect(FirstRunHint.message(for: settings) == "Right-click for more")
+    }
+
+    @Test("The tip shows for three visits, or until MissionStrike has acted")
+    func firstRunProgress() {
+        var progress = FirstRunHintProgress()
+        for _ in 0..<3 {
+            #expect(progress.shouldShow(continuingVisit: false))
+            progress.shown(continuingVisit: false)
+        }
+        #expect(!progress.isPending)
+        #expect(!progress.shouldShow(continuingVisit: false))
+
+        progress = FirstRunHintProgress()
+        progress.shown(continuingVisit: false)
+        progress.isFinished = true
+        #expect(!progress.shouldShow(continuingVisit: false))
+        #expect(!progress.shouldShow(continuingVisit: true))
+    }
+
+    @Test("A session restarted within a visit shows the tip again without counting")
+    func firstRunSameVisit() {
+        var progress = FirstRunHintProgress(sessionsShown: 3)
+        #expect(progress.shouldShow(continuingVisit: true))
+        progress.shown(continuingVisit: true)
+        #expect(progress.sessionsShown == 3)
+    }
+
+    @Test("Progress survives a relaunch")
+    func firstRunPersistence() throws {
+        let name = "MissionStrikeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        #expect(FirstRunHintProgress(defaults) == FirstRunHintProgress())
+        FirstRunHintProgress(sessionsShown: 2, isFinished: true).save(to: defaults)
+        #expect(FirstRunHintProgress(defaults) == FirstRunHintProgress(sessionsShown: 2, isFinished: true))
+    }
+
     // MARK: - Thumbnails
 
     @Test("Scanning finds every thumbnail and Space, and skips thumbnails' subtrees")

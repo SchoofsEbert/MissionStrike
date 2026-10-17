@@ -169,6 +169,7 @@ extension EventTapManager {
         if type.rawValue == systemDefinedEventType || type.rawValue == dockGestureEventType {
             MissionControlSession.reset()
             HoverBadgeController.shared.dismissFlash()
+            MissionControlOverlays.missionControlMayOpen()
             return false
         }
         // A click on a confirmation badge is for the badge's own panel: let it through, and

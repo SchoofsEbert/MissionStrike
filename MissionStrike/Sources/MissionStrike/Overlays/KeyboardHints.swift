@@ -53,6 +53,7 @@ final class KeyboardHints {
         let generation = generation
         startEvent = replay
         early = []
+        FirstRunHint.shared.hide()
         Task { @MainActor in
             let layout = await MissionControlThumbnails.shared.layout(maxAge: .milliseconds(500), includeSpaces: true)
             guard generation == self.generation else { return }

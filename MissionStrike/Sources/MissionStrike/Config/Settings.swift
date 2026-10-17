@@ -15,6 +15,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case showWindowCounts
     case enableKeyboardHints
     case showCheatSheet
+    case showFirstRunHint
 
     /// The value used until the user changes the setting.
     var defaultValue: any Sendable {
@@ -23,7 +24,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .enableDockMiddleClick, .poofOnClose: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
              .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
-             .enableKeyboardHints, .showCheatSheet: true
+             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint: true
         }
     }
 
@@ -46,6 +47,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .showWindowCounts: "windowCounts"
         case .enableKeyboardHints: "keyboardHints"
         case .showCheatSheet: "cheatSheet"
+        case .showFirstRunHint: "firstRunHint"
         }
     }
 
@@ -80,6 +82,7 @@ struct Settings: Equatable, Sendable {
     var showWindowCounts: Bool
     var enableKeyboardHints: Bool
     var showCheatSheet: Bool
+    var showFirstRunHint: Bool
 }
 
 extension Settings {
@@ -97,7 +100,8 @@ extension Settings {
         showMenuBarIcon: SettingKey.showMenuBarIcon.defaultBool,
         showWindowCounts: SettingKey.showWindowCounts.defaultBool,
         enableKeyboardHints: SettingKey.enableKeyboardHints.defaultBool,
-        showCheatSheet: SettingKey.showCheatSheet.defaultBool
+        showCheatSheet: SettingKey.showCheatSheet.defaultBool,
+        showFirstRunHint: SettingKey.showFirstRunHint.defaultBool
     )
 
     init(_ defaults: UserDefaults) {
@@ -114,6 +118,7 @@ extension Settings {
         showWindowCounts = defaults.bool(.showWindowCounts)
         enableKeyboardHints = defaults.bool(.enableKeyboardHints)
         showCheatSheet = defaults.bool(.showCheatSheet)
+        showFirstRunHint = defaults.bool(.showFirstRunHint)
     }
 }
 

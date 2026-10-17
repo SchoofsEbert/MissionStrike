@@ -29,6 +29,7 @@ struct SettingsTests {
             #expect(settings.showWindowCounts)
             #expect(settings.enableKeyboardHints)
             #expect(settings.showCheatSheet)
+            #expect(settings.showFirstRunHint)
         }
     }
 
