@@ -15,7 +15,7 @@ struct OverlaySettingsSection: View {
         Section("Overlays") {
             Toggle(isOn: $showWindowCounts) {
                 Text("Window Counts")
-                Text("While the modifier is held, show each window's app and how many windows it has here.")
+                Text("While the modifier is held, label each window with its app and how many of that app's windows are showing.")
             }
 
             Toggle(isOn: $enableKeyboardHints) {
