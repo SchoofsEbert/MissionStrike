@@ -191,6 +191,20 @@ struct HitTesterTests {
         #expect(MissionControlHitTester.firstDescendant(of: screen.thumbnail, titled: "Spaces Bar") == nil)
     }
 
+    @Test("Every thumbnail is found once, in tree order, without looking inside thumbnails")
+    func thumbnailButtons() {
+        let screen = MissionControlScreen()
+        let group = screen.root.add(FakeElement(role: "AXGroup", frame: CGRect(x: 0, y: 600, width: 1000, height: 300)))
+        let second = group.add(FakeElement(role: "AXButton", frame: CGRect(x: 100, y: 620, width: 200, height: 150), wid: 43))
+        group.add(FakeElement(role: "AXButton", frame: CGRect(x: 400, y: 620, width: 200, height: 150), wid: 42))
+        screen.thumbnail.add(FakeElement(role: "AXButton", frame: CGRect(x: 150, y: 250, width: 50, height: 50), wid: 44))
+
+        let found = MissionControlHitTester.thumbnailButtons(in: screen.root)
+        #expect(found.map(\.windowID) == [42, 43])
+        #expect(found.first?.element === screen.thumbnail)
+        #expect(found.last?.element === second)
+    }
+
     @Test("macOS 27: the click is flipped into AX space and the thumbnail frame flipped back")
     func yFlip() {
         var screen = MissionControlScreen()

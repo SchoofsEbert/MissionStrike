@@ -24,7 +24,7 @@ In Mission Control, point at a window or Space and:
 | **⌘W / ⌘M / ⌘H / ⌘Q** | Close, minimize, hide or quit |
 | **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to quit apps with no windows. |
 
-Hold your modifier key and a small badge shows which window a click will hit. If an app asks to confirm a close, such as to save changes, an orange badge on the window says so, and Mission Control stays open. A trackpad tap confirms each close or minimize, and a grey badge shakes when one doesn't go through. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
+Hold your modifier key and a small badge shows which window a click will hit. If an app asks to confirm a close, such as to save changes, an orange badge on the window says so, and Mission Control stays open. Click the badge to go to the window and answer. A trackpad tap confirms each close or minimize, and a grey badge shakes when one doesn't go through. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
 
 ## Installation
 

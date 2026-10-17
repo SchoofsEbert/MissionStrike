@@ -213,6 +213,28 @@ enum MissionControlHitTester {
 
     // MARK: - Windows (wid)
 
+    /// Every window thumbnail under `root`, in tree order, each window once.
+    static func thumbnailButtons<Element: AccessibilityElement>(in root: Element) -> [(element: Element, windowID: CGWindowID)] {
+        var result: [(element: Element, windowID: CGWindowID)] = []
+        var seen: Set<CGWindowID> = []
+        func walk(_ element: Element, depth: Int) {
+            let children = element.walkStep().children
+            // Only childless elements can be thumbnails: walks leave out a thumbnail's subtree.
+            if children.isEmpty {
+                if let windowID = element.thumbnailWindowID, seen.insert(windowID).inserted {
+                    result.append((element, windowID))
+                }
+                return
+            }
+            guard depth < walkDepthLimit else { return }
+            for child in children {
+                walk(child, depth: depth + 1)
+            }
+        }
+        walk(root, depth: 0)
+        return result
+    }
+
     private static func thumbnailWindow<Environment: HitTestEnvironment>(
         at point: CGPoint,
         hit: Environment.Element,

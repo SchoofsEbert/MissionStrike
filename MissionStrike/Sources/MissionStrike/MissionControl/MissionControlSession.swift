@@ -86,6 +86,13 @@ final class MissionControlSession {
         desktopButtons = [:]
     }
 
+    /// The thumbnail button showing a window, to press it; nil before macOS 27, where
+    /// thumbnails carry no window ID.
+    func thumbnailButton(for windowID: CGWindowID) -> AXElement? {
+        guard flipsY, let windowManager else { return nil }
+        return MissionControlHitTester.thumbnailButtons(in: windowManager).first { $0.windowID == windowID }?.element
+    }
+
     private static func findWindowManager() -> AXElement? {
         let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.WindowManager").first
             ?? NSWorkspace.shared.runningApplications.first { $0.localizedName == "WindowManager" }

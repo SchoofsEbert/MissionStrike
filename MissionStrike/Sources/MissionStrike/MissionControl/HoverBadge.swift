@@ -29,6 +29,12 @@ enum HoverBadgeStyle: Equatable {
         }
     }
 
+    /// A second, quieter line under the label.
+    var detail: String? {
+        guard case .needsConfirmation = self else { return nil }
+        return "Click to review"
+    }
+
     /// What VoiceOver says when the badge appears; nil for badges that follow the pointer.
     var announcement: String? {
         guard case .needsConfirmation(let appName) = self else { return nil }
@@ -55,12 +61,6 @@ final class HoverBadgeController {
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<HoverBadgeView>?
-    /// Separate from the hover badge so holding the trigger modifier doesn't cut a flash short.
-    private var flashPanel: NSPanel?
-    private var flashGeneration = 0
-    private static let flashPulses = 3
-    private static let flashPulseDuration: TimeInterval = 0.35
-    private static let flashCheckInterval: Duration = .milliseconds(250)
     /// How long a failure badge stays before fading out.
     private static let failureDuration: Duration = .milliseconds(900)
     private var timer: Timer?
@@ -164,56 +164,8 @@ final class HoverBadgeController {
         }
     }
 
-    /// Shows a badge in the middle of a thumbnail, pulsing a few times to draw the eye. It stays
-    /// while `isPending` holds and Mission Control is open, and Mission Control is never left.
-    func flash(_ style: HoverBadgeStyle, on thumbnail: CGRect, while isPending: @escaping @MainActor () -> Bool) {
-        let panel = flashPanel ?? Self.makePanel()
-        flashPanel = panel
-        let hostingView = NSHostingView(rootView: HoverBadgeView(style: style))
-        hostingView.wantsLayer = true
-        panel.contentView = hostingView
-        let size = hostingView.fittingSize
-        panel.setFrame(NSRect(x: thumbnail.midX - size.width / 2, y: thumbnail.midY - size.height / 2,
-                              width: size.width, height: size.height), display: true)
-        panel.alphaValue = 1
-        hostingView.layer?.add(ActionFeedback.reduceMotion ? Self.fadeIn() : Self.pulse(), forKey: "pulse")
-        panel.orderFrontRegardless()
-        if let announcement = style.announcement {
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-                .announcement: announcement,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue
-            ])
-        }
-
-        flashGeneration += 1
-        let generation = flashGeneration
-        Task { @MainActor in
-            // Input that closes Mission Control hides the badge straight away (`dismissFlash`);
-            // this catches the rest, like the sheet being answered behind Mission Control.
-            while generation == flashGeneration {
-                try? await Task.sleep(for: Self.flashCheckInterval)
-                guard generation == flashGeneration else { return }
-                guard MissionControlSession.isActive(), isPending() else { break }
-            }
-            guard generation == flashGeneration else { return }
-            hideFlash()
-        }
-    }
-
-    /// Fades in, alternates dim and bright for the first pulses, then holds bright.
-    private static func pulse() -> CAKeyframeAnimation {
-        let values: [Float] = [0, 1] + Array(repeating: [0.35, 1], count: flashPulses).flatMap { $0 }
-        let animation = CAKeyframeAnimation(keyPath: "opacity")
-        animation.values = values
-        animation.duration = flashPulseDuration * Double(values.count - 1)
-        animation.timingFunctions = Array(
-            repeating: CAMediaTimingFunction(name: .easeInEaseOut),
-            count: values.count - 1
-        )
-        return animation
-    }
-
-    private static func fadeIn() -> CABasicAnimation {
+    /// A plain fade-in; also what Reduce Motion gets instead of a pulse or shake.
+    static func fadeIn() -> CABasicAnimation {
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = 0
         animation.toValue = 1
@@ -273,16 +225,9 @@ final class HoverBadgeController {
         }
     }
 
-    /// Hides the confirmation badge, e.g. when input is about to close Mission Control.
+    /// Hides the confirmation badges, e.g. when input is about to close Mission Control.
     func dismissFlash() {
-        guard flashPanel?.isVisible == true else { return }
-        flashGeneration += 1
-        hideFlash()
-    }
-
-    private func hideFlash() {
-        flashPanel?.alphaValue = 0
-        flashPanel?.orderOut(nil)
+        ConfirmationBadges.shared.dismiss()
     }
 
     /// Circle centre sits just inside the thumbnail's top-left corner, like a window's close button.
@@ -308,7 +253,7 @@ final class HoverBadgeController {
         hide()
     }
 
-    private static func makePanel() -> NSPanel {
+    static func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -353,13 +298,21 @@ struct HoverBadgeView: View {
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
 
             if let label = style.label {
-                Text(label)
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(.regularMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(.primary.opacity(highContrast ? 0.6 : 0), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold))
+                    if let detail = style.detail {
+                        Text(detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.strokeBorder(.primary.opacity(highContrast ? 0.6 : 0), lineWidth: 1))
+                .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
             }
         }
         .padding(Self.padding)

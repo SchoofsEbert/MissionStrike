@@ -170,6 +170,11 @@ extension EventTapManager {
             HoverBadgeController.shared.dismissFlash()
             return false
         }
+        // A click on a confirmation badge is for the badge's own panel: let it through, and
+        // keep the badge until the panel has it.
+        if type == .leftMouseDown, ConfirmationBadges.shared.contains(NSEvent.mouseLocation) {
+            return false
+        }
 
         let tapEvent = TapEvent(type, event)
         let decision = TapRouter.decide(
