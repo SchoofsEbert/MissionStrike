@@ -16,19 +16,18 @@ class MissionControlManager {
     /// and acts on what it hit.
     func handleClick(_ action: MouseAction, input: String, at pointer: CGPoint) {
         let resolution = MissionControlHitTester.resolve(clickPoint: pointer)
-        Diagnostics.shared.record(input, resolution: resolution)
         // Mission Control may have closed while the click waited to be resolved;
         // acting then would close a window the user can no longer see being targeted.
-        guard let resolution, MissionControlSession.isActive(maxAge: .zero) else { return }
-        perform(resolution: resolution, action: action)
+        if let resolution, MissionControlSession.isActive(maxAge: .zero) {
+            perform(resolution: resolution, action: action)
+        }
+        // Recorded after acting, so the bookkeeping never holds up the close.
+        Diagnostics.shared.record(input, resolution: resolution)
     }
 
     /// Performs a pre-resolved hit.
     func perform(resolution: MissionControlHitTester.Resolution, action: MouseAction) {
         defer { HoverBadgeController.shared.layoutMayHaveChanged() }
-        if action != .minimize, !isDesktop(resolution) {
-            CloseEffect.play(for: resolution)
-        }
         switch resolution.target {
         case .removeDesktop(let button):
             guard action == .close || action == .closeAll else { return }
@@ -56,6 +55,10 @@ class MissionControlManager {
             case .minimize:
                 minimize(window)
             }
+        }
+        // After the action, so drawing the poof never holds up the close.
+        if action != .minimize, !isDesktop(resolution) {
+            CloseEffect.play(for: resolution)
         }
     }
 

@@ -49,7 +49,8 @@ extension MissionControlManager {
         let hit = MissionControlHitTester.resolve(clickPoint: pointer)
         // Mission Control closed in the meantime: neither act nor send ⌘W to the app now in front.
         guard MissionControlSession.isActive(maxAge: .zero) else { return }
-        Diagnostics.shared.record("shortcut", resolution: hit)
+        // Recorded after acting, so the bookkeeping never holds up the action.
+        defer { Diagnostics.shared.record("shortcut", resolution: hit) }
         guard let resolution = hit,
               shortcut.applies(to: resolution.target, spaceClosingEnabled: Self.isSpaceClosingEnabled) else {
             replay.setIntegerValueField(.eventSourceUserData, value: replayedEventMarker)
