@@ -89,8 +89,7 @@ struct SettingsView: View {
                     }
                 } else {
                     Button("Grant Access…") {
-                        let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-                        _ = AXIsProcessTrustedWithOptions(options)
+                        AccessibilityPermission.request()
                     }
                 }
             }
