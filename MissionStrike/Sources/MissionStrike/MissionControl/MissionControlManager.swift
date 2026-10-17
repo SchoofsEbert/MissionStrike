@@ -131,13 +131,17 @@ class MissionControlManager {
             ActionFeedback.failed(at: anchor.map { [$0] } ?? [])
             return
         }
+        // In Mission Control each window's poof or badge can go on its own thumbnail.
+        let thumbnails = MissionControlSession.current?.windowThumbnails() ?? []
         var pressed: [PendingClose] = []
         for window in windows {
-            if let keptWindowID, window.windowID == keptWindowID {
+            let windowID = window.windowID
+            if let keptWindowID, windowID == keptWindowID {
                 continue
             }
             if pressCloseButton(of: window) {
-                pressed.append(PendingClose(window: window, pid: pid))
+                let thumbnail = thumbnails.first { $0.window.windowID == windowID }?.frame
+                pressed.append(PendingClose(window: window, pid: pid, thumbnail: thumbnail))
             }
         }
         logger.debug("Pressed close on \(pressed.count)/\(windows.count) windows for PID \(pid).")
@@ -149,7 +153,58 @@ class MissionControlManager {
         watch(pressed, anchor: anchor)
     }
 
+    /// Closes the windows behind these thumbnails ("Close All Windows Here").
+    func closeWindows(_ thumbnails: [WindowThumbnail]) {
+        var pressed: [PendingClose] = []
+        var failed: [CGRect] = []
+        for (thumbnail, window) in axWindows(for: thumbnails) {
+            if let window, pressCloseButton(of: window) {
+                pressed.append(PendingClose(window: window, pid: thumbnail.window.pid, thumbnail: thumbnail.frame))
+            } else {
+                failed.append(thumbnail.frame)
+            }
+        }
+        logger.debug("Pressed close on \(pressed.count)/\(thumbnails.count) windows here.")
+        if !failed.isEmpty {
+            ActionFeedback.failed(at: failed)
+        }
+        watch(pressed, anchor: nil)
+    }
+
+    /// Minimizes the windows behind these thumbnails ("Minimize All Windows Here"), with one
+    /// haptic for the lot.
+    func minimizeWindows(_ thumbnails: [WindowThumbnail]) {
+        var minimizedCount = 0
+        var failed: [CGRect] = []
+        for (thumbnail, window) in axWindows(for: thumbnails) {
+            if let window, window.set(kAXMinimizedAttribute, to: kCFBooleanTrue) == .success {
+                minimizedCount += 1
+            } else {
+                failed.append(thumbnail.frame)
+            }
+        }
+        logger.debug("Minimized \(minimizedCount)/\(thumbnails.count) windows here.")
+        HoverBadgeController.shared.layoutMayHaveChanged()
+        if minimizedCount > 0 {
+            ActionFeedback.succeeded()
+        }
+        if !failed.isEmpty {
+            ActionFeedback.failed(at: failed)
+        }
+    }
+
     // MARK: - AX window helpers
+
+    /// Each thumbnail's AX window, asking every app for its windows once; nil where it's gone.
+    private func axWindows(for thumbnails: [WindowThumbnail]) -> [(WindowThumbnail, AXElement?)] {
+        var windowsByApp: [pid_t: [AXElement]] = [:]
+        return thumbnails.map { thumbnail in
+            let pid = thumbnail.window.pid
+            let windows = windowsByApp[pid] ?? AXElement.application(pid).windows ?? []
+            windowsByApp[pid] = windows
+            return (thumbnail, windows.first { $0.windowID == thumbnail.window.windowID })
+        }
+    }
 
     /// The app's AX window with the given CGWindowID, if it still exists.
     private func axWindow(pid: pid_t, windowID: CGWindowID) -> AXElement? {

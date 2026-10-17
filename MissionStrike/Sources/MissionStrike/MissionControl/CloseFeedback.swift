@@ -77,6 +77,8 @@ extension MissionControlManager {
     private static let closeCheckInterval: Duration = .milliseconds(100)
     /// How long an app gets to close a window or put up a sheet before the close counts as failed.
     private static let closeCheckTimeout: Duration = .seconds(1)
+    /// How long Mission Control takes to move the remaining thumbnails after some have gone.
+    private static let relayoutDelay: Duration = .milliseconds(500)
 
     /// Waits until each pressed close has an outcome, then shows it: a poof where a window went,
     /// the confirmation badge where an app asks first, the failure badge where nothing happened,
@@ -86,55 +88,47 @@ extension MissionControlManager {
         guard !closes.isEmpty else { return }
         Task { @MainActor in
             let start = ContinuousClock.now
+            var batch = CloseBatch(anchor: anchor)
             var waiting = closes
-            var poofedAtAnchor = false
-            var anyClosed = false
-            var failed = false
-            var failurePlaces: [CGRect] = []
             while !waiting.isEmpty {
                 try? await Task.sleep(for: Self.closeCheckInterval)
                 let timedOut = ContinuousClock.now - start >= Self.closeCheckTimeout
-                var stillWaiting: [PendingClose] = []
-                for close in waiting {
-                    switch CloseOutcome.decide(close.state(), timedOut: timedOut) {
-                    case nil:
-                        stillWaiting.append(close)
-                    case .closed:
-                        if !anyClosed {
-                            anyClosed = true
-                            ActionFeedback.succeeded()
-                        }
-                        HoverBadgeController.shared.layoutMayHaveChanged()
-                        if let thumbnail = close.thumbnail {
-                            CloseEffect.play(at: NSPoint(x: thumbnail.midX, y: thumbnail.midY))
-                        } else if let anchor, !poofedAtAnchor {
-                            poofedAtAnchor = true
-                            CloseEffect.play(at: NSPoint(x: anchor.midX, y: anchor.midY))
-                        }
-                    case .needsConfirmation:
-                        logger.debug("Close is waiting on a confirmation sheet.")
-                        guard let thumbnail = close.thumbnail ?? anchor else { break }
-                        let appName = NSRunningApplication(processIdentifier: close.pid)?.localizedName
-                        ConfirmationBadges.shared.show(
-                            .needsConfirmation(appName: appName),
-                            on: thumbnail,
-                            while: { close.state() == .open(hasSheet: true) },
-                            onClick: { MissionControlManager.shared.goToWindow(close) }
-                        )
-                    case .failed:
-                        logger.warning("Window still open without a sheet after its close button was pressed.")
-                        failed = true
-                        if let place = close.thumbnail ?? anchor, !failurePlaces.contains(place) {
-                            failurePlaces.append(place)
-                        }
+                waiting = waiting.filter { close in
+                    guard let outcome = CloseOutcome.decide(close.state(), timedOut: timedOut) else { return true }
+                    batch.record(outcome, for: close)
+                    return false
+                }
+            }
+            if batch.failed {
+                ActionFeedback.failed(at: batch.failurePlaces)
+            }
+            var asking = batch.asking
+            if batch.anyClosed, asking.contains(where: { $0.thumbnail != nil }) {
+                // The windows that closed leave room the rest move into: badge them where they end up.
+                try? await Task.sleep(for: Self.relayoutDelay)
+                let thumbnails = MissionControlSession.current?.windowThumbnails() ?? []
+                for index in asking.indices {
+                    let windowID = asking[index].windowID
+                    if let moved = thumbnails.first(where: { $0.window.windowID == windowID }) {
+                        asking[index].thumbnail = moved.frame
                     }
                 }
-                waiting = stillWaiting
             }
-            if failed {
-                ActionFeedback.failed(at: failurePlaces)
+            for close in asking {
+                showConfirmationBadge(for: close, anchor: anchor)
             }
         }
+    }
+
+    private func showConfirmationBadge(for close: PendingClose, anchor: CGRect?) {
+        guard let thumbnail = close.thumbnail ?? anchor else { return }
+        let appName = NSRunningApplication(processIdentifier: close.pid)?.localizedName
+        ConfirmationBadges.shared.show(
+            .needsConfirmation(appName: appName),
+            on: thumbnail,
+            while: { close.state() == .open(hasSheet: true) },
+            onClick: { MissionControlManager.shared.goToWindow(close) }
+        )
     }
 
     /// How long leaving Mission Control by activating an app may take before it's toggled off.
@@ -159,6 +153,50 @@ extension MissionControlManager {
                 at: URL(fileURLWithPath: "/System/Applications/Mission Control.app"),
                 configuration: NSWorkspace.OpenConfiguration()
             )
+        }
+    }
+}
+
+/// The outcomes of closes pressed together. Closed windows get their poof and the batch its
+/// haptic as they go; failures and confirmations are shown once every outcome is in.
+@MainActor
+private struct CloseBatch {
+    let anchor: CGRect?
+    private(set) var anyClosed = false
+    private(set) var failed = false
+    /// Where to put failure badges, each place once.
+    private(set) var failurePlaces: [CGRect] = []
+    /// Windows whose app put up a sheet.
+    private(set) var asking: [PendingClose] = []
+    private var poofedAtAnchor = false
+
+    init(anchor: CGRect?) {
+        self.anchor = anchor
+    }
+
+    mutating func record(_ outcome: CloseOutcome, for close: PendingClose) {
+        switch outcome {
+        case .closed:
+            if !anyClosed {
+                anyClosed = true
+                ActionFeedback.succeeded()
+            }
+            HoverBadgeController.shared.layoutMayHaveChanged()
+            if let thumbnail = close.thumbnail {
+                CloseEffect.play(at: NSPoint(x: thumbnail.midX, y: thumbnail.midY))
+            } else if let anchor, !poofedAtAnchor {
+                poofedAtAnchor = true
+                CloseEffect.play(at: NSPoint(x: anchor.midX, y: anchor.midY))
+            }
+        case .needsConfirmation:
+            logger.debug("Close is waiting on a confirmation sheet.")
+            asking.append(close)
+        case .failed:
+            logger.warning("Window still open without a sheet after its close button was pressed.")
+            failed = true
+            if let place = close.thumbnail ?? anchor, !failurePlaces.contains(place) {
+                failurePlaces.append(place)
+            }
         }
     }
 }

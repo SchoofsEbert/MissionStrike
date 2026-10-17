@@ -205,6 +205,25 @@ struct HitTesterTests {
         #expect(found.last?.element === second)
     }
 
+    @Test("Window thumbnails leave out system windows and come back in AppKit coordinates on 27")
+    func windowThumbnails() {
+        var screen = MissionControlScreen()
+        screen.root.add(FakeElement(role: "AXButton", frame: CGRect(x: 600, y: 200, width: 300, height: 200), wid: 99))
+        let notes = AppWindow(pid: 7, ownerName: "Notes", windowID: 42)
+        #expect(MissionControlHitTester.windowThumbnails(in: screen.root, environment: screen.environment)
+            == [WindowThumbnail(window: notes, frame: CGRect(x: 100, y: 200, width: 400, height: 300))])
+
+        screen.environment.flipsY = true
+        #expect(MissionControlHitTester.windowThumbnails(in: screen.root, environment: screen.environment)
+            == [WindowThumbnail(window: notes, frame: CGRect(x: 100, y: 500, width: 400, height: 300))])
+    }
+
+    @Test("The background menu counts the windows it closes")
+    func windowsHereTitle() {
+        #expect(MissionControlContextMenu.windowsHereTitle("Close", count: 7) == "Close All 7 Windows Here")
+        #expect(MissionControlContextMenu.windowsHereTitle("Minimize", count: 1) == "Minimize 1 Window Here")
+    }
+
     @Test("macOS 27: the click is flipped into AX space and the thumbnail frame flipped back")
     func yFlip() {
         var screen = MissionControlScreen()

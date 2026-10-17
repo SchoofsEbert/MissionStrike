@@ -28,6 +28,13 @@ struct AppWindow: Equatable, Sendable {
     let windowID: CGWindowID
 }
 
+/// A window thumbnail in Mission Control.
+struct WindowThumbnail: Equatable, Sendable {
+    let window: AppWindow
+    /// In AppKit screen coordinates.
+    let frame: CGRect
+}
+
 /// What hit-testing needs besides the elements themselves. The live environment asks
 /// Accessibility and the window list; tests answer from fake trees.
 @MainActor
@@ -212,6 +219,25 @@ enum MissionControlHitTester {
     }
 
     // MARK: - Windows (wid)
+
+    /// The app windows among the thumbnails under `root`, with their frames in AppKit screen
+    /// coordinates (macOS 27+, where thumbnails carry a `wid`).
+    static func windowThumbnails<Environment: HitTestEnvironment>(
+        in root: Environment.Element,
+        environment: Environment
+    ) -> [WindowThumbnail] {
+        thumbnailButtons(in: root).compactMap { button in
+            guard let frame = button.element.frame,
+                  let window = environment.appWindow(withID: button.windowID) else {
+                return nil
+            }
+            let height = environment.mainDisplayHeight
+            return WindowThumbnail(
+                window: window,
+                frame: environment.flipsY ? ScreenCoordinates.yFlipped(frame, mainDisplayHeight: height) : frame
+            )
+        }
+    }
 
     /// Every window thumbnail under `root`, in tree order, each window once.
     static func thumbnailButtons<Element: AccessibilityElement>(in root: Element) -> [(element: Element, windowID: CGWindowID)] {

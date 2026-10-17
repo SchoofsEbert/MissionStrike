@@ -86,6 +86,13 @@ final class MissionControlSession {
         desktopButtons = [:]
     }
 
+    /// The app windows Mission Control shows, with their thumbnails; nil before macOS 27, where
+    /// thumbnails carry no window ID.
+    func windowThumbnails() -> [WindowThumbnail]? {
+        guard flipsY, let windowManager else { return nil }
+        return MissionControlHitTester.windowThumbnails(in: windowManager, environment: self)
+    }
+
     /// The thumbnail button showing a window, to press it; nil before macOS 27, where
     /// thumbnails carry no window ID.
     func thumbnailButton(for windowID: CGWindowID) -> AXElement? {

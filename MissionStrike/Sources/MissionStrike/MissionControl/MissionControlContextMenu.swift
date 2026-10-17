@@ -30,6 +30,8 @@ final class MissionControlContextMenu: NSObject {
 
     /// Apps offered by the background menu's "Quit Apps With No Windows".
     private var windowlessApps: [NSRunningApplication] = []
+    /// Windows the background menu's "Close All Windows Here" acts on.
+    private var windowsHere: [WindowThumbnail] = []
 
     private var openMenu: NSMenu?
     /// Point to open the next menu at once the current menu has closed (right-click elsewhere).
@@ -149,11 +151,20 @@ final class MissionControlContextMenu: NSObject {
         return menu
     }
 
-    /// Lists the windowless apps by name and icon: click one to quit just that app,
-    /// or quit them all at once.
+    /// Closes or minimizes every window in Mission Control, and lists the windowless apps by
+    /// name and icon: click one to quit just that app, or quit them all at once.
     private func backgroundMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+
+        // Only macOS 27+ thumbnails say which window they show; the items are left out before.
+        windowsHere = MissionControlSession.current?.windowThumbnails() ?? []
+        if !windowsHere.isEmpty {
+            menu.addItem(item(Self.windowsHereTitle("Close", count: windowsHere.count), #selector(closeWindowsHere)))
+            menu.addItem(item(Self.windowsHereTitle("Minimize", count: windowsHere.count), #selector(minimizeWindowsHere)))
+            menu.addItem(.separator())
+        }
+
         windowlessApps = AppHousekeeping.appsWithoutWindows()
             .sorted { ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "") == .orderedAscending }
 
@@ -182,6 +193,11 @@ final class MissionControlContextMenu: NSObject {
             #selector(quitWindowlessApps)
         ))
         return menu
+    }
+
+    /// "Close All 7 Windows Here", or "Close 1 Window Here".
+    static func windowsHereTitle(_ verb: String, count: Int) -> String {
+        count == 1 ? "\(verb) 1 Window Here" : "\(verb) All \(count) Windows Here"
     }
 
     /// Nil while Space closing is off: the menu would have nothing to offer.
@@ -232,6 +248,14 @@ final class MissionControlContextMenu: NSObject {
         for app in windowlessApps {
             app.terminate()
         }
+    }
+
+    @objc private func closeWindowsHere() {
+        MissionControlManager.shared.closeWindows(windowsHere)
+    }
+
+    @objc private func minimizeWindowsHere() {
+        MissionControlManager.shared.minimizeWindows(windowsHere)
     }
 
     @objc private func closeSpace() {
