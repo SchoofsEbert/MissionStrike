@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Closing, minimizing and picking windows with the keyboard in Mission Control" width="800">
+  <img src="docs/demo.gif" alt="Closing, minimizing and picking windows with the keyboard in Mission Control, then clearing the Space from the right-click menu" width="800">
 </p>
 
 Mission Control shows every window you have open, but it only lets you look at them. To clean up you have to pick each window, wait for it to come forward and hit ⌘W, then do it all again. MissionStrike lets you close, minimize or quit right from the overview.
@@ -18,7 +18,7 @@ Mission Control shows every window you have open, but it only lets you look at t
 - **Middle-click or ⌥-click** a window to close it. Do the same on a Space at the top to close the Space.
 - **Add ⇧** to minimize instead, or **⌘** to close all of that app's windows.
 - **⌘W, ⌘M, ⌘H, ⌘Q** work on the window under the pointer.
-- **Right-click** for Close Others, Hide Others, and more.
+- **Right-click** a window for Close Others, Hide Others and more. Right-click the background to clear the whole Space, or quit apps that have no windows left.
 - **Press F** to put a letter on every window, then type the letter and an action. You never touch the mouse.
 
 Hold ⌥ to see which window a click will hit, and how many windows each app has here. Keep holding for a cheat sheet. If an app asks to save before closing, MissionStrike shows that on the window instead of failing without a word.
