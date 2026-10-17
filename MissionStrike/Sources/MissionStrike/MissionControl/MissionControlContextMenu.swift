@@ -54,7 +54,9 @@ final class MissionControlContextMenu: NSObject {
             }
             openMenu = menu
             Self.isOpen = true
-            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+            // At the right-clicked point, which is what was hit-tested, not wherever the
+            // pointer has moved to since.
+            menu.popUp(positioning: nil, at: point, in: nil)
             Self.isOpen = false
             openMenu = nil
             next = pending
