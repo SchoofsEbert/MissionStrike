@@ -203,6 +203,7 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
 
     if elapsedSeconds < debounceInterval {
         logger.debug("Click debounced (\(String(format: "%.0f", elapsedSeconds * 1000))ms since last).")
+        swallowedMouseUps.swallowRelease(of: type)
         return nil
     }
 
@@ -211,6 +212,7 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
 
     if isActive {
         lastProcessedClickTime = now
+        swallowedMouseUps.swallowRelease(of: type)
         // Hit-testing asks the Dock and WindowManager through Accessibility, which can be
         // slow. The click is swallowed whatever it hits, so resolve after the callback returns
         // rather than holding up input. HitTester applies an OS-gated Y-flip when Mission
