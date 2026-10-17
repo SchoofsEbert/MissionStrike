@@ -10,7 +10,7 @@
 
 ---
 
-> 🤖 **Note:** This entire application (including this README) was completely "vibe-coded". It was built as an experiment to test AI-driven development and solve a personal workflow frustration—without the author needing to write or know any Swift!
+<!-- Demo GIF goes here: closing, minimizing and the keyboard hints in Mission Control. -->
 
 ## Features
 
@@ -19,12 +19,30 @@ In Mission Control, point at a window or Space and:
 | Action | Does |
 |---|---|
 | **Middle-click** or **⌥ Option + click** | Close the window or Space |
-| **⇧ Shift + click** | Minimize the window |
-| **⌘ Command + click** | Close all of that app's windows |
+| Hold **⇧ Shift** while you middle-click or ⌥-click | Minimize the window instead |
+| Hold **⌘ Command** while you middle-click or ⌥-click | Close all of that app's windows |
 | **⌘W / ⌘M / ⌘H / ⌘Q** | Close, minimize, hide or quit |
 | **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to close or minimize every window shown (macOS 27 and later) or to quit apps with no windows. |
 
 Hold your modifier key and a small badge shows which window a click will hit. If an app asks to confirm a close, such as to save changes, an orange badge on the window says so, and Mission Control stays open. Click the badge to go to the window and answer. A trackpad tap confirms each close or minimize, and a grey badge shakes when one doesn't go through. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
+| **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to quit apps with no windows. |
+| **F**, then a label | Pick a window with the keyboard (see [Keyboard hints](#keyboard-hints)) |
+| **?** | A cheat sheet of every gesture |
+Hold your modifier key and a small badge shows which window a click will hit, while each window shows its app and how many of that app's windows are in view, so you know what ⌘ will close. Keep holding for a second, or press **?**, for a cheat sheet of every gesture.
+If an app asks to confirm a close, such as to save changes, a badge on the window says so, and Mission Control stays open. The first few times you open Mission Control, a tip at the bottom shows how to close a window. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
+### Keyboard hints
+Press **F** in Mission Control and every window gets a label of one or two letters. Type a label to select that window, then:
+| Key | Does |
+|---|---|
+| **W** | Close the window |
+| **M** | Minimize it |
+| **H** | Hide its app |
+| **Q** | Quit its app |
+| **A** | Close all of its app's windows |
+| **Return** | Open it and leave Mission Control |
+| **Arrow keys** | Move the selection |
+| **Esc** or **F** | Stop |
+Labels never contain W, M, H, Q, A or F, so you can type them in one go: `sw` closes the window labelled S. Spaces get labels too, so W can close one. Keyboard hints and window counts need macOS 27 or later.
 
 ## Installation
 
@@ -105,5 +123,10 @@ Keep an offline copy of the P12 and its password. If the certificate expires, is
    - **Window thumbnail (macOS 27+)** → the thumbnail's `wid` → the real window → close, minimize or close all.
    - **Older Mission Control** → the classic `AXWindow` close button.
 4. On macOS 27+, click coordinates are flipped vertically to match Accessibility's top-left origin.
+5. Window counts and keyboard hints list the thumbnails from WindowManager's Accessibility tree off the main thread, and draw on click-through panels that Accessibility hit-testing looks through.
 
 If something doesn't work, **About → Copy Diagnostics** copies what MissionStrike saw (never window titles) for a bug report.
+
+## About this project
+
+🤖 This entire application (including this README) was completely "vibe-coded". It was built as an experiment to test AI-driven development and solve a personal workflow frustration—without the author needing to write or know any Swift!
