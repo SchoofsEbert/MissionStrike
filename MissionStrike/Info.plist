@@ -22,10 +22,6 @@
 	<string>2.8.0</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<key>LSArchitecturePriority</key>
-	<array>
-		<string>arm64</string>
-	</array>
 	<key>LSUIElement</key>
 	<true/>
 </dict>
