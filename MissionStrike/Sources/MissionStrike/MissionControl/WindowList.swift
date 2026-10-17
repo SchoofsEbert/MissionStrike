@@ -32,6 +32,34 @@ enum WindowList {
         return nil
     }
 
+    /// The app windows among these CGWindowIDs, from one window-list call; system windows are
+    /// left out.
+    static func appWindows(withIDs windowIDs: [CGWindowID]) -> [CGWindowID: AppWindow] {
+        guard !windowIDs.isEmpty else { return [:] }
+        var ids = windowIDs.map { UnsafeRawPointer(bitPattern: UInt($0)) }
+        guard let array = CFArrayCreate(nil, &ids, ids.count, nil),
+              let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else {
+            return [:]
+        }
+        return appWindows(in: list)
+    }
+
+    /// Every app window in a window list by CGWindowID, skipping system owners.
+    static func appWindows(
+        in windowList: [[String: Any]],
+        ignoredOwners: Set<String> = MissionStrikeConfig.default.ignoredWindowOwners
+    ) -> [CGWindowID: AppWindow] {
+        var windows: [CGWindowID: AppWindow] = [:]
+        for info in windowList {
+            let id = info[kCGWindowNumber as String] as? CGWindowID ?? 0
+            let owner = info[kCGWindowOwnerName as String] as? String ?? ""
+            let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
+            guard id != 0, !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0 else { continue }
+            windows[id] = AppWindow(pid: pid, ownerName: owner, windowID: id)
+        }
+        return windows
+    }
+
     /// Windows smaller than this are helpers and status items, not something to look at.
     private static let minimumVisibleSize: CGFloat = 50
 

@@ -23,14 +23,15 @@ protocol AccessibilityElement: Hashable {
     var parent: Self? { get }
     var children: [Self] { get }
     func hasAction(_ action: String) -> Bool
-    /// Title and children for a tree walk. Mission Control thumbnails hold neither Spaces nor
-    /// the Spaces Bar, so their children are left out and walks skip them.
-    func walkStep() -> (title: String?, children: [Self])
+    /// Title, thumbnail window ID and children for a tree walk. Mission Control thumbnails hold
+    /// neither Spaces nor the Spaces Bar, so their children are left out and walks skip them.
+    func walkStep() -> (title: String?, windowID: CGWindowID?, children: [Self])
 }
 
 extension AccessibilityElement {
-    func walkStep() -> (title: String?, children: [Self]) {
-        (title, thumbnailWindowID == nil ? children : [])
+    func walkStep() -> (title: String?, windowID: CGWindowID?, children: [Self]) {
+        let windowID = thumbnailWindowID
+        return (title, windowID, windowID == nil ? children : [])
     }
 }
 
@@ -127,11 +128,11 @@ struct AXElement: AccessibilityElement, @unchecked Sendable {
     }
 
     /// One round trip per element instead of three.
-    func walkStep() -> (title: String?, children: [AXElement]) {
+    func walkStep() -> (title: String?, windowID: CGWindowID?, children: [AXElement]) {
         let values = attributes([kAXTitleAttribute, kAXChildrenAttribute, "wid"])
         let title = values[kAXTitleAttribute] as? String
-        guard Self.windowID(fromWid: values["wid"]) == nil else { return (title, []) }
-        return (title, (values[kAXChildrenAttribute] as? [AXUIElement])?.map(AXElement.init) ?? [])
+        if let windowID = Self.windowID(fromWid: values["wid"]) { return (title, windowID, []) }
+        return (title, nil, (values[kAXChildrenAttribute] as? [AXUIElement])?.map(AXElement.init) ?? [])
     }
 
     private static func windowID(fromWid value: CFTypeRef?) -> CGWindowID? {

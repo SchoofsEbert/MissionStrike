@@ -1,5 +1,13 @@
 import AppKit
 
+extension Notification.Name {
+    /// Posted on the main thread when a session starts: Mission Control was first seen open.
+    /// Can be posted from inside the event tap callback, so observers must only do cheap work.
+    static let missionControlDidOpen = Notification.Name("io.github.schoofsebert.missionstrike.missionControlDidOpen")
+    /// Posted on the main thread when the session ends, under the same rules.
+    static let missionControlDidClose = Notification.Name("io.github.schoofsebert.missionstrike.missionControlDidClose")
+}
+
 /// The Mission Control that is open now, and what MissionStrike has looked up in it.
 ///
 /// Hit-testing near the Spaces strip used to walk WindowManager's whole Accessibility tree
@@ -61,12 +69,15 @@ final class MissionControlSession {
         }
         RunLoop.main.add(watcher, forMode: .common)
         Self.watcher = watcher
+        NotificationCenter.default.post(name: .missionControlDidOpen, object: nil)
     }
 
     private static func end() {
         watcher?.invalidate()
         watcher = nil
+        guard current != nil else { return }
         current = nil
+        NotificationCenter.default.post(name: .missionControlDidClose, object: nil)
     }
 
     // MARK: - Cached lookups
@@ -76,7 +87,7 @@ final class MissionControlSession {
     private static let spacesLookupTTL: Duration = .seconds(1)
 
     let mainDisplayHeight = ScreenCoordinates.mainDisplayHeight
-    private lazy var windowManager: AXElement? = Self.findWindowManager()
+    private(set) lazy var windowManager: AXElement? = Self.findWindowManager()
     private var spacesBar: (element: AXElement?, at: ContinuousClock.Instant)?
     private var desktopButtons: [AXElement: (buttons: [AXElement], at: ContinuousClock.Instant)] = [:]
 

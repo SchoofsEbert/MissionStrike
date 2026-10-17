@@ -4,7 +4,7 @@ import CoreGraphics
 import Testing
 
 /// An Accessibility element in a hand-built tree.
-private final class FakeElement: AccessibilityElement {
+final class FakeElement: AccessibilityElement {
     var role: String?
     var title: String?
     var frame: CGRect?
