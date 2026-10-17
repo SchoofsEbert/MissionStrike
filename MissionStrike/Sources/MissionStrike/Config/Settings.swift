@@ -67,6 +67,21 @@ struct Settings: Equatable, Sendable {
     var enableDockMiddleClick: Bool
     var poofOnClose: Bool
     var showMenuBarIcon: Bool
+}
+
+extension Settings {
+    /// Every setting at its default.
+    static let defaults = Settings(
+        leftClickModifier: TriggerModifier(rawValue: SettingKey.leftClickModifier.defaultString),
+        enableMiddleClick: SettingKey.enableMiddleClick.defaultBool,
+        enableContextMenu: SettingKey.enableContextMenu.defaultBool,
+        enableKeyboardShortcuts: SettingKey.enableKeyboardShortcuts.defaultBool,
+        showHoverBadge: SettingKey.showHoverBadge.defaultBool,
+        enableSpaceClosing: SettingKey.enableSpaceClosing.defaultBool,
+        enableDockMiddleClick: SettingKey.enableDockMiddleClick.defaultBool,
+        poofOnClose: SettingKey.poofOnClose.defaultBool,
+        showMenuBarIcon: SettingKey.showMenuBarIcon.defaultBool
+    )
 
     init(_ defaults: UserDefaults) {
         leftClickModifier = TriggerModifier(rawValue: defaults.string(.leftClickModifier))

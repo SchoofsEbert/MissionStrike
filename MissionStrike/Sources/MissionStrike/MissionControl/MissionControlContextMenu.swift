@@ -21,7 +21,7 @@ final class MissionControlContextMenu: NSObject {
 
     /// True while a menu is on screen. Read by the event tap callback, which runs on
     /// the main thread inside the menu's tracking loop.
-    nonisolated(unsafe) static var isOpen = false
+    static var isOpen = false
 
     /// Target of the most recent menu; menu item actions read it. Not cleared after
     /// `popUp` returns so an action delivered late still finds its target.

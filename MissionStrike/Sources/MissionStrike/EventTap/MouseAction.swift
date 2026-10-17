@@ -71,7 +71,7 @@ enum ClickTrigger {
 
 /// Mouse-ups whose mouse-down MissionStrike swallowed. The ups are swallowed too;
 /// otherwise they reach Mission Control (or land on a freshly opened menu).
-struct SwallowedMouseUps {
+struct SwallowedMouseUps: Equatable {
     private var pending: Set<CGEventType> = []
 
     /// Swallow the release that belongs to this press.

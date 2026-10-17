@@ -3,23 +3,12 @@ import CoreGraphics
 
 /// Middle-click on a running app's Dock icon quits it, like closing a browser tab;
 /// with ⌥ held it closes the app's windows instead. Works with or without Mission Control.
+/// `TapRouter` decides from `DockIconCache` whether a click is the Dock's; this acts on it.
 enum DockMiddleClick {
-    /// What a middle-click means for the Dock, from cheap state only: this runs in the event
-    /// tap. `.runningApp` clicks are swallowed and handled with `perform` after the callback;
-    /// for `.maybe` the click goes its usual way and `perform` asks the Dock afterwards.
-    static func verdict(for event: CGEvent, enabled: Bool) -> DockSnapshot.Verdict {
-        guard enabled, event.getIntegerValueField(.mouseEventButtonNumber) == 2 else {
-            return .elsewhere
-        }
-        let candidates = candidates(for: event)
-        // The tap's run loop source lives on the main run loop.
-        return MainActor.assumeIsolated { DockIconCache.shared.verdict(at: candidates) }
-    }
-
     /// Points to try in AX space. Quartz location matches AX space; the flipped AppKit
-    /// location covers Mission Control's coordinate quirks on macOS 27.
-    static func candidates(for event: CGEvent) -> [CGPoint] {
-        [event.location, ScreenCoordinates.yFlipped(NSEvent.mouseLocation)]
+    /// pointer location covers Mission Control's coordinate quirks on macOS 27.
+    static func candidates(location: CGPoint, pointer: CGPoint) -> [CGPoint] {
+        [location, ScreenCoordinates.yFlipped(pointer)]
     }
 
     /// Asks the Dock which running app's icon is under the click, then quits the app or closes

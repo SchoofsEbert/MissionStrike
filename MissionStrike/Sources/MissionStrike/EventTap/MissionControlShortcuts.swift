@@ -39,37 +39,12 @@ enum MissionControlShortcut: Sendable {
 /// tap lets them through. Hardware events carry 0 here.
 let replayedEventMarker: Int64 = 0x4D53_5452
 
-/// ⌘W / ⌘M / ⌘H / ⌘Q act on the hovered thumbnail while Mission Control is open.
-/// Everything else (other keys, other modifiers, no thumbnail under the cursor) passes through.
-///
-/// Runs on the event tap callback, which must not wait on Accessibility: a slow app or
-/// WindowManager would hold up all input and get the tap disabled. So the decision uses
-/// cheap checks only: the key is swallowed while Mission Control is open and resolved after
-/// the callback returns. When nothing under the pointer takes the shortcut, the key is posted
-/// again, so it reaches the system as if it had passed through.
-/// Returns true when the key press is swallowed.
-@MainActor
-func handleMissionControlShortcut(_ event: CGEvent) -> Bool {
-    guard let shortcut = MissionControlShortcut(
-            keyCode: event.getIntegerValueField(.keyboardEventKeycode),
-            flags: event.flags
-          ),
-          SettingsStore.shared.current.enableKeyboardShortcuts,
-          MissionControlDetector().isActive(),
-          let replay = event.copy() else {
-        return false
-    }
-    let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-    let pointer = NSEvent.mouseLocation
-    Task { @MainActor in
-        MissionControlManager.shared.handle(shortcut, isRepeat: isRepeat, at: pointer, replay: replay)
-    }
-    return true
-}
-
 extension MissionControlManager {
-    /// Resolves a swallowed shortcut after the tap callback and acts on the hovered thumbnail,
-    /// or posts the key again when there is nothing for it to act on.
+    /// ⌘W / ⌘M / ⌘H / ⌘Q act on the hovered thumbnail while Mission Control is open.
+    /// `TapRouter` swallows the key, since only an Accessibility hit-test can tell whether a
+    /// thumbnail takes it, and that must not hold up the event tap. This runs once the callback
+    /// has returned: it acts on the hovered thumbnail, or posts the key again when there is
+    /// nothing for it to act on, so the key reaches the system as if it had passed through.
     func handle(_ shortcut: MissionControlShortcut, isRepeat: Bool, at pointer: CGPoint, replay: CGEvent) {
         let hit = MissionControlHitTester.resolve(clickPoint: pointer)
         // Mission Control closed in the meantime: neither act nor send ⌘W to the app now in front.
