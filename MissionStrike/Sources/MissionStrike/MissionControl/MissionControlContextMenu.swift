@@ -184,7 +184,9 @@ final class MissionControlContextMenu: NSObject {
         return menu
     }
 
-    private func spaceMenu() -> NSMenu {
+    /// Nil while Space closing is off: the menu would have nothing to offer.
+    private func spaceMenu() -> NSMenu? {
+        guard MissionControlManager.isSpaceClosingEnabled else { return nil }
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(item("Close Space", #selector(closeSpace), key: "w"))

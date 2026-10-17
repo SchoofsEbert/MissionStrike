@@ -128,10 +128,6 @@ class MissionControlManager {
         switch resolution.target {
         case .removeDesktop(let button):
             guard action == .close || action == .closeAll else { return }
-            guard UserDefaults.standard.bool(forKey: "enableSpaceClosing") else {
-                logger.info("Space close skipped — enableSpaceClosing is off.")
-                return
-            }
             removeDesktop(button)
 
         case .window(let pid, let ownerName, let windowID):
@@ -165,8 +161,17 @@ class MissionControlManager {
         }
     }
 
-    /// Removes a Space via its Spaces Bar button.
+    /// Whether Spaces may be closed at all; every way of closing one (click, ⌘W, menu) checks it.
+    nonisolated static var isSpaceClosingEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "enableSpaceClosing")
+    }
+
+    /// Removes a Space via its Spaces Bar button, unless Space closing is turned off.
     func removeDesktop(_ button: AXUIElement) {
+        guard Self.isSpaceClosingEnabled else {
+            logger.info("Space close skipped — enableSpaceClosing is off.")
+            return
+        }
         let result = AXUIElementPerformAction(button, "AXRemoveDesktop" as CFString)
         if result == .success {
             CloseEffect.play(at: NSEvent.mouseLocation)

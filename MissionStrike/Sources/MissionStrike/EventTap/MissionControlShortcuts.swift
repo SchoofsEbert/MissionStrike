@@ -47,7 +47,9 @@ func handleMissionControlShortcut(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         return pass
     }
 
-    if case .removeDesktop = resolution.target, shortcut != .closeWindow {
+    // Only ⌘W acts on a Space, and only while Space closing is on.
+    if case .removeDesktop = resolution.target,
+       shortcut != .closeWindow || !MissionControlManager.isSpaceClosingEnabled {
         return pass
     }
     // Swallow key repeats without acting: holding ⌘W must not close a window per repeat,
