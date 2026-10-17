@@ -184,6 +184,7 @@ extension EventTapManager {
             settings: SettingsStore.shared.current,
             environment: LiveTapEnvironment()
         )
+        MissionControlOverlays.pressed(type, decision: decision)
         carryOut(decision, for: tapEvent, event)
 
         // A press MissionStrike lets through can close Mission Control (Esc, a click on a window or
@@ -239,6 +240,14 @@ extension EventTapManager {
             Task { @MainActor in
                 MissionControlManager.shared.handle(shortcut, isRepeat: isRepeat, at: pointer, replay: replay)
             }
+
+        case .startKeyboardHints:
+            guard let replay = event.copy() else { return }
+            KeyboardHints.shared.start(replay: replay)
+
+        case .keyboardHint(let key, let isRepeat):
+            guard let replay = event.copy() else { return }
+            KeyboardHints.shared.handle(key, isRepeat: isRepeat, replay: replay)
         }
     }
 
@@ -261,6 +270,16 @@ extension EventTapManager {
     }
 }
 
+private extension CGEvent {
+    /// The characters a key press types, read from the event itself.
+    var typedCharacters: String {
+        var length = 0
+        var characters = [UniChar](repeating: 0, count: 4)
+        keyboardGetUnicodeString(maxStringLength: characters.count, actualStringLength: &length, unicodeString: &characters)
+        return String(utf16CodeUnits: characters, count: length)
+    }
+}
+
 private extension TapEvent {
     init(_ type: CGEventType, _ event: CGEvent) {
         self.init(
@@ -269,6 +288,7 @@ private extension TapEvent {
             flags: event.flags,
             keyCode: event.getIntegerValueField(.keyboardEventKeycode),
             isAutorepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+            characters: type == .keyDown ? event.typedCharacters : "",
             location: event.location,
             pointer: NSEvent.mouseLocation,
             time: ProcessInfo.processInfo.systemUptime
@@ -293,5 +313,9 @@ private struct LiveTapEnvironment: TapEnvironment {
 
     func dockVerdict(for event: TapEvent) -> DockSnapshot.Verdict {
         DockIconCache.shared.verdict(at: DockMiddleClick.candidates(location: event.location, pointer: event.pointer))
+    }
+
+    var isKeyboardHintsActive: Bool {
+        KeyboardHints.shared.isActive
     }
 }

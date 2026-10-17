@@ -13,6 +13,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case hapticFeedback
     case showMenuBarIcon
     case showWindowCounts
+    case enableKeyboardHints
 
     /// The value used until the user changes the setting.
     var defaultValue: any Sendable {
@@ -20,7 +21,8 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .leftClickModifier: TriggerModifier.option.rawValue
         case .enableDockMiddleClick, .poofOnClose: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
-             .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts: true
+             .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
+             .enableKeyboardHints: true
         }
     }
 
@@ -41,6 +43,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .hapticFeedback: "haptics"
         case .showMenuBarIcon: "menuBarIcon"
         case .showWindowCounts: "windowCounts"
+        case .enableKeyboardHints: "keyboardHints"
         }
     }
 
@@ -73,6 +76,7 @@ struct Settings: Equatable, Sendable {
     var hapticFeedback: Bool
     var showMenuBarIcon: Bool
     var showWindowCounts: Bool
+    var enableKeyboardHints: Bool
 }
 
 extension Settings {
@@ -88,7 +92,8 @@ extension Settings {
         poofOnClose: SettingKey.poofOnClose.defaultBool,
         hapticFeedback: SettingKey.hapticFeedback.defaultBool,
         showMenuBarIcon: SettingKey.showMenuBarIcon.defaultBool,
-        showWindowCounts: SettingKey.showWindowCounts.defaultBool
+        showWindowCounts: SettingKey.showWindowCounts.defaultBool,
+        enableKeyboardHints: SettingKey.enableKeyboardHints.defaultBool
     )
 
     init(_ defaults: UserDefaults) {
@@ -103,6 +108,7 @@ extension Settings {
         hapticFeedback = defaults.bool(.hapticFeedback)
         showMenuBarIcon = defaults.bool(.showMenuBarIcon)
         showWindowCounts = defaults.bool(.showWindowCounts)
+        enableKeyboardHints = defaults.bool(.enableKeyboardHints)
     }
 }
 

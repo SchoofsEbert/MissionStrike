@@ -19,6 +19,7 @@ enum MissionControlOverlays {
         observers = [
             observe(.missionControlDidClose) {
                 WindowCountChips.shared.hide()
+                KeyboardHints.shared.cancel()
                 MissionControlThumbnails.shared.forget()
             },
             observe(.missionStrikeActionSucceeded) {
@@ -39,5 +40,17 @@ enum MissionControlOverlays {
 
     static func modifiersChanged(_ flags: CGEventFlags) {
         WindowCountChips.shared.modifiersChanged(flags)
+    }
+
+    /// A mouse or key press, before its decision is carried out. A click ends keyboard hints;
+    /// so does a key press they don't take.
+    static func pressed(_ type: CGEventType, decision: TapDecision) {
+        guard type == .keyDown || type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else { return }
+        switch decision {
+        case .keyboardHint, .startKeyboardHints:
+            break
+        default:
+            KeyboardHints.shared.cancel()
+        }
     }
 }

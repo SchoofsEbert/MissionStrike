@@ -10,6 +10,7 @@ private final class FakeTapEnvironment: TapEnvironment {
     var isContextMenuOpen = false
     var menuFrame: CGRect = .null
     var dock: DockSnapshot.Verdict = .elsewhere
+    var isKeyboardHintsActive = false
     private(set) var missionControlChecks = 0
 
     func isMissionControlActive() -> Bool {
@@ -192,6 +193,60 @@ struct TapRouterTests {
         settings.enableKeyboardShortcuts = true
         environment.missionControlActive = false
         #expect(decide(key) == .pass)
+    }
+
+    // MARK: - Overlay keys
+
+    private func key(_ code: Int, _ characters: String, flags: CGEventFlags = [], isRepeat: Bool = false) -> TapEvent {
+        TapEvent(type: .keyDown, flags: flags, keyCode: Int64(code), isAutorepeat: isRepeat, characters: characters)
+    }
+
+    @Test("F in Mission Control starts keyboard hints; F held down doesn't start them again")
+    mutating func startHints() {
+        #expect(decide(key(kVK_ANSI_F, "f")) == .startKeyboardHints)
+        #expect(decide(key(kVK_ANSI_F, "F", flags: .maskShift)) == .startKeyboardHints)
+        #expect(decide(key(kVK_ANSI_F, "f", isRepeat: true)) == .pass)
+        #expect(decide(key(kVK_ANSI_F, "ƒ", flags: .maskAlternate)) == .pass)
+    }
+
+    @Test("F passes outside Mission Control or with keyboard hints off")
+    mutating func startHintsPasses() {
+        settings.enableKeyboardHints = false
+        #expect(decide(key(kVK_ANSI_F, "f")) == .pass)
+        settings.enableKeyboardHints = true
+        environment.missionControlActive = false
+        #expect(decide(key(kVK_ANSI_F, "f")) == .pass)
+    }
+
+    @Test("Typing anything else never asks whether Mission Control is open")
+    mutating func plainTypingIsCheap() {
+        #expect(decide(key(kVK_ANSI_S, "s")) == .pass)
+        #expect(decide(key(kVK_Escape, "\u{1B}")) == .pass)
+        #expect(decide(key(kVK_Return, "\r")) == .pass)
+        #expect(environment.missionControlChecks == 0)
+    }
+
+    @Test("While keyboard hints are up, every plain key is theirs, repeats too")
+    mutating func hintKeys() {
+        environment.isKeyboardHintsActive = true
+        #expect(decide(key(kVK_ANSI_S, "s")) == .keyboardHint(.letter("s"), isRepeat: false))
+        #expect(decide(key(kVK_ANSI_W, "W", flags: .maskShift)) == .keyboardHint(.letter("w"), isRepeat: false))
+        #expect(decide(key(kVK_DownArrow, "", flags: [.maskNumericPad, .maskSecondaryFn], isRepeat: true))
+            == .keyboardHint(.move(.down), isRepeat: true))
+        #expect(decide(key(kVK_ANSI_Slash, "?", flags: .maskShift)) == .keyboardHint(.other, isRepeat: false))
+    }
+
+    @Test("While keyboard hints are up, ⌘ keys still reach the shortcuts")
+    mutating func hintsLeaveShortcuts() {
+        environment.isKeyboardHintsActive = true
+        #expect(decide(key(kVK_ANSI_W, "w", flags: .maskCommand)) == .shortcut(.closeWindow, isRepeat: false))
+    }
+
+    @Test("Once Mission Control has closed, keys pass even if hints think they're up")
+    mutating func hintKeysAfterClose() {
+        environment.isKeyboardHintsActive = true
+        environment.missionControlActive = false
+        #expect(decide(key(kVK_ANSI_S, "s")) == .pass)
     }
 
     @Test("Modifier changes pass and drive the hover badge")

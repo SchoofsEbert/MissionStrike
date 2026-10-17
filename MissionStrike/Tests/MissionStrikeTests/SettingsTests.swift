@@ -27,6 +27,7 @@ struct SettingsTests {
             #expect(!settings.poofOnClose)
             #expect(settings.hapticFeedback)
             #expect(settings.showWindowCounts)
+            #expect(settings.enableKeyboardHints)
         }
     }
 

@@ -7,6 +7,8 @@ struct TapEvent: Sendable {
     var flags: CGEventFlags = []
     var keyCode: Int64 = 0
     var isAutorepeat = false
+    /// What a key press types on the current layout, Shift included; empty for other events.
+    var characters = ""
     /// Quartz location (AX space).
     var location: CGPoint = .zero
     /// `NSEvent.mouseLocation` when the event arrived (AppKit space): what hit-testing takes.
@@ -42,11 +44,16 @@ enum TapDecision: Equatable {
     case closeMenu(reopen: Bool)
     /// Swallowed; once the callback returns, act on the hovered thumbnail or post the key again.
     case shortcut(MissionControlShortcut, isRepeat: Bool)
+    /// Swallowed; F starts keyboard hints, or is posted again once there turns out to be nothing to label.
+    case startKeyboardHints
+    /// Swallowed; a key for the keyboard hints on screen.
+    case keyboardHint(HintKey, isRepeat: Bool)
 
     var swallows: Bool {
         switch self {
         case .pass, .modifiersChanged, .passAndProbeDock: false
-        case .swallow, .missionControlClick, .dockClick, .openMenu, .closeMenu, .shortcut: true
+        case .swallow, .missionControlClick, .dockClick, .openMenu, .closeMenu, .shortcut, .startKeyboardHints,
+             .keyboardHint: true
         }
     }
 }
@@ -60,6 +67,8 @@ protocol TapEnvironment {
     /// Whether a point (Quartz space) lies on the open context menu.
     func menuContains(_ point: CGPoint) -> Bool
     func dockVerdict(for event: TapEvent) -> DockSnapshot.Verdict
+    /// Whether keyboard hints are up or starting: every plain key press belongs to them then.
+    var isKeyboardHintsActive: Bool { get }
 }
 
 /// Decides what the event tap does with each event. Pure apart from `state`, so it can be
@@ -77,7 +86,7 @@ enum TapRouter {
         case .flagsChanged:
             return .modifiersChanged(event.flags)
         case .keyDown:
-            return shortcut(for: event, settings: settings, environment: environment)
+            return key(event, settings: settings, environment: environment)
         default:
             break
         }
@@ -147,6 +156,42 @@ enum TapRouter {
             input: event.type == .otherMouseDown ? "middle-click" : "modifier-click",
             probeDock: probeDock
         )
+    }
+
+    /// Plain keys go to the overlays first; anything they don't take, to the ⌘ shortcuts.
+    private static func key(
+        _ event: TapEvent,
+        settings: Settings,
+        environment: some TapEnvironment
+    ) -> TapDecision {
+        if event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]),
+           let decision = overlayKey(event, settings: settings, environment: environment) {
+            return decision
+        }
+        return shortcut(for: event, settings: settings, environment: environment)
+    }
+
+    /// Plain key presses (no ⌘, ⌥ or ⌃) the overlays take while Mission Control is open: all of
+    /// them while keyboard hints are up, and F to start them. Nil for every other key, which
+    /// goes on its way.
+    private static func overlayKey(
+        _ event: TapEvent,
+        settings: Settings,
+        environment: some TapEnvironment
+    ) -> TapDecision? {
+        let key = HintKey(keyCode: event.keyCode, characters: event.characters)
+        let decision: TapDecision
+        if environment.isKeyboardHintsActive {
+            decision = .keyboardHint(key, isRepeat: event.isAutorepeat)
+        } else if event.isAutorepeat {
+            return nil
+        } else if settings.enableKeyboardHints, key == .letter(HintLabels.toggleLetter) {
+            decision = .startKeyboardHints
+        } else {
+            return nil
+        }
+        // Asked last, so typing outside Mission Control only pays for the check on these keys.
+        return environment.isMissionControlActive() ? decision : nil
     }
 
     /// ⌘W / ⌘M / ⌘H / ⌘Q while Mission Control is open. Whether a thumbnail takes the key is
