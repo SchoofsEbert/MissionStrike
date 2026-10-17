@@ -7,9 +7,8 @@ enum DockMiddleClick {
     /// What a middle-click means for the Dock, from cheap state only: this runs in the event
     /// tap. `.runningApp` clicks are swallowed and handled with `perform` after the callback;
     /// for `.maybe` the click goes its usual way and `perform` asks the Dock afterwards.
-    static func verdict(for event: CGEvent) -> DockSnapshot.Verdict {
-        guard event.getIntegerValueField(.mouseEventButtonNumber) == 2,
-              UserDefaults.standard.bool(forKey: "enableDockMiddleClick") else {
+    static func verdict(for event: CGEvent, enabled: Bool) -> DockSnapshot.Verdict {
+        guard enabled, event.getIntegerValueField(.mouseEventButtonNumber) == 2 else {
             return .elsewhere
         }
         let candidates = candidates(for: event)

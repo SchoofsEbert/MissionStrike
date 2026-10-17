@@ -104,7 +104,7 @@ final class DockIconCache {
     }
 
     private func refresh() {
-        guard UserDefaults.standard.bool(forKey: "enableDockMiddleClick") else {
+        guard SettingsStore.shared.current.enableDockMiddleClick else {
             snapshot = nil
             return
         }

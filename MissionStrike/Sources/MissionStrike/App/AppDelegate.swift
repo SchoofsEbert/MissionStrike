@@ -9,7 +9,7 @@ private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", c
 
 extension UserDefaults {
     @objc dynamic var showMenuBarIcon: Bool {
-        return bool(forKey: "showMenuBarIcon")
+        return bool(.showMenuBarIcon)
     }
 }
 
@@ -48,18 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
 
         IdentifierMigration.migrateIfNeeded()
 
-        // Register all UserDefaults defaults in one place
-        UserDefaults.standard.register(defaults: [
-            "showMenuBarIcon": true,
-            "enableSpaceClosing": true,
-            "enableMiddleClick": true,
-            "enableContextMenu": true,
-            "enableKeyboardShortcuts": true,
-            "showHoverBadge": true,
-            "poofOnClose": false,
-            "enableDockMiddleClick": false,
-            "leftClickModifier": TriggerModifier.option.rawValue
-        ])
+        SettingKey.registerDefaults()
 
         // Observe menu bar icon preference using modern block-based KVO (auto-removes on dealloc)
         kvoObservation = UserDefaults.standard.observe(\.showMenuBarIcon, options: [.new, .initial]) { [weak self] _, _ in
@@ -225,7 +214,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
     // MARK: - Menu Bar
 
     private func setupMenuBarItem() {
-        StatusBarController.shared.setVisible(UserDefaults.standard.bool(forKey: "showMenuBarIcon"), delegate: self)
+        StatusBarController.shared.setVisible(UserDefaults.standard.bool(.showMenuBarIcon), delegate: self)
     }
 
     private func updateMenuBarIconState() {

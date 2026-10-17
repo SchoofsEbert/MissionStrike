@@ -162,8 +162,8 @@ class MissionControlManager {
     }
 
     /// Whether Spaces may be closed at all; every way of closing one (click, ⌘W, menu) checks it.
-    nonisolated static var isSpaceClosingEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "enableSpaceClosing")
+    static var isSpaceClosingEnabled: Bool {
+        SettingsStore.shared.current.enableSpaceClosing
     }
 
     /// Removes a Space via its Spaces Bar button, unless Space closing is turned off.

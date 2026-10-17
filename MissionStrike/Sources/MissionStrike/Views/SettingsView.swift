@@ -6,15 +6,24 @@ import os.log
 private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "Settings")
 
 struct SettingsView: View {
-    @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
-    @AppStorage("enableSpaceClosing") private var enableSpaceClosing = true
-    @AppStorage("enableMiddleClick") private var enableMiddleClick = true
-    @AppStorage("enableContextMenu") private var enableContextMenu = true
-    @AppStorage("enableKeyboardShortcuts") private var enableKeyboardShortcuts = true
-    @AppStorage("showHoverBadge") private var showHoverBadge = true
-    @AppStorage("poofOnClose") private var poofOnClose = false
-    @AppStorage("enableDockMiddleClick") private var enableDockMiddleClick = false
-    @AppStorage("leftClickModifier") private var leftClickModifier = "option"
+    @AppStorage(SettingKey.showMenuBarIcon.rawValue)
+    private var showMenuBarIcon = SettingKey.showMenuBarIcon.defaultBool
+    @AppStorage(SettingKey.enableSpaceClosing.rawValue)
+    private var enableSpaceClosing = SettingKey.enableSpaceClosing.defaultBool
+    @AppStorage(SettingKey.enableMiddleClick.rawValue)
+    private var enableMiddleClick = SettingKey.enableMiddleClick.defaultBool
+    @AppStorage(SettingKey.enableContextMenu.rawValue)
+    private var enableContextMenu = SettingKey.enableContextMenu.defaultBool
+    @AppStorage(SettingKey.enableKeyboardShortcuts.rawValue)
+    private var enableKeyboardShortcuts = SettingKey.enableKeyboardShortcuts.defaultBool
+    @AppStorage(SettingKey.showHoverBadge.rawValue)
+    private var showHoverBadge = SettingKey.showHoverBadge.defaultBool
+    @AppStorage(SettingKey.poofOnClose.rawValue)
+    private var poofOnClose = SettingKey.poofOnClose.defaultBool
+    @AppStorage(SettingKey.enableDockMiddleClick.rawValue)
+    private var enableDockMiddleClick = SettingKey.enableDockMiddleClick.defaultBool
+    @AppStorage(SettingKey.leftClickModifier.rawValue)
+    private var leftClickModifier = SettingKey.leftClickModifier.defaultString
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
     @State private var accessibilityRetryTask: Task<Void, Never>?

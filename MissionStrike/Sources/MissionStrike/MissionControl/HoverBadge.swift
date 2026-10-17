@@ -65,9 +65,8 @@ final class HoverBadgeController {
     }
 
     private var isTriggerHeld: Bool {
-        guard UserDefaults.standard.bool(forKey: "showHoverBadge") else { return false }
-        let raw = UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option"
-        guard let mask = TriggerModifier(rawValue: raw)?.eventFlagMask else { return false }
+        let settings = SettingsStore.shared.current
+        guard settings.showHoverBadge, let mask = settings.leftClickModifier?.eventFlagMask else { return false }
         return flags.contains(mask)
     }
 

@@ -29,9 +29,9 @@ enum MissionControlShortcut: Sendable {
 
     /// Whether the shortcut can act on what the hit-test found: only ⌘W acts on a Space,
     /// and only while Space closing is on.
-    func applies(to resolution: MissionControlHitTester.Resolution) -> Bool {
-        guard case .removeDesktop = resolution.target else { return true }
-        return self == .closeWindow && MissionControlManager.isSpaceClosingEnabled
+    func applies(to target: MissionControlHitTester.Target, spaceClosingEnabled: Bool) -> Bool {
+        guard case .removeDesktop = target else { return true }
+        return self == .closeWindow && spaceClosingEnabled
     }
 }
 
@@ -54,7 +54,7 @@ func handleMissionControlShortcut(_ event: CGEvent) -> Bool {
             keyCode: event.getIntegerValueField(.keyboardEventKeycode),
             flags: event.flags
           ),
-          UserDefaults.standard.bool(forKey: "enableKeyboardShortcuts"),
+          SettingsStore.shared.current.enableKeyboardShortcuts,
           MissionControlActiveChecker().isActive(),
           let replay = event.copy() else {
         return false
@@ -75,7 +75,8 @@ extension MissionControlManager {
         // Mission Control closed in the meantime: neither act nor send ⌘W to the app now in front.
         guard MissionControlActiveChecker().isActive() else { return }
         Diagnostics.shared.record("shortcut", resolution: hit)
-        guard let resolution = hit, shortcut.applies(to: resolution) else {
+        guard let resolution = hit,
+              shortcut.applies(to: resolution.target, spaceClosingEnabled: Self.isSpaceClosingEnabled) else {
             replay.setIntegerValueField(.eventSourceUserData, value: replayedEventMarker)
             replay.post(tap: .cgSessionEventTap)
             return

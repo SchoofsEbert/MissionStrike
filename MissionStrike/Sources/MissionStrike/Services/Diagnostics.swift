@@ -106,14 +106,10 @@ final class Diagnostics: @unchecked Sendable {
 
     private static func settings() -> String {
         let defaults = UserDefaults.standard
-        let toggles = [
-            ("middleClick", "enableMiddleClick"), ("rightClickMenu", "enableContextMenu"),
-            ("shortcuts", "enableKeyboardShortcuts"), ("hoverBadge", "showHoverBadge"),
-            ("spaces", "enableSpaceClosing"), ("dockMiddleClick", "enableDockMiddleClick"),
-            ("poof", "poofOnClose")
-        ].map { "\($0.0)=\(defaults.bool(forKey: $0.1) ? "on" : "off")" }
-        let modifier = "modifier=\(defaults.string(forKey: "leftClickModifier") ?? "option")"
-        return ([modifier] + toggles).joined(separator: ", ")
+        return SettingKey.allCases.map { key in
+            let value = key.defaultValue is Bool ? (defaults.bool(key) ? "on" : "off") : defaults.string(key)
+            return "\(key.diagnosticsName)=\(value)"
+        }.joined(separator: ", ")
     }
 
     private static func screens() -> String {

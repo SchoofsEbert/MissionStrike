@@ -22,7 +22,7 @@ enum CloseEffect {
 
     /// `point` is in AppKit screen coordinates.
     static func play(at point: NSPoint) {
-        guard UserDefaults.standard.bool(forKey: "poofOnClose") else { return }
+        guard SettingsStore.shared.current.poofOnClose else { return }
 
         let frame = NSRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],

@@ -193,12 +193,14 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
     }
 
     let flags = event.flags
+    // The tap's run loop source lives on the main run loop.
+    let settings = MainActor.assumeIsolated { SettingsStore.shared.current }
     // Middle-clicks on a running app's Dock icon come first, in or out of Mission Control.
     // When the cached Dock layout can't tell, the click goes its usual way and the Dock is
     // asked once the callback has returned.
     var dockProbe: [CGPoint]?
     if type == .otherMouseDown {
-        let verdict = DockMiddleClick.verdict(for: event)
+        let verdict = DockMiddleClick.verdict(for: event, enabled: settings.enableDockMiddleClick)
         let candidates = DockMiddleClick.candidates(for: event)
         if verdict == .runningApp {
             swallowedMouseUps.swallowRelease(of: type)
@@ -214,8 +216,8 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
         type: type,
         buttonNumber: event.getIntegerValueField(.mouseEventButtonNumber),
         flags: flags,
-        middleClickEnabled: UserDefaults.standard.bool(forKey: "enableMiddleClick"),
-        leftClickModifier: TriggerModifier(rawValue: UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option")
+        middleClickEnabled: settings.enableMiddleClick,
+        leftClickModifier: settings.leftClickModifier
     )
     guard isTrigger else {
         probeDock(dockProbe, flags: flags)
@@ -312,7 +314,7 @@ private func handleTapDisabled(event: CGEvent, refcon: UnsafeMutableRawPointer?)
 /// Right-click in Mission Control opens MissionStrike's context menu: for the window or
 /// Space under the pointer, or app-wide actions on empty space.
 private func handleRightMouseDown(_ event: CGEvent) -> Unmanaged<CGEvent>? {
-    guard UserDefaults.standard.bool(forKey: "enableContextMenu"),
+    guard MainActor.assumeIsolated({ SettingsStore.shared.current.enableContextMenu }),
           MissionControlActiveChecker().isActive() else {
         return Unmanaged.passUnretained(event)
     }
