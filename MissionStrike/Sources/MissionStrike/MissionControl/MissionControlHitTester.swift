@@ -51,7 +51,8 @@ protocol HitTestEnvironment {
     /// The buttons that can remove a Space (`AXRemoveDesktop`) with their frames: those in
     /// `bar`, or anywhere in WindowManager when nil.
     func desktops(in bar: Element?) -> [(element: Element, frame: CGRect)]
-    /// The app window behind a thumbnail's CGWindowID; nil for system windows.
+    /// The app window behind a thumbnail's CGWindowID; nil for system windows and for windows
+    /// that aren't on screen, such as those on other Spaces.
     func appWindow(withID windowID: CGWindowID) -> AppWindow?
     /// Whether the element belongs to the Dock, WindowManager or another system overlay.
     func isSystemOverlay(_ element: Element) -> Bool
@@ -266,14 +267,19 @@ enum MissionControlHitTester {
         hit: Environment.Element,
         in environment: Environment
     ) -> (AppWindow, CGRect)? {
-        guard let button = ancestors(of: hit).first(where: { $0.thumbnailWindowID != nil }),
-              let windowID = button.thumbnailWindowID,
-              let buttonFrame = button.frame,
-              thumbnailHitArea(of: buttonFrame)?.contains(point) == true,
-              let window = environment.appWindow(withID: windowID) else {
-            return nil
+        guard let button = ancestors(of: hit).first(where: { $0.thumbnailWindowID != nil }) else { return nil }
+        // WindowManager keeps hidden thumbnails for the windows on other Spaces, and
+        // Accessibility's hit-test can land on one of those. The thumbnail shown is then a sibling.
+        for candidate in [button] + (button.parent?.children ?? []) {
+            guard let windowID = candidate.thumbnailWindowID,
+                  let frame = candidate.frame,
+                  thumbnailHitArea(of: frame)?.contains(point) == true,
+                  let window = environment.appWindow(withID: windowID) else {
+                continue
+            }
+            return (window, frame)
         }
-        return (window, buttonFrame)
+        return nil
     }
 
     /// The part of a thumbnail button that counts as a hit, or nil when too small to trust.

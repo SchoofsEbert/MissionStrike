@@ -153,7 +153,7 @@ extension MissionControlSession: HitTestEnvironment {
     }
 
     func appWindow(withID windowID: CGWindowID) -> AppWindow? {
-        WindowList.appWindow(withID: windowID)
+        WindowList.appWindow(withID: windowID, onScreenOnly: true)
     }
 
     func isSystemOverlay(_ element: AXElement) -> Bool {

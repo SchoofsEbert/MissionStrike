@@ -148,6 +148,17 @@ struct OverlayTests {
         #expect(MissionControlThumbnails.elements(in: root, includeSpaces: false).spaces.isEmpty)
     }
 
+    @Test("A Space's frame is centred on the position WindowManager gives, and on its name in a collapsed bar")
+    func spaceFrame() {
+        let bar = CGRect(x: 0, y: 0, width: 1728, height: 72)
+        // Expanded bar.
+        #expect(MissionControlThumbnails.spaceFrame(fromAX: CGRect(x: 692, y: 120, width: 170, height: 130), bar: bar)
+            == CGRect(x: 607, y: 55, width: 170, height: 130))
+        // Collapsed bar: the button is pushed up, and its name shows in the bar's lower half.
+        #expect(MissionControlThumbnails.spaceFrame(fromAX: CGRect(x: 774, y: 0, width: 170, height: 130), bar: bar)
+            == CGRect(x: 689, y: 36, width: 170, height: 36))
+    }
+
     @Test("The window list maps window IDs to app windows, leaving out the system's")
     func appWindows() {
         let list: [[String: Any]] = [
@@ -156,5 +167,18 @@ struct OverlayTests {
             [kCGWindowNumber as String: CGWindowID(44), kCGWindowOwnerName as String: "Mail", kCGWindowOwnerPID as String: Int32(0)]
         ]
         #expect(WindowList.appWindows(in: list) == [42: AppWindow(pid: 7, ownerName: "Notes", windowID: 42)])
+    }
+
+    @Test("On screen only leaves out windows on other Spaces")
+    func onScreenWindows() {
+        let list: [[String: Any]] = [
+            [kCGWindowNumber as String: CGWindowID(42), kCGWindowOwnerName as String: "Notes", kCGWindowOwnerPID as String: Int32(7),
+             kCGWindowIsOnscreen as String: true],
+            [kCGWindowNumber as String: CGWindowID(43), kCGWindowOwnerName as String: "Mail", kCGWindowOwnerPID as String: Int32(8)]
+        ]
+        #expect(WindowList.appWindows(in: list, onScreenOnly: true) == [42: AppWindow(pid: 7, ownerName: "Notes", windowID: 42)])
+        #expect(WindowList.appWindows(in: list).count == 2)
+        #expect(WindowList.appWindow(withID: 43, in: list, onScreenOnly: true) == nil)
+        #expect(WindowList.appWindow(withID: 43, in: list) == AppWindow(pid: 8, ownerName: "Mail", windowID: 43))
     }
 }

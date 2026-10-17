@@ -3,15 +3,16 @@ import CoreGraphics
 /// Looks up app windows in the CoreGraphics window list.
 enum WindowList {
     /// The app window with this CGWindowID, or nil when it's gone or belongs to the system
-    /// (Dock, WindowManager, …).
-    static func appWindow(withID windowID: CGWindowID) -> AppWindow? {
+    /// (Dock, WindowManager, …). With `onScreenOnly`, also nil when it isn't on screen, such as
+    /// a window on another Space.
+    static func appWindow(withID windowID: CGWindowID, onScreenOnly: Bool = false) -> AppWindow? {
         // Describes just this window (on screen or not) instead of copying the whole list.
         var ids = [UnsafeRawPointer(bitPattern: UInt(windowID))]
         guard let array = CFArrayCreate(nil, &ids, 1, nil),
               let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else {
             return nil
         }
-        return appWindow(withID: windowID, in: list)
+        return appWindow(withID: windowID, in: list, onScreenOnly: onScreenOnly)
     }
 
     /// The app window with this CGWindowID in a window list (as `CGWindowListCopyWindowInfo`
@@ -19,45 +20,53 @@ enum WindowList {
     static func appWindow(
         withID windowID: CGWindowID,
         in windowList: [[String: Any]],
-        ignoredOwners: Set<String> = MissionStrikeConfig.default.ignoredWindowOwners
+        ignoredOwners: Set<String> = MissionStrikeConfig.default.ignoredWindowOwners,
+        onScreenOnly: Bool = false
     ) -> AppWindow? {
         for info in windowList {
             let id = info[kCGWindowNumber as String] as? CGWindowID ?? 0
             guard id == windowID else { continue }
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
-            guard !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0 else { return nil }
+            guard !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0,
+                  !onScreenOnly || isOnScreen(info) else { return nil }
             return AppWindow(pid: pid, ownerName: owner, windowID: windowID)
         }
         return nil
     }
 
     /// The app windows among these CGWindowIDs, from one window-list call; system windows are
-    /// left out.
-    static func appWindows(withIDs windowIDs: [CGWindowID]) -> [CGWindowID: AppWindow] {
+    /// left out, and with `onScreenOnly` so are windows that aren't on screen.
+    static func appWindows(withIDs windowIDs: [CGWindowID], onScreenOnly: Bool = false) -> [CGWindowID: AppWindow] {
         guard !windowIDs.isEmpty else { return [:] }
         var ids = windowIDs.map { UnsafeRawPointer(bitPattern: UInt($0)) }
         guard let array = CFArrayCreate(nil, &ids, ids.count, nil),
               let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else {
             return [:]
         }
-        return appWindows(in: list)
+        return appWindows(in: list, onScreenOnly: onScreenOnly)
     }
 
     /// Every app window in a window list by CGWindowID, skipping system owners.
     static func appWindows(
         in windowList: [[String: Any]],
-        ignoredOwners: Set<String> = MissionStrikeConfig.default.ignoredWindowOwners
+        ignoredOwners: Set<String> = MissionStrikeConfig.default.ignoredWindowOwners,
+        onScreenOnly: Bool = false
     ) -> [CGWindowID: AppWindow] {
         var windows: [CGWindowID: AppWindow] = [:]
         for info in windowList {
             let id = info[kCGWindowNumber as String] as? CGWindowID ?? 0
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
-            guard id != 0, !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0 else { continue }
+            guard id != 0, !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0,
+                  !onScreenOnly || isOnScreen(info) else { continue }
             windows[id] = AppWindow(pid: pid, ownerName: owner, windowID: id)
         }
         return windows
+    }
+
+    private static func isOnScreen(_ info: [String: Any]) -> Bool {
+        info[kCGWindowIsOnscreen as String] as? Bool == true
     }
 
     /// Windows smaller than this are helpers and status items, not something to look at.
@@ -75,7 +84,7 @@ enum WindowList {
         for info in windowList {
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != 0 else { continue }
             owning.insert(pid)
-            guard info[kCGWindowIsOnscreen as String] as? Bool == true,
+            guard isOnScreen(info),
                   info[kCGWindowLayer as String] as? Int == 0,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let boundsDict = info[kCGWindowBounds as String] as? [String: Any],

@@ -134,6 +134,20 @@ struct HitTesterTests {
         #expect(screen.resolve(CGPoint(x: 300, y: 350)) == nil)
     }
 
+    @Test("A hidden thumbnail from another Space on top of the shown one is looked through")
+    func otherSpaceThumbnail() {
+        let screen = MissionControlScreen()
+        // Added last, so the fake hit-test lands on it first, like WindowManager's does.
+        screen.root.add(FakeElement(role: "AXButton", frame: CGRect(x: 50, y: 150, width: 600, height: 400), wid: 50))
+        guard case .window(_, _, let windowID) = screen.resolve(CGPoint(x: 300, y: 350))?.target else {
+            Issue.record("Expected the shown window")
+            return
+        }
+        #expect(windowID == 42)
+        // Off the shown thumbnail, the hidden one alone is not a hit.
+        #expect(screen.resolve(CGPoint(x: 600, y: 520)) == nil)
+    }
+
     @Test("Clicking a Space's button resolves to that Space")
     func spaceButton() {
         let screen = MissionControlScreen()
