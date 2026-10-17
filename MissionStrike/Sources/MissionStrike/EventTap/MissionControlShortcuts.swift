@@ -57,6 +57,7 @@ func handleMissionControlShortcut(_ event: CGEvent) -> Unmanaged<CGEvent>? {
     }
 
     Task { @MainActor in
+        guard MissionControlActiveChecker().isActive() else { return }
         MissionControlManager.shared.perform(shortcut, on: resolution)
     }
     return nil

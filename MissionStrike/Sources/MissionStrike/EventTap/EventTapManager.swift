@@ -223,9 +223,10 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
         Task { @MainActor in
             let resolution = MissionControlHitTester.resolve(clickPoint: clickPoint)
             Diagnostics.shared.record(input, resolution: resolution)
-            if let resolution {
-                MissionControlManager.shared.perform(resolution: resolution, action: action)
-            }
+            // Mission Control may have closed while the click waited to be resolved;
+            // acting then would close a window the user can no longer see being targeted.
+            guard let resolution, MissionControlActiveChecker().isActive() else { return }
+            MissionControlManager.shared.perform(resolution: resolution, action: action)
         }
         // Always swallow while Mission Control is up so empty/near-miss middle-clicks
         // do not fall through as normal MC clicks.
