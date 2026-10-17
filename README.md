@@ -28,6 +28,8 @@ Hold your modifier key and a small badge shows which window a click will hit. If
 
 ## Installation
 
+MissionStrike needs a Mac with Apple silicon and macOS 14 Sonoma or later. There's no Intel build.
+
 ### Homebrew (recommended)
 
 ```bash
@@ -41,7 +43,7 @@ curl -fsSLO https://github.com/SchoofsEbert/MissionStrike/releases/latest/downlo
 bash install.sh
 ```
 
-The script is downloaded from a GitHub Release, then downloads the latest app release, checks its signature and installs it to `/Applications`.
+The script comes from the latest release rather than the main branch. It downloads the app, checks its signature, and installs it to `/Applications`, keeping your current copy until the new one is in place. It needs no `sudo`; run it from an account that can write to `/Applications`.
 
 ### Manual
 
@@ -59,13 +61,13 @@ MissionStrike needs Accessibility access to see clicks in Mission Control and cl
 
 ## Updating
 
-MissionStrike checks for updates once a day; you can also check from the menu bar. A window shows what's new, and **Install & Relaunch** downloads the update, verifies its signature and restarts the app.
+MissionStrike checks for updates once a day; you can also check from the menu bar. A window shows what's new, and **Install & Relaunch** downloads the update, verifies its signature and restarts the app. If anything fails, the current version stays in place. **Skip This Version** stops the daily check from offering that version; checking from the menu bar still shows it.
 
 Homebrew leaves updates to the app, so `brew upgrade` only updates MissionStrike with `--greedy`.
 
 ## Building from Source
 
-Requires an Apple-silicon Mac, Xcode or the Swift command line tools. MissionStrike is Apple-silicon only.
+Requires an Apple-silicon Mac with Xcode or the Swift command line tools.
 
 ```bash
 git clone https://github.com/SchoofsEbert/MissionStrike.git
@@ -79,7 +81,20 @@ The signed app and zip end up in `MissionStrike/dist/`. Without the MissionStrik
 
 Releases are signed with a self-signed certificate; the in-app updater and `install.sh` reject downloads that aren't. Each release also has a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations): `gh attestation verify MissionStrike.app.zip --repo SchoofsEbert/MissionStrike`.
 
-The `release` GitHub Actions environment must require reviewers and allow deployment only from protected `v*` tags. Keep the signing P12 and password as secrets scoped to that environment. If the certificate is lost or compromised, create a replacement certificate, update the pinned requirement in `CodeSigning.swift` and `install.sh`, update the environment secrets, and publish recovery instructions: existing installations will need to reinstall and grant Accessibility again because the signing identity changes.
+Pushing a `v*` tag runs the release workflow. It builds and tests the tag without any secrets, then waits for approval before the `release` environment signs the build. Only that signing step sees the certificate, and only for a tag on `main`. The workflow can be re-run for the same tag; it updates the existing release and cask.
+
+For maintainers, the certificate's safety depends on these repository settings:
+
+- **Environment `release`**: required reviewers, deployment limited to `v*` tags, and the `MISSIONSTRIKE_P12_BASE64` and `MISSIONSTRIKE_P12_PASSWORD` secrets stored there rather than as repository secrets.
+- **Environment `homebrew-tap`**: deployment limited to `v*` tags, with the `HOMEBREW_TAP_DEPLOY_KEY` secret.
+- **Tag ruleset** for `v*`: only maintainers may create tags, and nobody may update or delete them.
+
+Keep an offline copy of the P12 and its password. If the certificate expires, is lost, or may have leaked:
+
+1. If it may have leaked, delete the environment secrets at once so the workflow can't sign with it.
+2. Create a new self-signed code signing certificate named "MissionStrike Code Signing", and store its P12 in the `release` environment.
+3. Replace the certificate hash in `CodeSigning.swift` and `install.sh`, and release a new version.
+4. Tell users to reinstall with Homebrew or the install script. The updater in their copy only accepts the old certificate, so it won't install the new release, and macOS asks for Accessibility again because the signature changed. If the old key leaked, say so, since anyone holding it can sign an update that older copies accept.
 
 ## How it Works
 
