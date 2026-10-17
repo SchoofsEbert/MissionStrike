@@ -19,22 +19,6 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Progress bar
-            GeometryReader { geo in
-                Capsule()
-                    .fill(Color.accentColor.opacity(0.15))
-                    .frame(height: 3)
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.accentColor)
-                            .frame(
-                                width: geo.size.width * CGFloat(currentStep + 1) / CGFloat(totalSteps),
-                                height: 3
-                            )
-                    }
-            }
-            .frame(height: 3)
-
             // Step content: a short directional slide with a cross-fade
             ZStack {
                 switch currentStep {
@@ -53,10 +37,7 @@ struct OnboardingView: View {
 
             // Navigation bar
             HStack {
-                // Step indicator
-                Text("Step \(currentStep + 1) of \(totalSteps)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                pageDots
 
                 Spacer()
 
@@ -67,13 +48,17 @@ struct OnboardingView: View {
                     .keyboardShortcut(.leftArrow, modifiers: [])
                 }
 
-                if currentStep < totalSteps - 1 {
+                if currentStep == 1 && !isAccessibilityEnabled {
+                    Button("Skip for Now") {
+                        go(to: currentStep + 1)
+                    }
+                } else if currentStep < totalSteps - 1 {
                     Button("Continue") {
                         go(to: currentStep + 1)
                     }
                     .keyboardShortcut(.defaultAction)
                 } else {
-                    Button("Get Started") {
+                    Button(isAccessibilityEnabled ? "Get Started" : "Done") {
                         onComplete()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -86,6 +71,13 @@ struct OnboardingView: View {
         .onReceive(accessibilityChanged) { _ in
             accessibilityRetryTask?.cancel()
             accessibilityRetryTask = AccessibilityTrustRetry.schedule {
+                applyAccessibilityGrantIfNeeded()
+            }
+        }
+        .task(id: isAccessibilityEnabled) {
+            // The change notification is not always sent, so also check while access is off.
+            while !isAccessibilityEnabled && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
                 applyAccessibilityGrantIfNeeded()
             }
         }
@@ -116,7 +108,7 @@ struct OnboardingView: View {
                     .fontWeight(.bold)
 
                 Text(
-                    "Close windows and Spaces directly from Mission Control\n"
+                    "Close windows and Spaces directly from Mission Control "
                         + "with a single click — no more hunting for tiny close buttons."
                 )
                     .multilineTextAlignment(.center)
@@ -146,7 +138,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("MissionStrike needs Accessibility access to detect\nyour clicks in Mission Control and close windows.")
+                Text("MissionStrike needs Accessibility access to detect your clicks in Mission Control and close windows.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .font(.body)
@@ -173,11 +165,11 @@ struct OnboardingView: View {
 
             if !isAccessibilityEnabled {
                 Button {
-                    let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-                    _ = AXIsProcessTrustedWithOptions(options)
+                    AccessibilityPermission.request()
                 } label: {
                     Label("Open System Settings", systemImage: "gear")
                 }
+                .keyboardShortcut(.defaultAction)
                 .controlSize(.large)
             }
 
@@ -196,20 +188,33 @@ struct OnboardingView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: isAccessibilityEnabled ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(.green)
+                .foregroundStyle(isAccessibilityEnabled ? .green : .orange)
+                .contentTransition(.symbolEffect(.replace))
 
             VStack(spacing: 8) {
-                Text("You're All Set!")
+                Text(isAccessibilityEnabled ? "You're All Set!" : "Almost There")
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("MissionStrike is running in the background.\nLook for the icon in your menu bar.")
+                Text(isAccessibilityEnabled
+                     ? "MissionStrike is running in the background. Look for the icon in your menu bar."
+                     : "MissionStrike needs Accessibility access before it can close windows. "
+                        + "You can also grant it later from the menu bar.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .font(.body)
                     .frame(maxWidth: 380)
+            }
+
+            if !isAccessibilityEnabled {
+                Button {
+                    AccessibilityPermission.request()
+                } label: {
+                    Label("Grant Access", systemImage: "lock.shield")
+                }
+                .controlSize(.large)
             }
 
             // Quick tips
@@ -228,12 +233,13 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding(24)
+        .animation(.smooth(duration: 0.3), value: isAccessibilityEnabled)
     }
 
     private func applyAccessibilityGrantIfNeeded() {
-        let nowTrusted = AXIsProcessTrusted()
-        isAccessibilityEnabled = nowTrusted
-        guard nowTrusted else { return }
+        let wasTrusted = isAccessibilityEnabled
+        isAccessibilityEnabled = AXIsProcessTrusted()
+        guard isAccessibilityEnabled, !wasTrusted else { return }
 
         EventTapManager.shared.start()
         // Auto-advance past the accessibility step
@@ -245,6 +251,18 @@ struct OnboardingView: View {
     }
 
     // MARK: - Navigation
+
+    private var pageDots: some View {
+        HStack(spacing: 7) {
+            ForEach(0..<totalSteps, id: \.self) { step in
+                Circle()
+                    .fill(Color.primary.opacity(step == currentStep ? 0.7 : 0.2))
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Step \(currentStep + 1) of \(totalSteps)")
+    }
 
     /// Pages slide a short distance in the direction of travel while cross-fading.
     private var stepTransition: AnyTransition {

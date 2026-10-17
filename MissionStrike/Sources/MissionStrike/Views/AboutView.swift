@@ -30,7 +30,7 @@ struct AboutView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("Close windows and Spaces directly\nfrom Mission Control with a single click.")
+            Text("Close windows and Spaces directly from Mission Control with a single click.")
                 .multilineTextAlignment(.center)
                 .font(.callout)
                 .foregroundStyle(.secondary)
