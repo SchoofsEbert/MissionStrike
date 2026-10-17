@@ -14,7 +14,7 @@ extension UserDefaults {
 }
 
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
     /// Seconds an Accessibility call may wait for an app to answer.
     private static let accessibilityTimeout: Float = 0.5
 
@@ -291,7 +291,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 460, height: 700),
-                styleMask: [.titled, .closable, .miniaturizable],
+                styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
             )
@@ -384,18 +384,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "MissionStrike Could Not Start"
-        alert.informativeText = """
-            The system refused to create an event tap. This can happen even with \
-            Accessibility permissions enabled — for example on MDM-managed Macs or \
-            certain Apple Silicon security configurations.
-
-            Troubleshooting steps:
-            1. Open System Settings → Privacy & Security → Accessibility.
-            2. Remove MissionStrike from the list, then re-add it.
-            3. Restart your Mac and try again.
-            4. If your Mac is managed by an organization, contact your IT administrator \
-            — a configuration profile may be blocking input monitoring.
-            """
+        alert.informativeText = "macOS didn't let MissionStrike watch for clicks, even though Accessibility is on."
+        alert.showsHelp = true
+        alert.delegate = self
         alert.addButton(withTitle: "Open Accessibility Settings")
         alert.addButton(withTitle: "Retry")
         alert.addButton(withTitle: "Quit")
@@ -405,10 +396,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch response {
         case .alertFirstButtonReturn:
-            // Open Accessibility preferences pane
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
+            AccessibilityPermission.openSettings()
         case .alertSecondButtonReturn:
             // Retry starting the event tap
             EventTapManager.shared.start()
@@ -417,6 +405,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             break
         }
+    }
+
+    /// The failure alert's help button: troubleshooting steps, kept out of the alert itself.
+    func alertShowHelp(_ alert: NSAlert) -> Bool {
+        let help = NSAlert()
+        help.messageText = "Troubleshooting"
+        help.informativeText = """
+            1. Open System Settings → Privacy & Security → Accessibility.
+            2. Remove MissionStrike from the list, then add it again.
+            3. Restart your Mac and try again.
+            4. If your organization manages this Mac, ask your IT administrator. A configuration \
+            profile may block input monitoring.
+            """
+        help.runModal()
+        return true
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
