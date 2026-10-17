@@ -75,6 +75,7 @@ class MissionControlManager {
         }
         let result = button.perform("AXRemoveDesktop")
         if result == .success {
+            NotificationCenter.default.post(name: .missionStrikeActionSucceeded, object: nil)
             MissionControlSession.current?.forgetSpaces()
             HoverBadgeController.shared.layoutMayHaveChanged()
             CloseEffect.play(at: NSEvent.mouseLocation)
@@ -228,6 +229,8 @@ class MissionControlManager {
         let result = closeButton.perform(kAXPressAction)
         if result != .success {
             logger.warning("AXPress on close button failed: \(result.rawValue)")
+        } else {
+            NotificationCenter.default.post(name: .missionStrikeActionSucceeded, object: nil)
         }
         return result == .success
     }
@@ -236,6 +239,7 @@ class MissionControlManager {
     private func minimize(_ window: AXElement, anchor: CGRect) {
         let result = window.set(kAXMinimizedAttribute, to: kCFBooleanTrue)
         if result == .success {
+            NotificationCenter.default.post(name: .missionStrikeActionSucceeded, object: nil)
             logger.debug("Minimized window.")
             ActionFeedback.succeeded()
         } else {

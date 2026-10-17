@@ -20,6 +20,26 @@ struct OverlayTests {
             == CGRect(x: 100, y: 0, width: 200, height: 100))
     }
 
+    // MARK: - Window counts
+
+    @Test("Each chip counts its app's thumbnails")
+    func windowCounts() {
+        let frame = CGRect(x: 0, y: 0, width: 300, height: 200)
+        let chips = WindowCountChips.chips(for: [(7, "Safari", frame), (8, "Notes", frame), (7, "Safari", frame)])
+        #expect(chips.map(\.label) == ["Safari · 2", "Notes · 1", "Safari · 2"])
+        #expect(WindowCountChips.chips(for: []).isEmpty)
+    }
+
+    @Test("Chips sit along a thumbnail's top, inside the corner and clear of the hover badge")
+    func chipArea() {
+        let thumbnail = CGRect(x: 100, y: 100, width: 300, height: 200)
+        let area = WindowCountChips.chipArea(on: thumbnail)
+        #expect(area.maxX == thumbnail.maxX - 8)
+        #expect(area.maxY == thumbnail.maxY - 8)
+        #expect(area.minX == thumbnail.minX + 36)
+        #expect(WindowCountChips.chipArea(on: CGRect(x: 0, y: 0, width: 20, height: 10)).width == 0)
+    }
+
     // MARK: - Thumbnails
 
     @Test("Scanning finds every thumbnail and Space, and skips thumbnails' subtrees")

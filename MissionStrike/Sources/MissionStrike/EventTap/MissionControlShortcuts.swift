@@ -77,10 +77,9 @@ extension MissionControlManager {
         case .hideApp, .quitApp:
             guard let pid = pid(for: resolution),
                   let app = NSRunningApplication(processIdentifier: pid) else { return }
-            if shortcut == .hideApp {
-                app.hide()
-            } else {
-                app.terminate()
+            let done = shortcut == .hideApp ? app.hide() : app.terminate()
+            if done {
+                NotificationCenter.default.post(name: .missionStrikeActionSucceeded, object: nil)
             }
         }
     }

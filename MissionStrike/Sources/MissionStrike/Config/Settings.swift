@@ -12,6 +12,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case poofOnClose
     case hapticFeedback
     case showMenuBarIcon
+    case showWindowCounts
 
     /// The value used until the user changes the setting.
     var defaultValue: any Sendable {
@@ -19,7 +20,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .leftClickModifier: TriggerModifier.option.rawValue
         case .enableDockMiddleClick, .poofOnClose: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
-             .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon: true
+             .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts: true
         }
     }
 
@@ -39,6 +40,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .poofOnClose: "poof"
         case .hapticFeedback: "haptics"
         case .showMenuBarIcon: "menuBarIcon"
+        case .showWindowCounts: "windowCounts"
         }
     }
 
@@ -70,6 +72,7 @@ struct Settings: Equatable, Sendable {
     var poofOnClose: Bool
     var hapticFeedback: Bool
     var showMenuBarIcon: Bool
+    var showWindowCounts: Bool
 }
 
 extension Settings {
@@ -84,7 +87,8 @@ extension Settings {
         enableDockMiddleClick: SettingKey.enableDockMiddleClick.defaultBool,
         poofOnClose: SettingKey.poofOnClose.defaultBool,
         hapticFeedback: SettingKey.hapticFeedback.defaultBool,
-        showMenuBarIcon: SettingKey.showMenuBarIcon.defaultBool
+        showMenuBarIcon: SettingKey.showMenuBarIcon.defaultBool,
+        showWindowCounts: SettingKey.showWindowCounts.defaultBool
     )
 
     init(_ defaults: UserDefaults) {
@@ -98,6 +102,7 @@ extension Settings {
         poofOnClose = defaults.bool(.poofOnClose)
         hapticFeedback = defaults.bool(.hapticFeedback)
         showMenuBarIcon = defaults.bool(.showMenuBarIcon)
+        showWindowCounts = defaults.bool(.showWindowCounts)
     }
 }
 

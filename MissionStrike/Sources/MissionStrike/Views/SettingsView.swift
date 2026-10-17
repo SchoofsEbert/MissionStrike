@@ -45,6 +45,7 @@ struct SettingsView: View {
             statusSection
             triggersSection
             actionsSection
+            OverlaySettingsSection()
             spacesSection
             dockSection
             generalSection

@@ -86,6 +86,7 @@ class EventTapManager {
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
 
         DockIconCache.shared.startObserving()
+        MissionControlOverlays.startObserving()
 
         if let runLoopSource = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
@@ -206,6 +207,7 @@ extension EventTapManager {
 
         case .modifiersChanged(let flags):
             HoverBadgeController.shared.modifiersChanged(flags)
+            MissionControlOverlays.modifiersChanged(flags)
 
         case .missionControlClick(let action, let input, let probeDock):
             let dockCandidates = DockMiddleClick.candidates(location: tapEvent.location, pointer: pointer)

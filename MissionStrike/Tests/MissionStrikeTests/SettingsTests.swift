@@ -26,6 +26,7 @@ struct SettingsTests {
             #expect(!settings.enableDockMiddleClick)
             #expect(!settings.poofOnClose)
             #expect(settings.hapticFeedback)
+            #expect(settings.showWindowCounts)
         }
     }
 
