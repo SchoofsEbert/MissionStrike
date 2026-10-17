@@ -11,7 +11,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private weak var delegate: AppDelegate?
 
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let grantAccessItem = NSMenuItem(title: "Grant Accessibility Access…", action: nil, keyEquivalent: "")
+    private let grantAccessItem = NSMenuItem(title: "Grant Access…", action: nil, keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
     private enum State {
@@ -43,10 +43,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let state = self.state
 
-        // Template image: macOS tints it for light/dark menu bars. Paused or missing
-        // permission shows the dimmed look macOS uses for inactive menu bar items.
-        button.image = Self.burstImage
-        button.appearsDisabled = state != .active
+        // Template images: macOS tints them for light/dark menu bars. Paused shows the
+        // dimmed look macOS uses for inactive items; missing permission adds a warning badge.
+        button.image = state == .needsAccessibility ? Self.warningImage : Self.burstImage
+        button.appearsDisabled = state == .paused
 
         switch state {
         case .active:
@@ -56,8 +56,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             statusLine.title = "MissionStrike is paused"
             button.toolTip = "MissionStrike: Paused"
         case .needsAccessibility:
-            statusLine.title = "Needs Accessibility permission"
-            button.toolTip = "MissionStrike: Needs Accessibility permission"
+            statusLine.title = "Accessibility access is off"
+            button.toolTip = "MissionStrike: Accessibility access is off"
         }
         grantAccessItem.isHidden = state != .needsAccessibility
         pauseItem.title = state == .paused ? "Resume MissionStrike" : "Pause MissionStrike"
@@ -77,6 +77,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         image.isTemplate = true
         image.accessibilityDescription = "MissionStrike"
+        return image
+    }()
+
+    /// The burst with an exclamation badge in the lower right, cut out of the burst.
+    private static let warningImage: NSImage = {
+        let badgeSymbol = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 8, weight: .bold))
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            burstImage.draw(in: rect)
+            let badge = NSRect(x: rect.maxX - 8.5, y: rect.minY, width: 8.5, height: 8.5)
+            // Clear a ring around the badge so it reads apart from the burst.
+            NSGraphicsContext.current?.compositingOperation = .copy
+            NSColor.clear.setFill()
+            NSBezierPath(ovalIn: badge.insetBy(dx: -1.25, dy: -1.25)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            badgeSymbol?.draw(in: badge)
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "MissionStrike: Accessibility access is off"
         return image
     }()
 
@@ -152,7 +172,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func grantAccess() {
-        let options: NSDictionary = ["AXTrustedCheckOptionPrompt": true]
-        _ = AXIsProcessTrustedWithOptions(options)
+        AccessibilityPermission.request()
     }
 }
