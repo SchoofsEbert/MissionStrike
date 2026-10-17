@@ -1,9 +1,11 @@
 #!/bin/bash
 # MissionStrike Installer
-# Download this immutable release asset first, then run: bash install.sh
+# Usage: download install.sh from the latest GitHub release, then run: bash install.sh
+#   curl -fsSLO https://github.com/SchoofsEbert/MissionStrike/releases/latest/download/install.sh
 #
-# Downloads the latest release, verifies its pinned signature, stages it on the
-# /Applications volume, and swaps it in while retaining a rollback copy.
+# Downloads the latest release and verifies its signature before touching anything in
+# /Applications. It then swaps the new app in, keeping the previous one until the new
+# one is in place, and puts the previous one back if anything fails. No sudo needed.
 
 set -euo pipefail
 
@@ -20,13 +22,15 @@ INSTALLED_NEW_APP=0
 
 rollback() {
     local status=$?
+    set +e
     if [ "$status" -ne 0 ] && [ -n "$BACKUP_APP" ] && [ -d "$BACKUP_APP" ]; then
         echo "↩️  Restoring the previous $APP_NAME installation..." >&2
-        if [ "$INSTALLED_NEW_APP" -eq 1 ] && [ -d "$INSTALL_DIR/$APP_NAME.app" ]; then
+        if [ "$INSTALLED_NEW_APP" -eq 1 ]; then
             rm -rf "$INSTALL_DIR/$APP_NAME.app"
         fi
-        mv "$BACKUP_APP" "$INSTALL_DIR/$APP_NAME.app" || \
-            echo "❌ Could not restore $BACKUP_APP. Restore it manually." >&2
+        if [ -e "$INSTALL_DIR/$APP_NAME.app" ] || ! mv "$BACKUP_APP" "$INSTALL_DIR/$APP_NAME.app"; then
+            echo "❌ Could not restore the previous version. It is at $BACKUP_APP." >&2
+        fi
     fi
     [ -z "$STAGE_DIR" ] || rm -rf "$STAGE_DIR"
     rm -rf "$TMP_DIR"
@@ -36,9 +40,15 @@ trap rollback EXIT
 
 echo "🚀 Installing $APP_NAME..."
 
+# Fail before downloading anything if the install can't complete.
 if [ ! -d "$INSTALL_DIR" ] || [ ! -w "$INSTALL_DIR" ]; then
     echo "❌ $INSTALL_DIR is not writable by $(id -un)." >&2
-    echo "   Ask an administrator to install MissionStrike, or make /Applications writable first." >&2
+    echo "   Run this script from an administrator account, or install with Homebrew." >&2
+    exit 1
+fi
+if [ -e "$INSTALL_DIR/$APP_NAME.app" ] && [ ! -w "$INSTALL_DIR/$APP_NAME.app" ]; then
+    echo "❌ The existing $INSTALL_DIR/$APP_NAME.app belongs to another user and can't be replaced." >&2
+    echo "   Remove it from an account that can, then run this script again." >&2
     exit 1
 fi
 
@@ -81,8 +91,9 @@ fi
 echo "🔓 Removing macOS quarantine flag..."
 xattr -cr "$DOWNLOADED_APP"
 
-# Staging inside /Applications makes the final moves same-volume. Do this before stopping
-# the running app so a failed download or verification never disrupts the old install.
+# Staging inside /Applications makes the final moves renames on the same volume. This
+# happens before the running app is stopped, so a failed download or check never
+# disrupts the installed version.
 STAGE_DIR=$(mktemp -d "$INSTALL_DIR/.MissionStrike-install.XXXXXX")
 mv "$DOWNLOADED_APP" "$STAGE_DIR/$APP_NAME.app"
 
@@ -100,9 +111,11 @@ fi
 mv "$STAGE_DIR/$APP_NAME.app" "$INSTALL_DIR/$APP_NAME.app"
 INSTALLED_NEW_APP=1
 
+# The new app is in place, so a failure from here on must not trigger the rollback.
 if [ -n "$BACKUP_APP" ]; then
-    rm -rf "$BACKUP_APP"
+    PREVIOUS_APP="$BACKUP_APP"
     BACKUP_APP=""
+    rm -rf "$PREVIOUS_APP" || echo "⚠️  Could not remove the previous version at $PREVIOUS_APP." >&2
 fi
 
 echo ""
