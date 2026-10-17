@@ -334,8 +334,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
             // Reset the stale TCC entry and prompt directly — no intermediate alert
             // needed when we know exactly what happened.
             logger.info("Accessibility invalidated after update — resetting TCC and re-prompting.")
-            resetTCCEntry()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task {
+                await Self.resetTCCEntry()
+                try? await Task.sleep(for: .milliseconds(300))
                 AccessibilityPermission.showSystemPrompt()
             }
         } else {
@@ -350,7 +351,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
     /// Runs `tccutil reset Accessibility <bundleID>` to clear the stale TCC entry
     /// left over from the previous binary signature. This allows the standard
     /// system prompt to work without the user manually removing the app first.
-    private func resetTCCEntry() {
+    /// Runs off the main thread, which also runs the event tap.
+    @concurrent
+    nonisolated private static func resetTCCEntry() async {
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
