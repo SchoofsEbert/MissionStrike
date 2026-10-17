@@ -49,7 +49,7 @@ final class HoverBadgeController {
     /// Called from the event tap on every modifier change.
     func modifiersChanged(_ flags: CGEventFlags) {
         self.flags = flags
-        guard isTriggerHeld, MissionControlActiveChecker().isActive() else {
+        guard isTriggerHeld, MissionControlDetector().isActive() else {
             stop()
             return
         }
@@ -73,7 +73,7 @@ final class HoverBadgeController {
     private func update() {
         guard isTriggerHeld,
               !MissionControlContextMenu.isOpen,
-              MissionControlActiveChecker().isActive() else {
+              MissionControlDetector().isActive() else {
             stop()
             return
         }
@@ -137,7 +137,7 @@ final class HoverBadgeController {
             var dimmed: Bool?
             // Mission Control is checked every frame: its WindowManager overlays vanish as soon
             // as it starts closing, so the badge can fade out with Mission Control, not after it.
-            while generation == flashGeneration, MissionControlActiveChecker().isActive() {
+            while generation == flashGeneration, MissionControlDetector().isActive() {
                 let now = ContinuousClock.now
                 if now - lastPendingCheck >= Self.flashPendingCheckInterval {
                     lastPendingCheck = now

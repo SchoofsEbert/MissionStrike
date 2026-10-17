@@ -279,19 +279,7 @@ struct LiveHitTestEnvironment: HitTestEnvironment {
     }
 
     func appWindow(withID windowID: CGWindowID) -> AppWindow? {
-        let ignored = MissionStrikeConfig.default.ignoredWindowOwners
-        for options: CGWindowListOption in [.optionOnScreenOnly, .optionAll] {
-            guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]],
-                  let found = MissionControlManager.window(
-                    withID: windowID,
-                    windowList: list,
-                    ignoredOwners: ignored
-                  ) else {
-                continue
-            }
-            return AppWindow(pid: found.pid, ownerName: found.ownerName, windowID: found.windowID)
-        }
-        return nil
+        WindowList.appWindow(withID: windowID)
     }
 
     func isSystemOverlay(_ element: AXElement) -> Bool {

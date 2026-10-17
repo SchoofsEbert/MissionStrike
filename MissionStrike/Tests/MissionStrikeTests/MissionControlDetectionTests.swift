@@ -56,7 +56,7 @@ struct MissionControlDetectionTests {
     @Test("Dock overlays at layers 18+20 covering full screen are detected")
     func dockOverlayBothLayers() {
         let windowList = missionControlWindows()
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -68,7 +68,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -81,7 +81,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "WindowManager", layer: 19, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -94,7 +94,7 @@ struct MissionControlDetectionTests {
         let windowList = [
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -106,7 +106,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "WindowManager", layer: 19, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "WindowManager", layer: 19, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -118,7 +118,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "WindowManager", layer: 0, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -130,7 +130,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080), alpha: 0.0),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080), alpha: 0.0)
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -142,7 +142,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 200, height: 50)),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 200, height: 50))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -154,7 +154,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "SomeOtherApp", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "SomeOtherApp", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -166,7 +166,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 0, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "Dock", layer: 1, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -174,7 +174,7 @@ struct MissionControlDetectionTests {
 
     @Test("Empty window list returns false")
     func emptyWindowList() {
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: [],
             screenSizes: [standardScreen]
         ))
@@ -190,7 +190,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1280, height: 800)),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1280, height: 800))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen, smallScreen]
         ))
@@ -202,7 +202,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 400, height: 300)),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 400, height: 300))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen, smallScreen]
         ))
@@ -217,7 +217,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: []
         ))
@@ -241,7 +241,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 99, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "Dock", layer: 99, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen],
             config: customConfig
@@ -251,7 +251,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: defaultLayerList,
             screenSizes: [standardScreen],
             config: customConfig
@@ -275,12 +275,12 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1600, height: 900)),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1600, height: 900))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen],
             config: .default
         ))
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen],
             config: strictConfig
@@ -302,7 +302,7 @@ struct MissionControlDetectionTests {
         let windowList = [
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
         ]
-        #expect(MissionControlActiveChecker.isActive(
+        #expect(MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen],
             config: lenientConfig
@@ -315,7 +315,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080), alpha: 0.005),
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080), alpha: 0.005)
         ]
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -328,7 +328,7 @@ struct MissionControlDetectionTests {
             mockWindowEntry(owner: "Dock", layer: 20, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080), alpha: 1.0)
         ]
         // Only 1 opaque overlay -- below the default minimumOverlayCount of 2
-        #expect(!MissionControlActiveChecker.isActive(
+        #expect(!MissionControlDetector.isActive(
             windowList: windowList,
             screenSizes: [standardScreen]
         ))
@@ -390,16 +390,16 @@ struct MissionControlWindowTargetingTests {
                 pid: 8621, windowID: 5697
             )
         ]
-        let hit = MissionControlManager.window(
+        let hit = WindowList.appWindow(
             withID: 5697,
-            windowList: windowList,
+            in: windowList,
             ignoredOwners: ignored
         )
         #expect(hit?.ownerName == "Cursor")
         #expect(hit?.pid == 8621)
-        #expect(MissionControlManager.window(
+        #expect(WindowList.appWindow(
             withID: 100,
-            windowList: windowList,
+            in: windowList,
             ignoredOwners: ignored
         ) == nil)
     }
@@ -413,9 +413,9 @@ struct MissionControlWindowTargetingTests {
                 pid: 8621, windowID: 5697
             )
         ]
-        #expect(MissionControlManager.window(
+        #expect(WindowList.appWindow(
             withID: 9999,
-            windowList: windowList,
+            in: windowList,
             ignoredOwners: ignored
         ) == nil)
     }

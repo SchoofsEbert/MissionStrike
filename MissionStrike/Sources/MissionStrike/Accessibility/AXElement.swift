@@ -152,20 +152,6 @@ struct AXElement: AccessibilityElement, @unchecked Sendable {
         AXUIElementSetAttributeValue(ref, attribute as CFString, value)
     }
 
-    // MARK: - Tree
-
-    /// This element or its nearest ancestor with the given role, looking at most `limit` levels up.
-    func ancestor(withRole role: String, limit: Int = .max) -> AXElement? {
-        var current: AXElement? = self
-        var depth = 0
-        while let element = current, depth <= limit {
-            if element.role == role { return element }
-            current = element.parent
-            depth += 1
-        }
-        return nil
-    }
-
     // MARK: - CF casts
 
     /// CF types can't be checked with `as?`: compare the type ID, then cast.

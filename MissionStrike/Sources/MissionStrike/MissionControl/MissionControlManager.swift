@@ -5,104 +5,6 @@ import os.log
 
 private let logger = Logger(subsystem: "io.github.schoofsebert.missionstrike", category: "MissionControl")
 
-// MARK: - Mission Control Detection Protocol
-
-/// Abstracts Mission Control detection so implementations can be swapped in tests.
-protocol MissionControlDetecting: Sendable {
-    func isActive() -> Bool
-}
-
-// MARK: - Mission Control Detection
-
-/// Checks whether Mission Control is currently active by inspecting system overlay windows.
-///
-/// Detection requires multiple large, opaque overlays (to reject dock-bounce false positives)
-/// and at least one Dock-owned overlay among them. On macOS 27+, Mission Control's second
-/// full-screen surface is owned by WindowManager rather than Dock; companion overlays from
-/// config cover that case while older Dock-only sessions keep working unchanged.
-///
-/// Thread safety: All calls within this class use CoreGraphics APIs that are thread-safe.
-/// This class is intentionally `nonisolated` / not actor-isolated so it can be called
-/// synchronously from the event tap callback (which runs on the run loop thread).
-final class MissionControlActiveChecker: MissionControlDetecting, Sendable {
-
-    private let config: MissionStrikeConfig
-
-    init(config: MissionStrikeConfig = .default) {
-        self.config = config
-    }
-
-    /// Live check using system APIs (CGWindowList + NSScreen).
-    func isActive() -> Bool {
-        let options = CGWindowListOption.optionOnScreenOnly
-        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return false
-        }
-        let screenSizes = NSScreen.screens.map { $0.frame.size }
-        return Self.isActive(windowList: windowList, screenSizes: screenSizes, config: config)
-    }
-
-    /// Pure, testable detection logic with no system dependencies.
-    /// Pass in window list data and screen sizes to verify heuristics.
-    static func isActive(
-        windowList: [[String: Any]],
-        screenSizes: [CGSize],
-        config: MissionStrikeConfig = .default
-    ) -> Bool {
-        let fraction = config.minimumScreenCoverageFraction
-        let thresholds: [(minWidth: CGFloat, minHeight: CGFloat)]
-
-        if screenSizes.isEmpty {
-            let fallback = config.fallbackScreenSize
-            thresholds = [(fallback.width * fraction, fallback.height * fraction)]
-        } else {
-            thresholds = screenSizes.map { size in
-                (size.width * fraction, size.height * fraction)
-            }
-        }
-
-        var dockQualifyingCount = 0
-        var totalQualifyingCount = 0
-
-        for info in windowList {
-            let owner = info[kCGWindowOwnerName as String] as? String ?? ""
-            let layer = info[kCGWindowLayer as String] as? Int ?? 0
-
-            let isDockOverlay = owner == "Dock"
-                && config.missionControlOverlayLayers.contains(layer)
-            let isCompanionOverlay = config.missionControlCompanionOverlays[owner]?.contains(layer) == true
-            guard isDockOverlay || isCompanionOverlay else { continue }
-
-            // Filter out transparent hit-test overlays (e.g. dock auto-show, app bounce)
-            let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
-            guard alpha >= config.minimumOverlayAlpha else { continue }
-
-            guard let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
-                continue
-            }
-
-            let coversAScreen = thresholds.contains { threshold in
-                bounds.width > threshold.minWidth && bounds.height > threshold.minHeight
-            }
-            guard coversAScreen else { continue }
-
-            totalQualifyingCount += 1
-            if isDockOverlay {
-                dockQualifyingCount += 1
-            }
-
-            // Require a Dock overlay so companion-only stacks cannot false-trigger,
-            // while still needing enough total overlays to reject a lone dock bounce.
-            if dockQualifyingCount >= 1,
-               totalQualifyingCount >= config.minimumOverlayCount {
-                return true
-            }
-        }
-        return false
-    }
-}
-
 // MARK: - Mission Control Manager
 
 @MainActor
@@ -131,12 +33,7 @@ class MissionControlManager {
                 minimizeWindow(pid: pid, windowID: windowID)
             }
 
-        case .legacyAXWindow:
-            // Re-hit at the same point for the AXWindow element (≤ macOS 26 Dock UI).
-            guard let window = AXElement.at(resolution.point)?.ancestor(withRole: kAXWindowRole) else {
-                logger.warning("Legacy AXWindow target lost before close.")
-                return
-            }
+        case .legacyAXWindow(let window):
             switch action {
             case .close:
                 closeLegacyAXWindow(window, resolution: resolution)
@@ -182,8 +79,8 @@ class MissionControlManager {
             return nil
         case .window(let pid, _, _):
             return pid
-        case .legacyAXWindow:
-            return AXElement.at(resolution.point)?.ancestor(withRole: kAXWindowRole)?.pid
+        case .legacyAXWindow(let window):
+            return window.pid
         }
     }
 
@@ -302,26 +199,5 @@ class MissionControlManager {
         guard closed else { return }
         logger.debug("Closed legacy AXWindow.")
         flashIfConfirmationNeeded(resolution) { window }
-    }
-}
-
-// MARK: - Test helpers (window ID lookup)
-
-extension MissionControlManager {
-    /// Pure helper: look up an app window by CGWindowID (skips Dock / WindowManager / etc.).
-    nonisolated static func window(
-        withID windowID: CGWindowID,
-        windowList: [[String: Any]],
-        ignoredOwners: Set<String>
-    ) -> (pid: Int32, ownerName: String, windowID: CGWindowID)? {
-        for info in windowList {
-            let id = info[kCGWindowNumber as String] as? CGWindowID ?? 0
-            guard id == windowID else { continue }
-            let owner = info[kCGWindowOwnerName as String] as? String ?? ""
-            let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
-            guard !owner.isEmpty, !ignoredOwners.contains(owner), pid != 0 else { return nil }
-            return (pid, owner, windowID)
-        }
-        return nil
     }
 }

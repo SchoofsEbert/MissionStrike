@@ -236,7 +236,7 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
     }
 
     // Run check synchronously to decide whether to swallow the event
-    let isActive = MissionControlActiveChecker().isActive()
+    let isActive = MissionControlDetector().isActive()
 
     if isActive {
         lastProcessedClickTime = now
@@ -257,7 +257,7 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
             Diagnostics.shared.record(input, resolution: resolution)
             // Mission Control may have closed while the click waited to be resolved;
             // acting then would close a window the user can no longer see being targeted.
-            guard let resolution, MissionControlActiveChecker().isActive() else { return }
+            guard let resolution, MissionControlDetector().isActive() else { return }
             MissionControlManager.shared.perform(resolution: resolution, action: action)
         }
         // Always swallow while Mission Control is up so empty/near-miss middle-clicks
@@ -315,7 +315,7 @@ private func handleTapDisabled(event: CGEvent, refcon: UnsafeMutableRawPointer?)
 /// Space under the pointer, or app-wide actions on empty space.
 private func handleRightMouseDown(_ event: CGEvent) -> Unmanaged<CGEvent>? {
     guard MainActor.assumeIsolated({ SettingsStore.shared.current.enableContextMenu }),
-          MissionControlActiveChecker().isActive() else {
+          MissionControlDetector().isActive() else {
         return Unmanaged.passUnretained(event)
     }
 
