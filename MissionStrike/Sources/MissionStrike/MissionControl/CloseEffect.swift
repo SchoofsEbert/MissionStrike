@@ -48,7 +48,9 @@ enum CloseEffect {
     }
 
     /// A ring of soft cloud puffs around a centre puff that swell, drift outward and fade.
+    /// With Reduce Motion they only fade, in place.
     private static func addPuffs(to root: CALayer) {
+        let reduceMotion = ActionFeedback.reduceMotion
         let centre = CGPoint(x: root.bounds.midX, y: root.bounds.midY)
         let puffCount = 7
         let spread = size * 0.26
@@ -69,7 +71,7 @@ enum CloseEffect {
             puff.shadowOpacity = 0.25
             puff.shadowRadius = 3
             puff.shadowOffset = CGSize(width: 0, height: -1)
-            puff.position = CGPoint(x: centre.x + offset.x, y: centre.y + offset.y)
+            puff.position = CGPoint(x: centre.x + offset.x * 1.2, y: centre.y + offset.y * 1.2)
             puff.opacity = 0
             root.addSublayer(puff)
 
@@ -86,7 +88,7 @@ enum CloseEffect {
             fade.keyTimes = [0, 0.15, 0.55, 1]
 
             let group = CAAnimationGroup()
-            group.animations = [drift, swell, fade]
+            group.animations = reduceMotion ? [fade] : [drift, swell, fade]
             group.duration = duration
             group.timingFunction = CAMediaTimingFunction(name: .easeOut)
             puff.add(group, forKey: "poof")

@@ -25,6 +25,7 @@ struct SettingsTests {
             #expect(settings.enableSpaceClosing)
             #expect(!settings.enableDockMiddleClick)
             #expect(!settings.poofOnClose)
+            #expect(settings.hapticFeedback)
         }
     }
 

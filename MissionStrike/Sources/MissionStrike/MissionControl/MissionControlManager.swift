@@ -45,7 +45,7 @@ class MissionControlManager {
             case .closeAll:
                 closeAllWindows(forPID: pid, anchor: resolution.feedbackAnchor)
             case .minimize:
-                minimizeWindow(pid: pid, windowID: windowID)
+                minimizeWindow(pid: pid, windowID: windowID, anchor: resolution.feedbackAnchor)
             }
 
         case .legacyAXWindow(let window):
@@ -57,7 +57,7 @@ class MissionControlManager {
                     closeAllWindows(forPID: pid, anchor: resolution.feedbackAnchor)
                 }
             case .minimize:
-                minimize(window)
+                minimize(window, anchor: resolution.feedbackAnchor)
             }
         }
     }
@@ -78,9 +78,11 @@ class MissionControlManager {
             MissionControlSession.current?.forgetSpaces()
             HoverBadgeController.shared.layoutMayHaveChanged()
             CloseEffect.play(at: NSEvent.mouseLocation)
+            ActionFeedback.succeeded()
             logger.debug("Closed Space via AXRemoveDesktop.")
         } else {
             logger.warning("AXRemoveDesktop failed with error: \(result.rawValue)")
+            ActionFeedback.failed(at: [CGRect(origin: NSEvent.mouseLocation, size: .zero)])
         }
     }
 
@@ -101,19 +103,24 @@ class MissionControlManager {
     private func closeWindowByWindowID(pid: Int32, targetWindowID: CGWindowID, resolution: MissionControlHitTester.Resolution) {
         guard let window = axWindow(pid: pid, windowID: targetWindowID) else {
             logger.warning("Could not find AX window for CGWindowID \(targetWindowID).")
+            ActionFeedback.failed(at: [resolution.feedbackAnchor])
             return
         }
-        guard pressCloseButton(of: window) else { return }
+        guard pressCloseButton(of: window) else {
+            ActionFeedback.failed(at: [resolution.feedbackAnchor])
+            return
+        }
         logger.debug("Pressed close on CGWindow \(targetWindowID), PID \(pid).")
         watch([PendingClose(window: window, pid: pid, thumbnail: resolution.thumbnailFrame)], anchor: resolution.feedbackAnchor)
     }
 
-    private func minimizeWindow(pid: Int32, windowID: CGWindowID) {
+    private func minimizeWindow(pid: Int32, windowID: CGWindowID, anchor: CGRect) {
         guard let window = axWindow(pid: pid, windowID: windowID) else {
             logger.warning("Could not find window \(windowID) to minimize.")
+            ActionFeedback.failed(at: [anchor])
             return
         }
-        minimize(window)
+        minimize(window, anchor: anchor)
     }
 
     /// Closes every window of the app, optionally keeping one ("Close Other Windows"). Feedback
@@ -121,6 +128,7 @@ class MissionControlManager {
     func closeAllWindows(forPID pid: pid_t, except keptWindowID: CGWindowID? = nil, anchor: CGRect?) {
         guard let windows = AXElement.application(pid).windows else {
             logger.warning("Could not enumerate windows for close-all on PID \(pid).")
+            ActionFeedback.failed(at: anchor.map { [$0] } ?? [])
             return
         }
         var pressed: [PendingClose] = []
@@ -133,6 +141,11 @@ class MissionControlManager {
             }
         }
         logger.debug("Pressed close on \(pressed.count)/\(windows.count) windows for PID \(pid).")
+        // Some windows have no close button; only when none could be pressed did close-all fail.
+        let closable = windows.count - (keptWindowID == nil ? 0 : 1)
+        if pressed.isEmpty, closable > 0 {
+            ActionFeedback.failed(at: anchor.map { [$0] } ?? [])
+        }
         watch(pressed, anchor: anchor)
     }
 
@@ -161,12 +174,15 @@ class MissionControlManager {
         return result == .success
     }
 
-    private func minimize(_ window: AXElement) {
+    /// Minimizes the window; failure feedback goes to `anchor` (AppKit screen coordinates).
+    private func minimize(_ window: AXElement, anchor: CGRect) {
         let result = window.set(kAXMinimizedAttribute, to: kCFBooleanTrue)
         if result == .success {
             logger.debug("Minimized window.")
+            ActionFeedback.succeeded()
         } else {
             logger.warning("AXMinimized failed: \(result.rawValue)")
+            ActionFeedback.failed(at: [anchor])
         }
     }
 
@@ -183,7 +199,10 @@ class MissionControlManager {
                 logger.warning("AXClose failed: \(result.rawValue)")
             }
         }
-        guard closed, let pid = window.pid else { return }
+        guard closed, let pid = window.pid else {
+            ActionFeedback.failed(at: [resolution.feedbackAnchor])
+            return
+        }
         logger.debug("Pressed close on legacy AXWindow.")
         watch([PendingClose(window: window, pid: pid)], anchor: resolution.feedbackAnchor)
     }

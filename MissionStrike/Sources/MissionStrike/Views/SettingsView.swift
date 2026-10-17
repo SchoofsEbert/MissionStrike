@@ -20,6 +20,8 @@ struct SettingsView: View {
     private var showHoverBadge = SettingKey.showHoverBadge.defaultBool
     @AppStorage(SettingKey.poofOnClose.rawValue)
     private var poofOnClose = SettingKey.poofOnClose.defaultBool
+    @AppStorage(SettingKey.hapticFeedback.rawValue)
+    private var hapticFeedback = SettingKey.hapticFeedback.defaultBool
     @AppStorage(SettingKey.enableDockMiddleClick.rawValue)
     private var enableDockMiddleClick = SettingKey.enableDockMiddleClick.defaultBool
     @AppStorage(SettingKey.leftClickModifier.rawValue)
@@ -143,6 +145,11 @@ struct SettingsView: View {
             Toggle(isOn: $poofOnClose) {
                 Text("Poof When Closing")
                 Text("Show the classic puff of smoke where a window or Space was closed.")
+            }
+
+            Toggle(isOn: $hapticFeedback) {
+                Text("Haptic Feedback")
+                Text("Tap the trackpad when a window closes or minimizes.")
             }
         }
     }

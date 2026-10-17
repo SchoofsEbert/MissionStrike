@@ -9,6 +9,8 @@ enum HoverBadgeStyle: Equatable {
     case closeAll
     /// Flashed after a close when the app put up a sheet (unsaved changes, running processes).
     case needsConfirmation
+    /// Shaken when an action didn't go through.
+    case failed
 
     init(flags: CGEventFlags) {
         switch MouseAction(flags: flags) {
@@ -44,6 +46,8 @@ final class HoverBadgeController {
     private static let flashPulses = 3
     private static let flashPulseDuration: TimeInterval = 0.35
     private static let flashCheckInterval: Duration = .milliseconds(250)
+    /// How long a failure badge stays before fading out.
+    private static let failureDuration: Duration = .milliseconds(900)
     private var timer: Timer?
     private var flags: CGEventFlags = []
     /// Thumbnail the badge is currently on; a different one gets a fresh fade-in.
@@ -157,7 +161,7 @@ final class HoverBadgeController {
         panel.setFrame(NSRect(x: thumbnail.midX - size.width / 2, y: thumbnail.midY - size.height / 2,
                               width: size.width, height: size.height), display: true)
         panel.alphaValue = 1
-        hostingView.layer?.add(Self.pulse(), forKey: "pulse")
+        hostingView.layer?.add(ActionFeedback.reduceMotion ? Self.fadeIn() : Self.pulse(), forKey: "pulse")
         panel.orderFrontRegardless()
 
         flashGeneration += 1
@@ -186,6 +190,66 @@ final class HoverBadgeController {
             count: values.count - 1
         )
         return animation
+    }
+
+    private static func fadeIn() -> CABasicAnimation {
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0
+        animation.toValue = 1
+        animation.duration = 0.2
+        return animation
+    }
+
+    /// Short side-to-side shake, kept within the badge's padding so the panel needn't grow.
+    private static func shake() -> CAKeyframeAnimation {
+        let amplitude = HoverBadgeView.padding
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        animation.values = [0, -amplitude, amplitude, -amplitude, amplitude, -amplitude / 2, amplitude / 2, 0]
+        animation.duration = 0.4
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        return animation
+    }
+
+    // MARK: - Failure
+
+    /// Shakes the hover badge while it shows, else puts a grey × badge on each anchor: a
+    /// thumbnail, or a point where the thumbnail isn't known. With Reduce Motion the × badge
+    /// only fades. False when there was nowhere to show anything.
+    func showFailure(at anchors: [CGRect]) -> Bool {
+        if !ActionFeedback.reduceMotion, let panel, panel.isVisible, let hostingView {
+            hostingView.wantsLayer = true
+            hostingView.layer?.add(Self.shake(), forKey: "shake")
+            return true
+        }
+        for anchor in anchors {
+            showFailureBadge(at: anchor)
+        }
+        return !anchors.isEmpty
+    }
+
+    private func showFailureBadge(at anchor: CGRect) {
+        let panel = Self.makePanel()
+        let hostingView = NSHostingView(rootView: HoverBadgeView(style: .failed))
+        hostingView.wantsLayer = true
+        panel.contentView = hostingView
+        let size = hostingView.fittingSize
+        let frame = anchor.isEmpty
+            ? NSRect(x: anchor.midX - size.width / 2, y: anchor.midY - size.height / 2, width: size.width, height: size.height)
+            : Self.badgeFrame(size: size, on: anchor)
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        hostingView.layer?.add(Self.fadeIn(), forKey: "fade")
+        if !ActionFeedback.reduceMotion {
+            hostingView.layer?.add(Self.shake(), forKey: "shake")
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: Self.failureDuration)
+            await NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                panel.animator().alphaValue = 0
+            }
+            panel.orderOut(nil)
+        }
     }
 
     /// Hides the confirmation badge, e.g. when input is about to close Mission Control.
@@ -281,7 +345,7 @@ struct HoverBadgeView: View {
         switch style {
         case .minimize: "minus"
         case .needsConfirmation: "exclamationmark"
-        case .close, .closeAll: "xmark"
+        case .close, .closeAll, .failed: "xmark"
         }
     }
 
@@ -289,7 +353,7 @@ struct HoverBadgeView: View {
         switch style {
         case .closeAll: "All"
         case .needsConfirmation: "Needs Confirmation"
-        case .close, .minimize: nil
+        case .close, .minimize, .failed: nil
         }
     }
 
@@ -297,6 +361,7 @@ struct HoverBadgeView: View {
         switch style {
         case .minimize, .needsConfirmation: Color(red: 1.0, green: 0.74, blue: 0.18)
         case .close, .closeAll: Color(red: 1.0, green: 0.37, blue: 0.34)
+        case .failed: Color(nsColor: .systemGray)
         }
     }
 }

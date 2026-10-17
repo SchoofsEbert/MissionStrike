@@ -73,14 +73,18 @@ extension MissionControlManager {
     private static let closeCheckTimeout: Duration = .seconds(1)
 
     /// Waits until each pressed close has an outcome, then shows it: a poof where a window went,
-    /// the confirmation badge where an app asks first. `anchor` stands in for windows whose
-    /// thumbnail isn't known, and gets one poof however many of them closed.
+    /// the confirmation badge where an app asks first, the failure badge where nothing happened,
+    /// and one haptic for the lot. `anchor` stands in for windows whose thumbnail isn't known,
+    /// and gets one poof however many of them closed.
     func watch(_ closes: [PendingClose], anchor: CGRect?) {
         guard !closes.isEmpty else { return }
         Task { @MainActor in
             let start = ContinuousClock.now
             var waiting = closes
             var poofedAtAnchor = false
+            var anyClosed = false
+            var failed = false
+            var failurePlaces: [CGRect] = []
             while !waiting.isEmpty {
                 try? await Task.sleep(for: Self.closeCheckInterval)
                 let timedOut = ContinuousClock.now - start >= Self.closeCheckTimeout
@@ -90,6 +94,10 @@ extension MissionControlManager {
                     case nil:
                         stillWaiting.append(close)
                     case .closed:
+                        if !anyClosed {
+                            anyClosed = true
+                            ActionFeedback.succeeded()
+                        }
                         HoverBadgeController.shared.layoutMayHaveChanged()
                         if let thumbnail = close.thumbnail {
                             CloseEffect.play(at: NSPoint(x: thumbnail.midX, y: thumbnail.midY))
@@ -105,9 +113,16 @@ extension MissionControlManager {
                         }
                     case .failed:
                         logger.warning("Window still open without a sheet after its close button was pressed.")
+                        failed = true
+                        if let place = close.thumbnail ?? anchor, !failurePlaces.contains(place) {
+                            failurePlaces.append(place)
+                        }
                     }
                 }
                 waiting = stillWaiting
+            }
+            if failed {
+                ActionFeedback.failed(at: failurePlaces)
             }
         }
     }

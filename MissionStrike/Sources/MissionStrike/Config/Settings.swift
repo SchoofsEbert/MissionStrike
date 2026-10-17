@@ -10,6 +10,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case enableSpaceClosing
     case enableDockMiddleClick
     case poofOnClose
+    case hapticFeedback
     case showMenuBarIcon
 
     /// The value used until the user changes the setting.
@@ -18,7 +19,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .leftClickModifier: TriggerModifier.option.rawValue
         case .enableDockMiddleClick, .poofOnClose: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
-             .enableSpaceClosing, .showMenuBarIcon: true
+             .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon: true
         }
     }
 
@@ -36,6 +37,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .enableSpaceClosing: "spaces"
         case .enableDockMiddleClick: "dockMiddleClick"
         case .poofOnClose: "poof"
+        case .hapticFeedback: "haptics"
         case .showMenuBarIcon: "menuBarIcon"
         }
     }
@@ -66,6 +68,7 @@ struct Settings: Equatable, Sendable {
     var enableSpaceClosing: Bool
     var enableDockMiddleClick: Bool
     var poofOnClose: Bool
+    var hapticFeedback: Bool
     var showMenuBarIcon: Bool
 }
 
@@ -80,6 +83,7 @@ extension Settings {
         enableSpaceClosing: SettingKey.enableSpaceClosing.defaultBool,
         enableDockMiddleClick: SettingKey.enableDockMiddleClick.defaultBool,
         poofOnClose: SettingKey.poofOnClose.defaultBool,
+        hapticFeedback: SettingKey.hapticFeedback.defaultBool,
         showMenuBarIcon: SettingKey.showMenuBarIcon.defaultBool
     )
 
@@ -92,6 +96,7 @@ extension Settings {
         enableSpaceClosing = defaults.bool(.enableSpaceClosing)
         enableDockMiddleClick = defaults.bool(.enableDockMiddleClick)
         poofOnClose = defaults.bool(.poofOnClose)
+        hapticFeedback = defaults.bool(.hapticFeedback)
         showMenuBarIcon = defaults.bool(.showMenuBarIcon)
     }
 }
