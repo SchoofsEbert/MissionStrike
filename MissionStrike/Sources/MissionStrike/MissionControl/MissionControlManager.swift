@@ -225,14 +225,22 @@ class MissionControlManager {
         return press(closeButton)
     }
 
+    /// True when the press went through, or may have: an app that puts up a sheet (TextEdit
+    /// asking to save) often answers only after the Accessibility timeout, so the press reports
+    /// "cannot complete" though it worked. Watching the window afterwards tells which it was.
     private func press(_ closeButton: AXElement) -> Bool {
         let result = closeButton.perform(kAXPressAction)
-        if result != .success {
-            logger.warning("AXPress on close button failed: \(result.rawValue)")
-        } else {
+        switch result {
+        case .success:
             NotificationCenter.default.post(name: .missionStrikeActionSucceeded, object: nil)
+            return true
+        case .cannotComplete:
+            logger.info("AXPress on close button timed out; watching the window to see if it went through.")
+            return true
+        default:
+            logger.warning("AXPress on close button failed: \(result.rawValue)")
+            return false
         }
-        return result == .success
     }
 
     /// Minimizes the window; failure feedback goes to `anchor` (AppKit screen coordinates).

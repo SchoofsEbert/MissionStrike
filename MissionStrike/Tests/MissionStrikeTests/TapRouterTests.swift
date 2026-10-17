@@ -144,6 +144,15 @@ struct TapRouterTests {
         #expect(decide(middleDown()) == .closeMenu(reopen: false))
     }
 
+    @Test("With the menu open, Esc closes the menu instead of Mission Control")
+    mutating func menuOpenEscape() {
+        let escape = TapEvent(type: .keyDown, keyCode: Int64(kVK_Escape), characters: "\u{1B}")
+        environment.isContextMenuOpen = true
+        #expect(decide(escape) == .closeMenu(reopen: false))
+        environment.isContextMenuOpen = false
+        #expect(decide(escape) != .closeMenu(reopen: false))
+    }
+
     // MARK: - Dock
 
     @Test("A middle-click on a running app's Dock icon beats Mission Control")

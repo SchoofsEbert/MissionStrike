@@ -170,6 +170,12 @@ enum TapRouter {
         settings: Settings,
         environment: some TapEnvironment
     ) -> TapDecision {
+        // The menu never has the keyboard (MissionStrike isn't the active app), so Esc would
+        // close Mission Control and leave the menu stranded on the desktop.
+        if environment.isContextMenuOpen,
+           HintKey(keyCode: event.keyCode, characters: event.characters) == .cancel {
+            return .closeMenu(reopen: false)
+        }
         if event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]),
            let decision = overlayKey(event, settings: settings, environment: environment) {
             return decision
