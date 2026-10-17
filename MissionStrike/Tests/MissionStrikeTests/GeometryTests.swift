@@ -105,6 +105,7 @@ struct DockSnapshotTests {
 struct WindowOwnershipTests {
     private func window(pid: pid_t, onscreen: Bool, layer: Int = 0, size: CGFloat = 400, alpha: Double = 1) -> [String: Any] {
         [
+            kCGWindowNumber as String: CGWindowID(pid) * 10,
             kCGWindowOwnerPID as String: pid,
             kCGWindowIsOnscreen as String: onscreen,
             kCGWindowLayer as String: layer,
@@ -113,17 +114,20 @@ struct WindowOwnershipTests {
         ]
     }
 
-    @Test("Only normal on-screen windows count as showing; any window counts as owned")
+    @Test("Normal windows on screen or on a Space count as showing; any window counts as owned")
     func ownership() {
         let list = [
             window(pid: 1, onscreen: true),
             window(pid: 2, onscreen: false),
             window(pid: 3, onscreen: true, layer: 25),
             window(pid: 4, onscreen: true, size: 20),
-            window(pid: 5, onscreen: true, alpha: 0)
+            window(pid: 5, onscreen: true, alpha: 0),
+            window(pid: 6, onscreen: false),
+            window(pid: 7, onscreen: false, size: 20)
         ]
-        let result = WindowList.ownership(in: list)
-        #expect(result.owning == [1, 2, 3, 4, 5])
-        #expect(result.showing == [1])
+        // Windows 60 and 70 belong to another Space; 20 belongs to none.
+        let result = WindowList.ownership(in: list, isOnSpace: { [60, 70].contains($0) })
+        #expect(result.owning == [1, 2, 3, 4, 5, 6, 7])
+        #expect(result.showing == [1, 6])
     }
 }

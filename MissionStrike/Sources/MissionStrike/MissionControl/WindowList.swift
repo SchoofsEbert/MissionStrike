@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// Looks up app windows in the CoreGraphics window list.
 enum WindowList {
@@ -72,19 +73,24 @@ enum WindowList {
     /// Windows smaller than this are helpers and status items, not something to look at.
     private static let minimumVisibleSize: CGFloat = 50
 
-    /// Which apps own any window at all (minimized, hidden or on another Space included), and
-    /// which have a normal window on screen, from one copy of the window list.
+    /// Which apps own any window at all (helpers and status items included), and which have a
+    /// normal window: on screen, minimized or on another Space. From one copy of the window list.
     static func ownership() -> (owning: Set<pid_t>, showing: Set<pid_t>) {
         ownership(in: CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? [])
     }
 
-    static func ownership(in windowList: [[String: Any]]) -> (owning: Set<pid_t>, showing: Set<pid_t>) {
+    /// - Parameter isOnSpace: Whether a window off screen belongs to a Space, as minimized windows
+    ///   and those on other Spaces do; the invisible windows apps keep around belong to none.
+    static func ownership(
+        in windowList: [[String: Any]],
+        isOnSpace: (CGWindowID) -> Bool = isOnSpace
+    ) -> (owning: Set<pid_t>, showing: Set<pid_t>) {
         var owning: Set<pid_t> = []
         var showing: Set<pid_t> = []
         for info in windowList {
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != 0 else { continue }
             owning.insert(pid)
-            guard isOnScreen(info),
+            guard !showing.contains(pid),
                   info[kCGWindowLayer as String] as? Int == 0,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
@@ -92,8 +98,31 @@ enum WindowList {
                   bounds.width >= minimumVisibleSize, bounds.height >= minimumVisibleSize else {
                 continue
             }
+            // Accessibility only lists the windows on the current Space, so a window elsewhere
+            // has to be found here or its app looks windowless.
+            let id = info[kCGWindowNumber as String] as? CGWindowID ?? 0
+            guard isOnScreen(info) || (id != 0 && isOnSpace(id)) else { continue }
             showing.insert(pid)
         }
         return (owning, showing)
     }
+
+    /// Whether the window belongs to any Space (private API).
+    static func isOnSpace(_ windowID: CGWindowID) -> Bool {
+        let ids = [NSNumber(value: windowID)] as CFArray
+        let spaces = CGSCopySpacesForWindows(CGSMainConnectionID(), allSpacesMask, ids)?.takeRetainedValue() as? [Any]
+        return spaces?.isEmpty == false
+    }
+
+    /// Current, other and fullscreen Spaces.
+    private static let allSpacesMask: Int32 = 7
 }
+
+// WARNING: Apple-private SkyLight calls, used only to tell windows on other Spaces from the
+// invisible windows apps keep. If they go away, apps whose only windows are on another Space
+// look windowless again, as before.
+@_silgen_name("CGSMainConnectionID")
+private func CGSMainConnectionID() -> Int32
+
+@_silgen_name("CGSCopySpacesForWindows")
+private func CGSCopySpacesForWindows(_ connection: Int32, _ mask: Int32, _ windowIDs: CFArray) -> Unmanaged<CFArray>?

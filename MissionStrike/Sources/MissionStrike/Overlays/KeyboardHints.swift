@@ -344,11 +344,13 @@ struct HintLabelView: View {
             if hint.isSelected {
                 Self.shape.fill(Color.accentColor)
             } else {
-                Self.shape.fill(.regularMaterial)
+                Self.shape.fill(.thickMaterial)
             }
         }
-        .overlay(Self.shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+        .overlay(Self.shape.strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+        // Two shadows: a tight one keeps the edge on dark thumbnails, a soft one lifts it.
+        .shadow(color: .black.opacity(0.5), radius: 1, y: 0.5)
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
         .opacity(hint.isMatch || hint.isSelected ? 1 : 0.3)
         .animation(.easeOut(duration: 0.12), value: hint.isSelected)
     }
