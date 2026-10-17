@@ -22,12 +22,16 @@ class MissionControlManager {
             perform(resolution: resolution, action: action)
         }
         // Recorded after acting, so the bookkeeping never holds up the close.
-        Diagnostics.shared.record(input, resolution: resolution)
+        Diagnostics.shared.record(input, at: pointer, resolution: resolution)
     }
 
     /// Performs a pre-resolved hit.
     func perform(resolution: MissionControlHitTester.Resolution, action: MouseAction) {
-        defer { HoverBadgeController.shared.layoutMayHaveChanged() }
+        let signpost = performanceSignposter.beginInterval("Perform")
+        defer {
+            performanceSignposter.endInterval("Perform", signpost)
+            HoverBadgeController.shared.layoutMayHaveChanged()
+        }
         switch resolution.target {
         case .removeDesktop(let button):
             guard action == .close || action == .closeAll else { return }

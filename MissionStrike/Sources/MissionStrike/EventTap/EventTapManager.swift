@@ -150,7 +150,14 @@ extension EventTapManager {
     /// Handles one tapped event; true to swallow it. Only cheap state is consulted here: work
     /// that asks other apps through Accessibility runs after the callback has returned.
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Bool {
+        let start = ContinuousClock.now
+        let signpost = performanceSignposter.beginInterval("Tap callback")
+        defer {
+            performanceSignposter.endInterval("Tap callback", signpost)
+            Diagnostics.shared.recordCallback(duration: .now - start)
+        }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            Diagnostics.shared.recordTapDisabled(byTimeout: type == .tapDisabledByTimeout)
             handleTapDisabled(refcon: refcon)
             return false
         }

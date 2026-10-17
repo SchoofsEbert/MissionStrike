@@ -53,7 +53,11 @@ struct AboutView: View {
                 }
             }
             .controlSize(.small)
-            .help("Copies version, settings and recent Mission Control activity for a bug report. No window titles.")
+            .help("""
+                Copies what a bug report needs: MissionStrike and macOS versions, Mac model, screen sizes, \
+                settings, and your last Mission Control clicks with the names of the apps they hit. \
+                Positions are rounded and times relative; window titles are never included.
+                """)
 
             Text("© 2026 Ebert Schoofs")
                 .font(.caption2)

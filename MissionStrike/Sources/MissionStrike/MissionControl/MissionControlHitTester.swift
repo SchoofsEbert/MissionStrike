@@ -80,8 +80,10 @@ enum MissionControlHitTester {
 
     /// - Parameter clickPoint: Cursor position (`NSEvent.mouseLocation` space).
     static func resolve(clickPoint: CGPoint) -> Resolution? {
-        // Outside a session (Mission Control not seen open yet) a throwaway one does.
-        resolve(clickPoint: clickPoint, in: MissionControlSession.current ?? MissionControlSession())
+        performanceSignposter.withIntervalSignpost("Hit-test") {
+            // Outside a session (Mission Control not seen open yet) a throwaway one does.
+            resolve(clickPoint: clickPoint, in: MissionControlSession.current ?? MissionControlSession())
+        }
     }
 
     static func resolve<Environment: HitTestEnvironment>(

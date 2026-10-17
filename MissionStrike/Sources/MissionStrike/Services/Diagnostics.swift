@@ -1,42 +1,73 @@
 import AppKit
 import ApplicationServices
+import os
+
+/// Intervals for Instruments' Points of Interest: the tap callback, hit-tests and actions.
+let performanceSignposter = OSSignposter(subsystem: "io.github.schoofsebert.missionstrike", category: .pointsOfInterest)
 
 /// Rolling record of recent Mission Control hits plus a system snapshot, copied from the
 /// About window for bug reports. When a macOS update changes Mission Control, this shows
-/// what MissionStrike saw. Window titles are never recorded.
-final class Diagnostics: @unchecked Sendable {
+/// what MissionStrike saw. Times are relative and positions rounded; window titles are
+/// never recorded.
+@MainActor
+final class Diagnostics {
     static let shared = Diagnostics()
     private init() {}
 
     private static let maxEvents = 25
-    private let lock = NSLock()
-    private var events: [String] = []
+    /// Positions in the report are rounded to this many points.
+    private static let positionGrid: CGFloat = 20
+    /// A callback slower than this holds up input noticeably.
+    private static let slowCallback: Duration = .milliseconds(10)
+
+    private var events: [(time: ContinuousClock.Instant, line: String)] = []
     private var overlaySnapshot = "  (Mission Control not seen since launch)"
+    private var tapHealth = TapHealth()
 
-    /// Records a click or shortcut in Mission Control and what it resolved to.
-    /// Called from the event tap; the extra work only happens for Mission Control input.
-    func record(_ input: String, resolution: MissionControlHitTester.Resolution?) {
-        let clickPoint = NSEvent.mouseLocation
+    /// How the event tap callback has been doing since launch.
+    private struct TapHealth {
+        var callbacks = 0
+        var total: Duration = .zero
+        var slowest: Duration = .zero
+        var slow = 0
+        var disabledByTimeout = 0
+        var disabledByUserInput = 0
+    }
+
+    /// Records a click or shortcut in Mission Control and what it resolved to. Called after
+    /// the action, never from inside the event tap callback.
+    /// - Parameter pointer: Where the input happened (`NSEvent.mouseLocation` space).
+    func record(_ input: String, at pointer: CGPoint, resolution: MissionControlHitTester.Resolution?) {
         let flipped = MissionControlHitTester.shouldYFlipForMissionControl()
-        let axPoint = flipped ? ScreenCoordinates.yFlipped(clickPoint) : clickPoint
+        let axPoint = flipped ? ScreenCoordinates.yFlipped(pointer) : pointer
         let outcome = resolution.map(Self.describe) ?? "nothing — under pointer: \(Self.axChain(at: axPoint))"
-        let line = "\(Self.time()) \(input) at \(Self.format(axPoint))\(flipped ? " (flipped)" : "") → \(outcome)"
-        let overlays = Self.missionControlWindows()
-
-        lock.lock()
-        events.append(line)
+        events.append((.now, "\(input) near \(Self.format(axPoint))\(flipped ? " (flipped)" : "") → \(outcome)"))
         if events.count > Self.maxEvents { events.removeFirst(events.count - Self.maxEvents) }
-        overlaySnapshot = overlays
-        lock.unlock()
+        // The window list Mission Control was last detected from; no need to copy it again.
+        overlaySnapshot = Self.missionControlWindows(in: MissionControlSession.lastWindowList)
+    }
+
+    /// Called at the end of every tap callback; only adds up numbers.
+    func recordCallback(duration: Duration) {
+        tapHealth.callbacks += 1
+        tapHealth.total += duration
+        tapHealth.slowest = max(tapHealth.slowest, duration)
+        if duration > Self.slowCallback { tapHealth.slow += 1 }
+    }
+
+    func recordTapDisabled(byTimeout: Bool) {
+        if byTimeout {
+            tapHealth.disabledByTimeout += 1
+        } else {
+            tapHealth.disabledByUserInput += 1
+        }
     }
 
     /// Plain-text report for pasting into a GitHub issue.
     func report() -> String {
-        lock.lock()
+        let now = ContinuousClock.now
         let recent = events.isEmpty ? "  (none yet — try clicking in Mission Control first)" : events
-            .map { "  " + $0 }.joined(separator: "\n")
-        let overlays = overlaySnapshot
-        lock.unlock()
+            .map { "  \(Self.age(now - $0.time)) \($0.line)" }.joined(separator: "\n")
 
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
@@ -47,9 +78,10 @@ final class Diagnostics: @unchecked Sendable {
             Screens: \(Self.screens())
             Accessibility: \(AXIsProcessTrusted() ? "allowed" : "not allowed")
             Settings: \(Self.settings())
+            Event tap: \(tapSummary())
 
             Mission Control windows (at the last recorded event):
-            \(overlays)
+            \(overlaySnapshot)
 
             Recent Mission Control input:
             \(recent)
@@ -57,6 +89,15 @@ final class Diagnostics: @unchecked Sendable {
     }
 
     // MARK: - Pieces
+
+    private func tapSummary() -> String {
+        let health = tapHealth
+        guard health.callbacks > 0 else { return "no events yet" }
+        let average = health.total / health.callbacks
+        return "\(health.callbacks) events, average \(Self.milliseconds(average)), slowest \(Self.milliseconds(health.slowest)), "
+            + "\(health.slow) over \(Self.milliseconds(Self.slowCallback)); "
+            + "disabled by macOS \(health.disabledByTimeout)× for timeout, \(health.disabledByUserInput)× for user input"
+    }
 
     private static func describe(_ resolution: MissionControlHitTester.Resolution) -> String {
         switch resolution.target {
@@ -85,8 +126,7 @@ final class Diagnostics: @unchecked Sendable {
     }
 
     /// Dock and WindowManager windows on screen: the overlays Mission Control detection uses.
-    private static func missionControlWindows() -> String {
-        let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+    private static func missionControlWindows(in list: [[String: Any]]) -> String {
         let lines = list.compactMap { info -> String? in
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             guard owner == "Dock" || owner == "WindowManager",
@@ -109,9 +149,11 @@ final class Diagnostics: @unchecked Sendable {
         }.joined(separator: ", ")
     }
 
+    /// Sizes and scale only: where the screens sit relative to each other is left out.
     private static func screens() -> String {
-        NSScreen.screens.map { screen in
-            "\(format(screen.frame)) @\(Int(screen.backingScaleFactor))x"
+        NSScreen.screens.enumerated().map { index, screen in
+            let size = "\(Int(screen.frame.width))×\(Int(screen.frame.height)) @\(Int(screen.backingScaleFactor))x"
+            return index == 0 ? size + " (main)" : size
         }.joined(separator: ", ")
     }
 
@@ -123,15 +165,27 @@ final class Diagnostics: @unchecked Sendable {
         return String(bytes: model.prefix { $0 != 0 }.map(UInt8.init), encoding: .utf8) ?? "unknown Mac"
     }
 
-    private static func time() -> String {
-        Date().formatted(date: .omitted, time: .standard)
+    /// How long before the report something happened, instead of the time of day.
+    static func age(_ elapsed: Duration) -> String {
+        let seconds = Int(elapsed.components.seconds)
+        return seconds < 60 ? "\(seconds)s ago" : "\(seconds / 60)m \(seconds % 60)s ago"
     }
 
-    private static func format(_ point: CGPoint) -> String {
-        "(\(Int(point.x)), \(Int(point.y)))"
+    private static func milliseconds(_ duration: Duration) -> String {
+        let value = Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
+        return String(format: "%.1f ms", value)
+    }
+
+    /// Rounded to `positionGrid`: enough to tell the Spaces strip from a thumbnail, no more.
+    static func format(_ point: CGPoint) -> String {
+        "(\(rounded(point.x)), \(rounded(point.y)))"
     }
 
     private static func format(_ rect: CGRect) -> String {
-        "\(Int(rect.width))×\(Int(rect.height)) at \(format(rect.origin))"
+        "\(rounded(rect.width))×\(rounded(rect.height)) at \(format(rect.origin))"
+    }
+
+    private static func rounded(_ value: CGFloat) -> Int {
+        Int((value / positionGrid).rounded() * positionGrid)
     }
 }
