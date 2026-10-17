@@ -106,12 +106,13 @@ class MissionControlManager {
             ActionFeedback.failed(at: [resolution.feedbackAnchor])
             return
         }
+        let pending = PendingClose(window: window, pid: pid, windowID: targetWindowID, thumbnail: resolution.thumbnailFrame)
         guard pressCloseButton(of: window) else {
             ActionFeedback.failed(at: [resolution.feedbackAnchor])
             return
         }
         logger.debug("Pressed close on CGWindow \(targetWindowID), PID \(pid).")
-        watch([PendingClose(window: window, pid: pid, thumbnail: resolution.thumbnailFrame)], anchor: resolution.feedbackAnchor)
+        watch([pending], anchor: resolution.feedbackAnchor)
     }
 
     private func minimizeWindow(pid: Int32, windowID: CGWindowID, anchor: CGRect) {
@@ -139,9 +140,10 @@ class MissionControlManager {
             if let keptWindowID, windowID == keptWindowID {
                 continue
             }
+            let thumbnail = thumbnails.first { $0.window.windowID == windowID }?.frame
+            let pending = PendingClose(window: window, pid: pid, windowID: windowID, thumbnail: thumbnail)
             if pressCloseButton(of: window) {
-                let thumbnail = thumbnails.first { $0.window.windowID == windowID }?.frame
-                pressed.append(PendingClose(window: window, pid: pid, thumbnail: thumbnail))
+                pressed.append(pending)
             }
         }
         logger.debug("Pressed close on \(pressed.count)/\(windows.count) windows for PID \(pid).")
@@ -159,7 +161,8 @@ class MissionControlManager {
         var failed: [CGRect] = []
         for (thumbnail, window) in axWindows(for: thumbnails) {
             if let window, pressCloseButton(of: window) {
-                pressed.append(PendingClose(window: window, pid: thumbnail.window.pid, thumbnail: thumbnail.frame))
+                pressed.append(PendingClose(window: window, pid: thumbnail.window.pid, windowID: thumbnail.window.windowID,
+                                            thumbnail: thumbnail.frame))
             } else {
                 failed.append(thumbnail.frame)
             }
@@ -244,6 +247,8 @@ class MissionControlManager {
     // MARK: - Legacy windows
 
     private func closeLegacyAXWindow(_ window: AXElement, resolution: MissionControlHitTester.Resolution) {
+        // Read before closing: a closed window no longer answers.
+        let pending = window.pid.map { PendingClose(window: window, pid: $0, windowID: window.windowID) }
         var closed = false
         if let closeButton = window.closeButton {
             closed = press(closeButton)
@@ -254,12 +259,12 @@ class MissionControlManager {
                 logger.warning("AXClose failed: \(result.rawValue)")
             }
         }
-        guard closed, let pid = window.pid else {
+        guard closed, let pending else {
             ActionFeedback.failed(at: [resolution.feedbackAnchor])
             return
         }
         logger.debug("Pressed close on legacy AXWindow.")
-        watch([PendingClose(window: window, pid: pid)], anchor: resolution.feedbackAnchor)
+        watch([pending], anchor: resolution.feedbackAnchor)
     }
 }
 

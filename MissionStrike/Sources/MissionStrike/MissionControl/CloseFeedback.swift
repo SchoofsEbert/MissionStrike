@@ -27,20 +27,14 @@ enum CloseOutcome: Equatable {
     }
 }
 
-/// A window whose close button was pressed, until it's seen gone.
+/// A window whose close button was pressed, until it's seen gone. Made before pressing: a
+/// closed window no longer tells its window ID.
 struct PendingClose {
     let window: AXElement
     let pid: pid_t
     let windowID: CGWindowID?
     /// Its thumbnail in AppKit screen coordinates, when known.
     var thumbnail: CGRect?
-
-    init(window: AXElement, pid: pid_t, thumbnail: CGRect? = nil) {
-        self.window = window
-        self.pid = pid
-        self.windowID = window.windowID
-        self.thumbnail = thumbnail
-    }
 
     /// The window as the app lists it now, if it still does.
     @MainActor
@@ -121,7 +115,8 @@ extension MissionControlManager {
     }
 
     private func showConfirmationBadge(for close: PendingClose, anchor: CGRect?) {
-        guard let thumbnail = close.thumbnail ?? anchor else { return }
+        // The sheet is only hidden while Mission Control is open.
+        guard let thumbnail = close.thumbnail ?? anchor, MissionControlSession.isActive() else { return }
         let appName = NSRunningApplication(processIdentifier: close.pid)?.localizedName
         ConfirmationBadges.shared.show(
             .needsConfirmation(appName: appName),
@@ -131,24 +126,23 @@ extension MissionControlManager {
         )
     }
 
-    /// How long leaving Mission Control by activating an app may take before it's toggled off.
+    /// How long leaving Mission Control may take before it's toggled off.
     private static let leaveMissionControlTimeout: Duration = .seconds(1)
 
     /// Leaves Mission Control for a window whose app asks before closing it, so its sheet can be
     /// answered.
     func goToWindow(_ close: PendingClose) {
         // Pressing the thumbnail leaves Mission Control the way clicking it does (macOS 27+).
-        let pressedThumbnail = close.windowID
-            .flatMap { MissionControlSession.current?.thumbnailButton(for: $0) }
-            .map { $0.perform(kAXPressAction) == .success } ?? false
+        if let windowID = close.windowID, let thumbnail = MissionControlSession.current?.thumbnailButton(for: windowID) {
+            thumbnail.perform(kAXPressAction)
+        }
         (close.currentWindow() ?? close.window).perform(kAXRaiseAction)
         NSRunningApplication(processIdentifier: close.pid)?.activate()
-        guard !pressedThumbnail else { return }
         Task { @MainActor in
             try? await Task.sleep(for: Self.leaveMissionControlTimeout)
             guard MissionControlSession.isActive(maxAge: .zero) else { return }
             // Opening Mission Control while it's open closes it, like its key does.
-            logger.debug("Mission Control still open after activating the app; toggling it off.")
+            logger.debug("Mission Control still open after going to the window; toggling it off.")
             _ = try? await NSWorkspace.shared.openApplication(
                 at: URL(fileURLWithPath: "/System/Applications/Mission Control.app"),
                 configuration: NSWorkspace.OpenConfiguration()

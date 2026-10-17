@@ -185,11 +185,12 @@ final class HoverBadgeController {
 
     // MARK: - Failure
 
-    /// Shakes the hover badge while it shows, else puts a grey × badge on each anchor: a
-    /// thumbnail, or a point where the thumbnail isn't known. With Reduce Motion the × badge
-    /// only fades. False when there was nowhere to show anything.
+    /// Shakes the hover badge while it shows on one of the anchors, else puts a grey × badge on
+    /// each anchor: a thumbnail, or a point where the thumbnail isn't known. With Reduce Motion
+    /// the × badge only fades. False when there was nowhere to show anything.
     func showFailure(at anchors: [CGRect]) -> Bool {
-        if !ActionFeedback.reduceMotion, let panel, panel.isVisible, let hostingView {
+        if !ActionFeedback.reduceMotion, let panel, panel.isVisible, let hostingView,
+           let currentThumbnail, anchors.contains(currentThumbnail) {
             hostingView.wantsLayer = true
             hostingView.layer?.add(Self.shake(), forKey: "shake")
             return true
