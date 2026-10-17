@@ -322,27 +322,35 @@ struct KeyboardHintsView: View {
     }
 }
 
-/// A label in black on yellow, like Vimium's, with the typed letters dimmed.
+/// A label like a keycap, on the same material as the other overlays, with the typed letters
+/// dimmed. The selection takes the accent colour, like Mission Control's own highlight.
 struct HintLabelView: View {
     let hint: HintChip
 
+    private static let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 1) {
             Text(hint.label.prefix(hint.typed.count).uppercased())
-                .foregroundStyle(.black.opacity(0.35))
+                .foregroundStyle(hint.isSelected ? AnyShapeStyle(.white.opacity(0.6)) : AnyShapeStyle(.tertiary))
             Text(hint.label.dropFirst(hint.typed.count).uppercased())
-                .foregroundStyle(hint.isSelected ? .white : .black)
+                .foregroundStyle(hint.isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         }
-        .font(.system(size: 16, weight: .bold, design: .monospaced))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(hint.isSelected ? Color.accentColor : Color(red: 1, green: 0.84, blue: 0.04))
-        )
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.black.opacity(0.4), lineWidth: 1))
-        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+        .font(.system(size: 17, weight: .semibold, design: .rounded))
+        .frame(minWidth: 18)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background {
+            if hint.isSelected {
+                Self.shape.fill(Color.accentColor)
+            } else {
+                Self.shape.fill(.regularMaterial)
+            }
+        }
+        .overlay(Self.shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
         .opacity(hint.isMatch || hint.isSelected ? 1 : 0.3)
+        .animation(.easeOut(duration: 0.12), value: hint.isSelected)
     }
 }
 
