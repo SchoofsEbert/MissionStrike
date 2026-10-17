@@ -107,10 +107,8 @@ struct OnboardingView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text(
-                    "Close windows and Spaces directly from Mission Control "
-                        + "with a single click — no more hunting for tiny close buttons."
-                )
+                Text("Close windows and Spaces directly from Mission Control with a single click — "
+                     + "no more hunting for tiny close buttons.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .font(.body)
@@ -164,11 +162,7 @@ struct OnboardingView: View {
             )
 
             if !isAccessibilityEnabled {
-                Button {
-                    AccessibilityPermission.request()
-                } label: {
-                    Label("Open System Settings", systemImage: "gear")
-                }
+                Button("Open System Settings", systemImage: "gear", action: AccessibilityPermission.request)
                 .keyboardShortcut(.defaultAction)
                 .controlSize(.large)
             }
@@ -209,11 +203,7 @@ struct OnboardingView: View {
             }
 
             if !isAccessibilityEnabled {
-                Button {
-                    AccessibilityPermission.request()
-                } label: {
-                    Label("Grant Access", systemImage: "lock.shield")
-                }
+                Button("Grant Access", systemImage: "lock.shield", action: AccessibilityPermission.request)
                 .controlSize(.large)
             }
 
