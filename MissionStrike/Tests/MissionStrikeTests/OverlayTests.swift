@@ -40,6 +40,39 @@ struct OverlayTests {
         #expect(WindowCountChips.chipArea(on: CGRect(x: 0, y: 0, width: 20, height: 10)).width == 0)
     }
 
+    // MARK: - Cheat sheet
+
+    @Test("The cheat sheet lists what's on by default")
+    func cheatSheetDefaults() {
+        let rows = CheatSheet.rows(for: .defaults, keyboardHintsAvailable: true).map(\.keys)
+        #expect(rows == ["Click", "⇧ Click", "⌘ Click", "Right-click", "⌘W ⌘M ⌘H ⌘Q", "F"])
+        #expect(CheatSheet.notes(for: .defaults) == [
+            "Click means a middle-click or ⌥-click.",
+            "Hold ⌥ for a second or press ? to see this again."
+        ])
+    }
+
+    @Test("The cheat sheet leaves out what's off")
+    func cheatSheetFollowsSettings() {
+        var settings = Settings.defaults
+        settings.enableMiddleClick = false
+        settings.leftClickModifier = .disabled
+        settings.enableContextMenu = false
+        settings.enableKeyboardHints = false
+        settings.enableDockMiddleClick = true
+        let rows = CheatSheet.rows(for: settings, keyboardHintsAvailable: true).map(\.keys)
+        #expect(rows == ["⌘W ⌘M ⌘H ⌘Q", "Middle-click in Dock"])
+        #expect(CheatSheet.notes(for: settings) == ["Press ? to see this again."])
+
+        settings = .defaults
+        settings.leftClickModifier = .control
+        settings.enableSpaceClosing = false
+        let control = CheatSheet.rows(for: settings, keyboardHintsAvailable: false)
+        #expect(control.first?.action == "Close a window")
+        #expect(!control.map(\.keys).contains("F"))
+        #expect(CheatSheet.notes(for: settings).first == "Click means a middle-click or ⌃-click.")
+    }
+
     // MARK: - Thumbnails
 
     @Test("Scanning finds every thumbnail and Space, and skips thumbnails' subtrees")

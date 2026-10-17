@@ -20,6 +20,7 @@ enum MissionControlOverlays {
             observe(.missionControlDidClose) {
                 WindowCountChips.shared.hide()
                 KeyboardHints.shared.cancel()
+                CheatSheet.shared.dismiss()
                 MissionControlThumbnails.shared.forget()
             },
             observe(.missionStrikeActionSucceeded) {
@@ -40,17 +41,42 @@ enum MissionControlOverlays {
 
     static func modifiersChanged(_ flags: CGEventFlags) {
         WindowCountChips.shared.modifiersChanged(flags)
+        CheatSheet.shared.modifiersChanged(flags)
     }
 
-    /// A mouse or key press, before its decision is carried out. A click ends keyboard hints;
-    /// so does a key press they don't take.
+    /// A mouse or key press, before its decision is carried out. A click ends keyboard hints
+    /// and closes the cheat sheet; so does a key press neither of them takes.
     static func pressed(_ type: CGEventType, decision: TapDecision) {
         guard type == .keyDown || type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else { return }
         switch decision {
-        case .keyboardHint, .startKeyboardHints:
+        case .keyboardHint, .toggleCheatSheet, .closeCheatSheet:
             break
+        case .startKeyboardHints:
+            CheatSheet.shared.dismiss()
         default:
             KeyboardHints.shared.cancel()
+            CheatSheet.shared.dismiss()
         }
+    }
+}
+
+extension TriggerModifier {
+    /// The key's symbol, as in "⌥-click"; nil when disabled.
+    var symbol: String? {
+        switch self {
+        case .option: "⌥"
+        case .control: "⌃"
+        case .disabled: nil
+        }
+    }
+}
+
+extension Settings {
+    /// The clicks that close a window, as the overlays name them: "middle-click", "⌥-click".
+    var closeClickNames: [String] {
+        var names: [String] = []
+        if enableMiddleClick { names.append("middle-click") }
+        if let symbol = leftClickModifier?.symbol { names.append("\(symbol)-click") }
+        return names
     }
 }

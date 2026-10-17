@@ -248,6 +248,12 @@ extension EventTapManager {
         case .keyboardHint(let key, let isRepeat):
             guard let replay = event.copy() else { return }
             KeyboardHints.shared.handle(key, isRepeat: isRepeat, replay: replay)
+
+        case .toggleCheatSheet:
+            CheatSheet.shared.toggle()
+
+        case .closeCheatSheet:
+            CheatSheet.shared.dismiss()
         }
     }
 
@@ -317,5 +323,9 @@ private struct LiveTapEnvironment: TapEnvironment {
 
     var isKeyboardHintsActive: Bool {
         KeyboardHints.shared.isActive
+    }
+
+    var isCheatSheetPinned: Bool {
+        CheatSheet.shared.isPinned
     }
 }

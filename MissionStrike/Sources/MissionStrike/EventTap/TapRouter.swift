@@ -48,12 +48,16 @@ enum TapDecision: Equatable {
     case startKeyboardHints
     /// Swallowed; a key for the keyboard hints on screen.
     case keyboardHint(HintKey, isRepeat: Bool)
+    /// Swallowed; `?` shows or hides the cheat sheet.
+    case toggleCheatSheet
+    /// Swallowed; Esc closes the cheat sheet opened with `?` and leaves Mission Control open.
+    case closeCheatSheet
 
     var swallows: Bool {
         switch self {
         case .pass, .modifiersChanged, .passAndProbeDock: false
         case .swallow, .missionControlClick, .dockClick, .openMenu, .closeMenu, .shortcut, .startKeyboardHints,
-             .keyboardHint: true
+             .keyboardHint, .toggleCheatSheet, .closeCheatSheet: true
         }
     }
 }
@@ -69,6 +73,8 @@ protocol TapEnvironment {
     func dockVerdict(for event: TapEvent) -> DockSnapshot.Verdict
     /// Whether keyboard hints are up or starting: every plain key press belongs to them then.
     var isKeyboardHintsActive: Bool { get }
+    /// Whether the cheat sheet was opened with `?`, so Esc closes it.
+    var isCheatSheetPinned: Bool { get }
 }
 
 /// Decides what the event tap does with each event. Pure apart from `state`, so it can be
@@ -172,8 +178,8 @@ enum TapRouter {
     }
 
     /// Plain key presses (no ⌘, ⌥ or ⌃) the overlays take while Mission Control is open: all of
-    /// them while keyboard hints are up, and F to start them. Nil for every other key, which
-    /// goes on its way.
+    /// them while keyboard hints are up, F to start them, `?` for the cheat sheet, and Esc to
+    /// close a cheat sheet opened with `?`. Nil for every other key, which goes on its way.
     private static func overlayKey(
         _ event: TapEvent,
         settings: Settings,
@@ -185,6 +191,10 @@ enum TapRouter {
             decision = .keyboardHint(key, isRepeat: event.isAutorepeat)
         } else if event.isAutorepeat {
             return nil
+        } else if settings.showCheatSheet, event.characters == "?" {
+            decision = .toggleCheatSheet
+        } else if environment.isCheatSheetPinned, key == .cancel {
+            decision = .closeCheatSheet
         } else if settings.enableKeyboardHints, key == .letter(HintLabels.toggleLetter) {
             decision = .startKeyboardHints
         } else {

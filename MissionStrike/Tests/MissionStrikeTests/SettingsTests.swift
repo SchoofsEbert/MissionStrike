@@ -28,6 +28,7 @@ struct SettingsTests {
             #expect(settings.hapticFeedback)
             #expect(settings.showWindowCounts)
             #expect(settings.enableKeyboardHints)
+            #expect(settings.showCheatSheet)
         }
     }
 

@@ -6,6 +6,8 @@ struct OverlaySettingsSection: View {
     private var showWindowCounts = SettingKey.showWindowCounts.defaultBool
     @AppStorage(SettingKey.enableKeyboardHints.rawValue)
     private var enableKeyboardHints = SettingKey.enableKeyboardHints.defaultBool
+    @AppStorage(SettingKey.showCheatSheet.rawValue)
+    private var showCheatSheet = SettingKey.showCheatSheet.defaultBool
 
     var body: some View {
         Section("Overlays") {
@@ -17,6 +19,11 @@ struct OverlaySettingsSection: View {
             Toggle(isOn: $enableKeyboardHints) {
                 Text("Keyboard Hints")
                 Text("Press F to label every window. Type a label, then W, M, H, Q or A to act, or Return to open it.")
+            }
+
+            Toggle(isOn: $showCheatSheet) {
+                Text("Cheat Sheet")
+                Text("Hold the modifier for a second, or press ?, to see every gesture.")
             }
         }
     }

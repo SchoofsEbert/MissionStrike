@@ -11,6 +11,7 @@ private final class FakeTapEnvironment: TapEnvironment {
     var menuFrame: CGRect = .null
     var dock: DockSnapshot.Verdict = .elsewhere
     var isKeyboardHintsActive = false
+    var isCheatSheetPinned = false
     private(set) var missionControlChecks = 0
 
     func isMissionControlActive() -> Bool {
@@ -246,6 +247,23 @@ struct TapRouterTests {
     mutating func hintKeysAfterClose() {
         environment.isKeyboardHintsActive = true
         environment.missionControlActive = false
+        #expect(decide(key(kVK_ANSI_S, "s")) == .pass)
+    }
+
+    @Test("? toggles the cheat sheet, whatever key types it")
+    mutating func cheatSheetKey() {
+        #expect(decide(key(kVK_ANSI_Slash, "?", flags: .maskShift)) == .toggleCheatSheet)
+        #expect(decide(key(kVK_ANSI_M, "?", flags: .maskShift)) == .toggleCheatSheet)
+        #expect(decide(key(kVK_ANSI_Slash, "?", flags: .maskShift, isRepeat: true)) == .pass)
+        settings.showCheatSheet = false
+        #expect(decide(key(kVK_ANSI_Slash, "?", flags: .maskShift)) == .pass)
+    }
+
+    @Test("Esc closes a cheat sheet opened with ?, and otherwise goes to Mission Control")
+    mutating func cheatSheetEscape() {
+        #expect(decide(key(kVK_Escape, "\u{1B}")) == .pass)
+        environment.isCheatSheetPinned = true
+        #expect(decide(key(kVK_Escape, "\u{1B}")) == .closeCheatSheet)
         #expect(decide(key(kVK_ANSI_S, "s")) == .pass)
     }
 
