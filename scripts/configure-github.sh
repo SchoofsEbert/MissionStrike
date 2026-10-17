@@ -5,7 +5,7 @@
 #   scripts/configure-github.sh [owner/repo]
 #
 # Secrets are not handled here; GitHub never returns their values, so they are set with
-# `gh secret set` (see README "Release signing").
+# `gh secret set` (see RELEASING.md).
 set -euo pipefail
 
 REPO="${1:-SchoofsEbert/MissionStrike}"

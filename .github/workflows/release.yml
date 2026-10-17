@@ -79,7 +79,7 @@ jobs:
     needs: build
     runs-on: macos-latest
     # Holds the signing secrets. Its protection rules (required reviewers, `v*` tags
-    # only) live in the repository settings; see README "Release signing".
+    # only) live in the repository settings; see RELEASING.md.
     environment: release
     permissions:
       contents: write     # create the GitHub release

@@ -5,92 +5,64 @@
 <h1 align="center">MissionStrike</h1>
 
 <p align="center">
-  <strong>Close, minimize and manage windows straight from Mission Control.</strong>
+  <strong>Close windows straight from Mission Control.</strong><br>
+  Middle-click a thumbnail and it's gone, like closing a browser tab.
 </p>
 
----
+<p align="center">
+  <img src="docs/demo.gif" alt="Closing, minimizing and picking windows with the keyboard in Mission Control" width="800">
+</p>
 
-<!-- Demo GIF goes here: closing, minimizing and the keyboard hints in Mission Control. -->
+Mission Control shows every window you have open, but it only lets you look at them. To clean up you have to pick each window, wait for it to come forward and hit ⌘W, then do it all again. MissionStrike lets you close, minimize or quit right from the overview.
 
-## Features
+- **Middle-click or ⌥-click** a window to close it. Do the same on a Space at the top to close the Space.
+- **Add ⇧** to minimize instead, or **⌘** to close all of that app's windows.
+- **⌘W, ⌘M, ⌘H, ⌘Q** work on the window under the pointer.
+- **Right-click** for Close Others, Hide Others, and more.
+- **Press F** to put a letter on every window, then type the letter and an action. You never touch the mouse.
 
-In Mission Control, point at a window or Space and:
+Hold ⌥ to see which window a click will hit, and how many windows each app has here. Keep holding for a cheat sheet. If an app asks to save before closing, MissionStrike shows that on the window instead of failing without a word.
 
-| Action | Does |
-|---|---|
-| **Middle-click** or **⌥ Option + click** | Close the window or Space |
-| Hold **⇧ Shift** while you middle-click or ⌥-click | Minimize the window instead |
-| Hold **⌘ Command** while you middle-click or ⌥-click | Close all of that app's windows |
-| **⌘W / ⌘M / ⌘H / ⌘Q** | Close, minimize, hide or quit |
-| **Right-click** | A menu with all of the above, plus Close Others and Hide Others. Right-click the background to close or minimize every window shown (macOS 27 and later) or to quit apps with no windows. |
-| **F**, then a label | Pick a window with the keyboard (see [Keyboard hints](#keyboard-hints)) |
-| **?** | A cheat sheet of every gesture |
-
-Hold your modifier key and a small badge shows which window a click will hit, while each window shows its app and how many of that app's windows are in view, so you know what ⌘ will close. Keep holding for a second, or press **?**, for a cheat sheet of every gesture.
-
-If an app asks to confirm a close, such as to save changes, an orange badge on the window says so, and Mission Control stays open. Click the badge to go to the window and answer. A trackpad tap confirms each close or minimize, and a grey badge shakes when one doesn't go through.
-
-The first few times you open Mission Control, a tip at the bottom shows how to close a window. Optionally, middle-click a Dock icon to quit the app, or add a poof when closing. You can switch each feature on or off and change the modifier key in Settings.
-
-### Keyboard hints
-
-Press **F** in Mission Control and every window gets a label of one or two letters. Type a label to select that window, then:
-
-| Key | Does |
-|---|---|
-| **W** | Close the window |
-| **M** | Minimize it |
-| **H** | Hide its app |
-| **Q** | Quit its app |
-| **A** | Close all of its app's windows |
-| **Return** | Open it and leave Mission Control |
-| **Arrow keys** | Move the selection |
-| **Esc** or **F** | Stop |
-
-Labels never contain W, M, H, Q, A or F, so you can type them in one go: `sw` closes the window labelled S. Spaces get labels too, so W can close one. Keyboard hints and window counts need macOS 27 or later.
-
-## Installation
-
-MissionStrike needs a Mac with Apple silicon and macOS 14 Sonoma or later. There's no Intel build.
-
-### Homebrew (recommended)
+## Install
 
 ```bash
 brew install --cask schoofsebert/tap/missionstrike
 ```
 
-### Install script
+Open it once and follow the setup to grant Accessibility access. MissionStrike runs from the menu bar and keeps itself up to date.
+
+Needs a Mac with Apple silicon and macOS 14 Sonoma or later. Keyboard hints and window counts need macOS 27.
+
+<details>
+<summary>Other ways to install</summary>
+
+**Install script.** It downloads the latest release, checks its signature and installs it to `/Applications`. No `sudo` needed.
 
 ```bash
 curl -fsSLO https://github.com/SchoofsEbert/MissionStrike/releases/latest/download/install.sh
 bash install.sh
 ```
 
-The script comes from the latest release rather than the main branch. It downloads the app, checks its signature, and installs it to `/Applications`, keeping your current copy until the new one is in place. It needs no `sudo`; run it from an account that can write to `/Applications`.
-
-### Manual
-
-Download `MissionStrike.app.zip` from [Releases](https://github.com/SchoofsEbert/MissionStrike/releases), move the app to `Applications`, and clear the quarantine flag macOS puts on unsigned downloads:
+**Manual.** Download `MissionStrike.app.zip` from [Releases](https://github.com/SchoofsEbert/MissionStrike/releases), move the app to `Applications`, and clear the quarantine flag:
 
 ```bash
 xattr -cr /Applications/MissionStrike.app
 ```
 
-> ℹ️ Releases are signed with MissionStrike's own certificate rather than a paid Apple Developer ID. That's why Homebrew and the script remove the quarantine flag for you.
+Releases are signed with MissionStrike's own certificate, not a paid Apple Developer ID. That's why the quarantine flag has to go; Homebrew and the script clear it for you.
 
-### Accessibility permission
+</details>
 
-MissionStrike needs Accessibility access to see clicks in Mission Control and close windows. The setup guide on first launch walks you through it. Updates keep the permission.
+<details>
+<summary>Updating</summary>
 
-## Updating
+MissionStrike checks for updates once a day, or whenever you ask from the menu bar. **Install & Relaunch** downloads the update, verifies its signature and restarts the app. If anything fails, your current version stays. Homebrew leaves updates to the app, so `brew upgrade` only touches MissionStrike with `--greedy`.
 
-MissionStrike checks for updates once a day; you can also check from the menu bar. A window shows what's new, and **Install & Relaunch** downloads the update, verifies its signature and restarts the app. If anything fails, the current version stays in place. **Skip This Version** stops the daily check from offering that version; checking from the menu bar still shows it.
+</details>
 
-Homebrew leaves updates to the app, so `brew upgrade` only updates MissionStrike with `--greedy`.
+Every gesture can be switched off in Settings, where you can also change the modifier key, middle-click Dock icons to quit apps, or add a poof when a window closes.
 
-## Building from Source
-
-Requires an Apple-silicon Mac with Xcode or the Swift command line tools.
+## Building from source
 
 ```bash
 git clone https://github.com/SchoofsEbert/MissionStrike.git
@@ -98,41 +70,24 @@ cd MissionStrike
 scripts/package-app.sh
 ```
 
-The signed app and zip end up in `MissionStrike/dist/`. Without the MissionStrike signing certificate the build is signed ad hoc, so macOS asks for Accessibility again after every build.
+Needs Xcode or the Swift command line tools on an Apple-silicon Mac. The app ends up in `MissionStrike/dist/`. Without the signing certificate the build is signed ad hoc, so macOS asks for Accessibility again after every build. Maintainers: see [RELEASING.md](RELEASING.md).
 
-### Release signing
-
-Releases are signed with a self-signed certificate; the in-app updater and `install.sh` reject downloads that aren't. Each release also has a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations): `gh attestation verify MissionStrike.app.zip --repo SchoofsEbert/MissionStrike`.
-
-Pushing a `v*` tag runs the release workflow. It builds and tests the tag without any secrets, then the `release` environment signs the build. Only that signing step sees the certificate, and only for a tag on `main`. The workflow can be re-run for the same tag; it updates the existing release and cask.
-
-For maintainers, the certificate's safety depends on these repository settings, which `scripts/configure-github.sh` applies (re-run it any time):
-
-- **Tag ruleset** for `v*`: only admins may create tags, and nobody may move or delete them. A tag runs the release workflow from its own commit, so this is what keeps others away from the signing step.
-- **Environments `release` and `homebrew-tap`**: deployments from `v*` tags only.
-
-The signing and tap secrets are set with `gh secret set`. Add required reviewers to the `release` environment if anyone else gets write access.
-
-Keep an offline copy of the P12 and its password. If the certificate expires, is lost, or may have leaked:
-
-1. If it may have leaked, delete the signing secrets at once so the workflow can't sign with it.
-2. Create a new self-signed code signing certificate named "MissionStrike Code Signing", and store its P12 and password with `gh secret set`.
-3. Replace the certificate hash in `CodeSigning.swift` and `install.sh`, and release a new version.
-4. Tell users to reinstall with Homebrew or the install script. The updater in their copy only accepts the old certificate, so it won't install the new release, and macOS asks for Accessibility again because the signature changed. If the old key leaked, say so, since anyone holding it can sign an update that older copies accept.
-
-## How it Works
+<details>
+<summary>How it works</summary>
 
 1. A global event tap listens for clicks, ⌘ shortcuts and modifier keys. Everything outside Mission Control passes straight through.
 2. Mission Control is detected by the Dock and WindowManager overlay windows.
 3. The click is hit-tested through Accessibility:
    - **Spaces Bar** → `AXRemoveDesktop` on the Space under the cursor.
-   - **Window thumbnail (macOS 27+)** → the thumbnail's `wid` → the real window → close, minimize or close all.
+   - **Window thumbnail (macOS 27+)** → the thumbnail's `wid` → the real window → close, minimize or close all. Thumbnails of windows on other Spaces are skipped.
    - **Older Mission Control** → the classic `AXWindow` close button.
 4. On macOS 27+, click coordinates are flipped vertically to match Accessibility's top-left origin.
 5. Window counts and keyboard hints list the thumbnails from WindowManager's Accessibility tree off the main thread, and draw on click-through panels that Accessibility hit-testing looks through.
 
 If something doesn't work, **About → Copy Diagnostics** copies what MissionStrike saw (never window titles) for a bug report.
 
+</details>
+
 ## About this project
 
-🤖 This entire application (including this README) was completely "vibe-coded". It was built as an experiment to test AI-driven development and solve a personal workflow frustration—without the author needing to write or know any Swift!
+🤖 This entire application (including this README) was "vibe-coded". It started as an experiment in AI-driven development and a fix for a personal workflow frustration, without the author writing or knowing any Swift.
