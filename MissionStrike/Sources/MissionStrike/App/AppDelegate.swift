@@ -115,8 +115,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
             openOnboardingWindow()
         }
 
-        // Check for updates in the background (once per 24 hours)
-        UpdateChecker.shared.checkIfNeeded()
+        // Check for updates in the background now and then about once every 24 hours
+        UpdateChecker.shared.startAutomaticChecks()
     }
 
     // MARK: - Accessibility State

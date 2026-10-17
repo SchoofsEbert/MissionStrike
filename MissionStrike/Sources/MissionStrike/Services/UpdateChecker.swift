@@ -32,9 +32,41 @@ private struct GitHubRelease: Decodable {
     }
 }
 
+/// Release tags (`v2.8.0`) and the version comparison the update check uses.
+enum ReleaseVersion {
+    /// The version in a release tag. Only a single leading `v` is removed, so the rest of
+    /// the tag is never altered.
+    static func fromTag(_ tag: String) -> String? {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let version = trimmed.hasPrefix("v") ? String(trimmed.dropFirst()) : trimmed
+        return components(of: version) == nil ? nil : version
+    }
+
+    /// Numeric comparison, component by component ("2.10.0" > "2.9.1"). Missing components
+    /// count as zero, and a suffix such as "-beta" is ignored. Unparseable versions are never newer.
+    static func isNewer(_ remote: String, than local: String) -> Bool {
+        guard let remoteParts = components(of: remote), let localParts = components(of: local) else {
+            return false
+        }
+        for index in 0..<max(remoteParts.count, localParts.count) {
+            let remoteValue = index < remoteParts.count ? remoteParts[index] : 0
+            let localValue = index < localParts.count ? localParts[index] : 0
+            if remoteValue != localValue { return remoteValue > localValue }
+        }
+        return false
+    }
+
+    private static func components(of version: String) -> [Int]? {
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+            .map { Int($0.prefix(while: \.isNumber)) }
+        guard !parts.isEmpty, parts.allSatisfy({ $0 != nil }) else { return nil }
+        return parts.compactMap { $0 }
+    }
+}
+
 /// Checks for new releases by polling the GitHub Releases API.
 /// No external dependencies — compares semantic version tags against
-/// the running app version and presents an alert if an update is available.
+/// the running app version and offers the update in the update window.
 @MainActor
 final class UpdateChecker {
     static let shared = UpdateChecker()
@@ -46,65 +78,118 @@ final class UpdateChecker {
         string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest"
     )!
 
-    /// UserDefaults key for the last automatic check timestamp.
+    /// UserDefaults key for the last successful check timestamp.
     private static let lastCheckKey = "lastUpdateCheckTimestamp"
 
-    /// Minimum interval between automatic checks (24 hours).
+    /// UserDefaults key for the version the user chose to skip.
+    private static let skippedVersionKey = "skippedUpdateVersion"
+
+    /// Interval between automatic checks (24 hours).
     private static let checkInterval: TimeInterval = 86_400
 
-    /// The running app version (e.g. "1.2.0").
-    private let currentVersion: String = {
-        Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.3.0"
-    }()
+    /// How far macOS may move a scheduled check, so it can run while the Mac is idle.
+    private static let checkTolerance: TimeInterval = 4 * 3_600
+
+    /// The running app version (e.g. "1.2.0"); nil outside an app bundle, as with `swift run`.
+    private let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+
+    private var scheduler: NSBackgroundActivityScheduler?
+    private var isInstalling = false
 
     // MARK: - Public API
 
-    /// Performs an automatic background check, respecting the 24-hour cooldown.
-    func checkIfNeeded() {
-        let lastCheck = UserDefaults.standard.double(forKey: Self.lastCheckKey)
-        let now = Date().timeIntervalSince1970
-        guard now - lastCheck >= Self.checkInterval else {
-            logger.debug("Skipping update check — last check was \(Int(now - lastCheck))s ago.")
-            return
-        }
-        check(userInitiated: false)
+    /// Checks now unless a check succeeded recently, then about once a day while the app runs.
+    func startAutomaticChecks() {
+        checkIfNeeded()
+        guard scheduler == nil else { return }
+        let scheduler = NSBackgroundActivityScheduler(identifier: "io.github.schoofsebert.missionstrike.update-check")
+        scheduler.interval = Self.checkInterval
+        scheduler.tolerance = Self.checkTolerance
+        scheduler.qualityOfService = .utility
+        scheduler.repeats = true
+        scheduler.schedule(Self.runScheduledCheck)
+        self.scheduler = scheduler
     }
 
-    /// Performs an immediate check (e.g. from "Check for Updates…" menu item).
+    /// Performs an immediate check (e.g. from "Check for Updates…" menu item). Unlike
+    /// automatic checks, it also offers a version the user skipped.
     func checkNow() {
         check(userInitiated: true)
     }
 
     // MARK: - Private
 
+    /// Called by the scheduler on a background queue.
+    nonisolated private static func runScheduledCheck(
+        _ completion: @escaping NSBackgroundActivityScheduler.CompletionHandler
+    ) {
+        Task { @MainActor in UpdateChecker.shared.checkIfNeeded() }
+        completion(.finished)
+    }
+
+    /// Performs an automatic check unless one succeeded within the last day. The tolerance
+    /// is subtracted so a scheduled check that runs a little early isn't skipped for a whole day.
+    private func checkIfNeeded() {
+        let lastCheck = UserDefaults.standard.double(forKey: Self.lastCheckKey)
+        let now = Date().timeIntervalSince1970
+        guard now - lastCheck >= Self.checkInterval - Self.checkTolerance else {
+            logger.debug("Skipping update check — last check was \(Int(now - lastCheck))s ago.")
+            return
+        }
+        check(userInitiated: false)
+    }
+
     private func check(userInitiated: Bool) {
+        let window = UpdateWindowController.shared
+        guard !isInstalling else {
+            if userInitiated { window.bringToFront() }
+            return
+        }
+        guard let currentVersion else {
+            logger.info("Not running from an app bundle — skipping update check.")
+            if userInitiated {
+                window.showNotice(
+                    title: "Updates Unavailable",
+                    message: "Only an installed copy of MissionStrike can check for updates."
+                )
+            }
+            return
+        }
+
         Task {
             do {
                 let release = try await fetchLatestRelease()
-                // Only a successful check starts the 24-hour cooldown, so an offline
+                // Only a successful check starts the cooldown, so an offline
                 // launch retries next time instead of waiting a day.
                 UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCheckKey)
-                let latestVersion = release.tagName
-                    .trimmingCharacters(in: .whitespaces)
-                    .replacingOccurrences(of: "v", with: "")
+                guard let latestVersion = ReleaseVersion.fromTag(release.tagName) else {
+                    throw UpdateError.invalidReleaseTag(release.tagName)
+                }
+                guard !isInstalling else { return }
 
-                if isVersion(latestVersion, newerThan: currentVersion) {
-                    logger.info("Update available: \(latestVersion) (current: \(self.currentVersion))")
-                    showUpdateAlert(
-                        latestVersion: latestVersion,
-                        release: release
-                    )
+                if ReleaseVersion.isNewer(latestVersion, than: currentVersion) {
+                    let skipped = UserDefaults.standard.string(forKey: Self.skippedVersionKey) == latestVersion
+                    if userInitiated || !skipped {
+                        logger.info("Update available: \(latestVersion) (current: \(currentVersion))")
+                        showUpdateWindow(release: release, latestVersion: latestVersion, currentVersion: currentVersion)
+                    } else {
+                        logger.debug("Update \(latestVersion) was skipped by the user.")
+                    }
                 } else if userInitiated {
-                    showUpToDateAlert()
+                    window.showNotice(
+                        title: "You're Up to Date",
+                        message: "MissionStrike \(currentVersion) is the latest version."
+                    )
                 } else {
-                    logger.debug("Already on latest version (\(self.currentVersion)).")
+                    logger.debug("Already on latest version (\(currentVersion)).")
                 }
             } catch {
                 logger.warning("Update check failed: \(error.localizedDescription)")
                 if userInitiated {
-                    showErrorAlert(error: error)
+                    window.showNotice(
+                        title: "Update Check Failed",
+                        message: "Check your internet connection or try again later. (\(error.localizedDescription))"
+                    )
                 }
             }
         }
@@ -127,25 +212,9 @@ final class UpdateChecker {
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
 
-    // MARK: - Version Comparison
-
-    /// Simple semantic version comparison (e.g. "1.3.0" > "1.2.0").
-    private func isVersion(_ remote: String, newerThan local: String) -> Bool {
-        let remoteParts = remote.split(separator: ".").compactMap { Int($0) }
-        let localParts = local.split(separator: ".").compactMap { Int($0) }
-
-        for index in 0..<max(remoteParts.count, localParts.count) {
-            let remoteVal = index < remoteParts.count ? remoteParts[index] : 0
-            let localVal = index < localParts.count ? localParts[index] : 0
-            if remoteVal > localVal { return true }
-            if remoteVal < localVal { return false }
-        }
-        return false
-    }
-
     // MARK: - Update Window
 
-    private func showUpdateAlert(latestVersion: String, release: GitHubRelease) {
+    private func showUpdateWindow(release: GitHubRelease, latestVersion: String, currentVersion: String) {
         let offer = UpdateOffer(
             version: latestVersion,
             currentVersion: currentVersion,
@@ -153,15 +222,21 @@ final class UpdateChecker {
             releaseURL: release.htmlURL,
             downloadURL: release.assets.first { $0.name == "MissionStrike.app.zip" }?.browserDownloadURL
         )
-        UpdateWindowController.shared.show(offer) { [weak self] offer in
-            self?.performAutoUpdate(offer)
-        }
+        UpdateWindowController.shared.show(
+            offer,
+            install: { [weak self] offer in self?.performAutoUpdate(offer) },
+            skip: { offer in
+                UserDefaults.standard.set(offer.version, forKey: Self.skippedVersionKey)
+                logger.info("Skipping update \(offer.version) until the user checks manually.")
+            }
+        )
     }
 
     // MARK: - Auto-Update
 
-    /// Downloads the release zip, verifies and installs it, and relaunches. Progress and
-    /// failures are shown in the update window.
+    /// Downloads, verifies and installs the release, then relaunches. The work runs off the
+    /// main actor so the event tap keeps handling input; progress and failures are shown in
+    /// the update window. The app only quits once the relaunch helper is running.
     private func performAutoUpdate(_ offer: UpdateOffer) {
         let window = UpdateWindowController.shared
         guard let downloadURL = offer.downloadURL else {
@@ -169,142 +244,47 @@ final class UpdateChecker {
             window.showFailure("This release has no download for MissionStrike.")
             return
         }
-        window.setStatus("Downloading…")
+        guard !isInstalling else { return }
+        isInstalling = true
+        window.setDownloadProgress(nil)
 
+        let appURL = Bundle.main.bundleURL
         Task {
+            defer { isInstalling = false }
             do {
-                let appPath = try await downloadAndInstall(
-                    downloadURL: downloadURL,
+                let replacement = try await UpdateInstaller.install(
+                    from: downloadURL,
                     expectedVersion: offer.version,
-                    status: { window.setStatus($0) }
+                    replacing: appURL,
+                    progress: { fraction in
+                        Task { @MainActor in window.setDownloadProgress(fraction) }
+                    },
+                    status: { status in
+                        await MainActor.run { window.setStatus(status) }
+                    }
                 )
-                relaunch(appPath: appPath)
+                do {
+                    try await UpdateInstaller.launchRelaunchHelper(for: appURL)
+                } catch {
+                    // Don't quit without a way back: put the running version back in place.
+                    try await replacement.rollBack()
+                    throw error
+                }
+                replacement.discardBackup()
+
+                // Signal to the next launch that this is a self-update relaunch,
+                // so AppDelegate can silently handle accessibility re-authorization.
+                UserDefaults.standard.set(true, forKey: "pendingSelfUpdate")
+                NSApplication.shared.terminate(nil)
             } catch {
                 logger.error("Auto-update failed: \(error.localizedDescription)")
-                window.showFailure("The update could not be installed: \(error.localizedDescription)")
+                switch error {
+                case UpdateError.installedWithoutRelaunch, UpdateError.restoreFailed:
+                    window.showFailure(error.localizedDescription)
+                default:
+                    window.showFailure("The update could not be installed: \(error.localizedDescription)")
+                }
             }
         }
-    }
-
-    /// Downloads the zip, extracts, verifies the signature and version, removes
-    /// quarantine, and replaces the app bundle. Returns the path to the newly installed app.
-    private func downloadAndInstall(
-        downloadURL: URL,
-        expectedVersion: String,
-        status: (String) -> Void
-    ) async throws -> String {
-        let fileManager = FileManager.default
-        let tmpDir = fileManager.temporaryDirectory
-            .appendingPathComponent("MissionStrike-update-\(UUID().uuidString)")
-        try fileManager.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-
-        // 1. Download the zip
-        let zipPath = tmpDir.appendingPathComponent("MissionStrike.app.zip")
-        let (downloadedURL, response) = try await URLSession.shared.download(for: URLRequest(url: downloadURL))
-        if let httpResponse = response as? HTTPURLResponse,
-           !(200...299).contains(httpResponse.statusCode) {
-            throw URLError(.badServerResponse)
-        }
-        try fileManager.moveItem(at: downloadedURL, to: zipPath)
-
-        // 2. Extract the zip
-        status("Extracting…")
-        let unzipProcess = Process()
-        unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        unzipProcess.arguments = ["-x", "-k", zipPath.path, tmpDir.path]
-        try unzipProcess.run()
-        unzipProcess.waitUntilExit()
-        guard unzipProcess.terminationStatus == 0 else {
-            throw NSError(
-                domain: "UpdateChecker", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to extract update archive."]
-            )
-        }
-
-        let extractedApp = tmpDir.appendingPathComponent("MissionStrike.app")
-        guard fileManager.fileExists(atPath: extractedApp.path) else {
-            throw NSError(
-                domain: "UpdateChecker", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Extracted archive did not contain MissionStrike.app."]
-            )
-        }
-
-        // 3. Only install builds signed with the MissionStrike certificate, and only the
-        //    version that was offered (an older signed release must not be replayed).
-        status("Verifying…")
-        try CodeSigning.verifyUpdate(at: extractedApp, expectedVersion: expectedVersion)
-
-        // 4. Remove macOS quarantine flag
-        status("Removing quarantine…")
-        let xattrProcess = Process()
-        xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        xattrProcess.arguments = ["-cr", extractedApp.path]
-        try xattrProcess.run()
-        xattrProcess.waitUntilExit()
-
-        // 5. Replace the current app bundle
-        status("Installing…")
-        let currentAppURL = Bundle.main.bundleURL
-        let installDir = currentAppURL.deletingLastPathComponent()
-        let installedAppURL = installDir.appendingPathComponent("MissionStrike.app")
-
-        // Swap in one step so a failure leaves the current app in place.
-        if fileManager.fileExists(atPath: installedAppURL.path) {
-            _ = try fileManager.replaceItemAt(installedAppURL, withItemAt: extractedApp)
-        } else {
-            try fileManager.moveItem(at: extractedApp, to: installedAppURL)
-        }
-
-        // Clean up temp directory (best-effort)
-        try? fileManager.removeItem(at: tmpDir)
-
-        return installedAppURL.path
-    }
-
-    /// Spawns a detached process to relaunch the app after the current process exits.
-    private func relaunch(appPath: String) {
-        // Signal to the next launch that this is a self-update relaunch,
-        // so AppDelegate can silently handle accessibility re-authorization.
-        UserDefaults.standard.set(true, forKey: "pendingSelfUpdate")
-
-        let pid = ProcessInfo.processInfo.processIdentifier
-        // Shell snippet: wait for current PID to exit, then open the new app. The path is
-        // passed as an argument rather than spliced into the script.
-        let script = """
-            while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
-            open "$1"
-            """
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", script, "relaunch", appPath]
-        try? process.run()
-
-        // Quit the current instance so the relaunch script can proceed
-        NSApplication.shared.terminate(nil)
-    }
-
-    private func showUpToDateAlert() {
-        let alert = NSAlert()
-        alert.messageText = "You're Up to Date"
-        alert.informativeText = "MissionStrike \(currentVersion) is the latest version."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-
-        if let icon = NSApplication.shared.applicationIconImage {
-            alert.icon = icon
-        }
-
-        alert.runModal()
-    }
-
-    private func showErrorAlert(error: Error) {
-        let alert = NSAlert()
-        alert.messageText = "Update Check Failed"
-        alert.informativeText = "Could not check for updates. "
-            + "Please check your internet connection or try again later.\n\n"
-            + "(\(error.localizedDescription))"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
     }
 }
