@@ -3,33 +3,44 @@ name: Build and Release MissionStrike
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*' # Trigger on tags like v1.0.0
 
+# Nothing by default; each job asks for exactly what it needs.
 permissions: {}
 
 concurrency:
   group: release
   cancel-in-progress: false
 
+# The signing certificate never shares a job with the compiler:
+#   build             tests and builds the tagged source, unsigned and without secrets.
+#   sign-and-release  runs in the protected `release` environment; it only signs, zips
+#                     and publishes the bundle the build job produced.
+#   publish-cask      bumps the Homebrew cask, and can be re-run on its own.
+# Every job is safe to re-run for the same tag.
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     permissions:
       contents: read
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
+    # Third-party actions are pinned to full commit SHAs so a moved tag cannot change them.
     - name: Checkout Repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        fetch-depth: 0
+        fetch-depth: 0 # full history, to check the tag is on main
 
-    - name: Verify tag is on main
+    # Only commits already on main are released, so a tag on a side branch can't get
+    # its code signed.
+    - name: Check tag is on main
       run: |
         git fetch --no-tags origin main
         if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-          echo "::error::Ref $GITHUB_REF_NAME is not reachable from origin/main. Refusing to build a release."
+          echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; refusing to release it."
           exit 1
         fi
 
@@ -51,56 +62,63 @@ jobs:
         cd MissionStrike
         swift test
 
-    # Compile and assemble before the protected signing environment is entered.
     - name: Build unsigned app bundle
-      run: scripts/package-app.sh --unsigned
-
-    - name: Archive unsigned app bundle
       run: |
+        scripts/package-app.sh --unsigned
         cd MissionStrike/dist
         ditto -c -k --keepParent MissionStrike.app MissionStrike.unsigned.zip
 
-    - name: Upload unsigned app archive
+    - name: Upload unsigned app bundle
       uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
       with:
-        name: MissionStrike-unsigned-app
+        name: MissionStrike-unsigned
         path: MissionStrike/dist/MissionStrike.unsigned.zip
         if-no-files-found: error
 
   sign-and-release:
     needs: build
-    runs-on: macos-14
-    # Configure this environment with required reviewers and protected-tag deployment rules.
+    runs-on: macos-latest
+    # Holds the signing secrets. Its protection rules (required reviewers, `v*` tags
+    # only) live in the repository settings; see README "Release signing".
     environment: release
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: write     # create the GitHub release
+      id-token: write     # sign the build provenance attestation
+      attestations: write # store the attestation
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        fetch-depth: 0
+        fetch-depth: 0 # full history and tags, for the release notes
+
+    # Checked again in the job that can sign: main may have been force-pushed while
+    # the release waited for approval.
+    - name: Check tag is on main
+      run: |
+        git fetch --no-tags origin main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; refusing to sign it."
+          exit 1
+        fi
 
     - name: Download unsigned app bundle
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
-        name: MissionStrike-unsigned-app
-        path: MissionStrike/dist
+        name: MissionStrike-unsigned
+        path: ${{ runner.temp }}/unsigned
 
-    - name: Verify tag is on main before signing
+    - name: Unpack unsigned app bundle
       run: |
-        git fetch --no-tags origin main
-        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-          echo "::error::Ref $GITHUB_REF_NAME is not reachable from origin/main. Refusing to sign it."
-          exit 1
-        fi
-        ditto -x -k MissionStrike/dist/MissionStrike.unsigned.zip MissionStrike/dist
+        rm -rf MissionStrike/dist
+        mkdir -p MissionStrike/dist
+        ditto -x -k "$RUNNER_TEMP/unsigned/MissionStrike.unsigned.zip" MissionStrike/dist
 
-    # The only step which receives the signing material. It does not compile source.
+    # The only step that sees the signing certificate. It signs and zips the bundle from
+    # the build job and doesn't compile anything.
     - name: Sign and package
       env:
         MISSIONSTRIKE_P12_BASE64: ${{ secrets.MISSIONSTRIKE_P12_BASE64 }}
@@ -113,6 +131,8 @@ jobs:
       with:
         subject-path: MissionStrike/dist/MissionStrike.app.zip
 
+    # The in-app update window shows these notes. Changes land on main without pull
+    # requests, so GitHub's generated notes would be empty; list the commit subjects instead.
     - name: Write release notes
       run: |
         PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
@@ -126,44 +146,44 @@ jobs:
             echo "**Full Changelog**: [$PREVIOUS_TAG...$GITHUB_REF_NAME](https://github.com/$GITHUB_REPOSITORY/compare/$PREVIOUS_TAG...$GITHUB_REF_NAME)"
           fi
         } > release-notes.md
+        cat release-notes.md
 
+    # install.sh is attached so the README can link to a released copy instead of main.
+    # A re-run replaces the assets of the existing release instead of failing on it.
     - name: Create or update GitHub Release
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        ASSETS=(
+          MissionStrike/dist/MissionStrike.app.zip
+          MissionStrike/dist/MissionStrike.app.zip.sha256
+          install.sh
+        )
         if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-          gh release upload "$GITHUB_REF_NAME" \
-            MissionStrike/dist/MissionStrike.app.zip \
-            MissionStrike/dist/MissionStrike.app.zip.sha256 \
-            install.sh \
-            --clobber
+          gh release upload "$GITHUB_REF_NAME" "${ASSETS[@]}" --clobber
           gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
         else
-          gh release create "$GITHUB_REF_NAME" \
-            MissionStrike/dist/MissionStrike.app.zip \
-            MissionStrike/dist/MissionStrike.app.zip.sha256 \
-            install.sh \
+          gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md \
             --verify-tag
         fi
 
+  # Bumps the cask in SchoofsEbert/homebrew-tap. The deploy key can write to that repo
+  # only; the job is skipped until the secret exists. It reads the checksum from the
+  # published release, so it can be re-run on its own if the push fails.
   publish-cask:
     needs: sign-and-release
-    runs-on: macos-14
-    environment: release
+    runs-on: macos-latest
+    # Needs no reviewers; it lets the deploy key be scoped to this job.
+    environment: homebrew-tap
     permissions:
       contents: read
-    steps:
-    - name: Download release checksum
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        mkdir -p MissionStrike/dist
-        gh release download "$GITHUB_REF_NAME" --pattern MissionStrike.app.zip.sha256 --dir MissionStrike/dist --clobber
 
+    steps:
     - name: Update Homebrew cask
       env:
+        GH_TOKEN: ${{ github.token }}
         TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
       run: |
         if [ -z "$TAP_DEPLOY_KEY" ]; then
@@ -171,25 +191,35 @@ jobs:
           exit 0
         fi
         VERSION="${GITHUB_REF_NAME#v}"
-        SHA=$(cut -d ' ' -f 1 MissionStrike/dist/MissionStrike.app.zip.sha256)
+        gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+          --pattern MissionStrike.app.zip.sha256 --dir "$RUNNER_TEMP" --clobber
+        SHA=$(cut -d ' ' -f 1 "$RUNNER_TEMP/MissionStrike.app.zip.sha256")
+        if ! [[ "$SHA" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "::error::The release checksum is malformed: $SHA"
+          exit 1
+        fi
+
         KEY_FILE="$RUNNER_TEMP/tap_key"
         ( umask 077; printf '%s\n' "$TAP_DEPLOY_KEY" > "$KEY_FILE" )
         trap 'rm -f "$KEY_FILE"' EXIT
+        # GitHub's published host key (api.github.com/meta), so the push can't be redirected.
         echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" \
           > "$RUNNER_TEMP/known_hosts"
         export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+        rm -rf "$RUNNER_TEMP/tap"
         git clone --depth 1 git@github.com:SchoofsEbert/homebrew-tap.git "$RUNNER_TEMP/tap"
         cd "$RUNNER_TEMP/tap"
         sed -i '' -E \
           -e "s/^  version \".*\"/  version \"$VERSION\"/" \
           -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" \
           Casks/missionstrike.rb
-        if ! grep -qx '  depends_on arch: :arm64' Casks/missionstrike.rb; then
-          sed -i '' -e '/^  sha256 /a\\
-  depends_on arch: :arm64' Casks/missionstrike.rb
+        # MissionStrike is built for Apple silicon only.
+        if ! grep -q '^  depends_on arch: :arm64$' Casks/missionstrike.rb; then
+          perl -0pi -e 's/^(  depends_on macos: .*\n)/$1  depends_on arch: :arm64\n/m' Casks/missionstrike.rb
+          grep -q '^  depends_on arch: :arm64$' Casks/missionstrike.rb
         fi
         if git diff --quiet; then
-          echo "Cask already matches $VERSION; nothing to commit."
+          echo "The cask is already at $VERSION; nothing to push."
           exit 0
         fi
         git diff

@@ -2,6 +2,13 @@
 # Builds MissionStrike.app, signs it with the project's self-signed certificate,
 # and zips it into MissionStrike/dist/. Used by the release workflow and for local builds.
 #
+#   scripts/package-app.sh                  build, sign and zip
+#   scripts/package-app.sh --unsigned       build the app bundle only
+#   scripts/package-app.sh --sign-existing  sign and zip the bundle already in dist/
+#
+# The release workflow builds with --unsigned and signs with --sign-existing in a
+# separate job, so the signing certificate is never present while source compiles.
+#
 # A stable signing certificate keeps the code signature's designated requirement the
 # same across releases, so macOS keeps the Accessibility grant after updates. Ad-hoc
 # signatures change with every build and make users re-grant it each time.
@@ -37,31 +44,31 @@ if [ "$MODE" != "--sign-existing" ]; then
     echo "==> Building release binary"
     (cd "$PACKAGE_DIR" && swift build -c release)
 
-    BINARY="$PACKAGE_DIR/.build/release/MissionStrike"
-    ARCHITECTURES="$(lipo -archs "$BINARY")"
-    if ! printf '%s\n' "$ARCHITECTURES" | tr ' ' '\n' | grep -qx 'arm64'; then
-        echo "error: MissionStrike must be built for arm64; found: $ARCHITECTURES" >&2
-        exit 1
-    fi
-
     echo "==> Assembling app bundle"
     rm -rf "$DIST_DIR"
     mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-    cp "$BINARY" "$APP_DIR/Contents/MacOS/"
+    cp "$PACKAGE_DIR/.build/release/MissionStrike" "$APP_DIR/Contents/MacOS/"
     cp "$PACKAGE_DIR/Info.plist" "$APP_DIR/Contents/"
     # Icon: compiled from MissionStrike/Icon/MissionStrike.icon by scripts/build-icon.sh
     cp "$PACKAGE_DIR/Icon/Compiled/Assets.car" "$PACKAGE_DIR/Icon/Compiled/MissionStrike.icns" \
         "$APP_DIR/Contents/Resources/"
 fi
 
-if [ "$MODE" = "--unsigned" ]; then
-    echo "==> Done: unsigned app bundle at $APP_DIR"
-    exit 0
-fi
-
 if [ ! -d "$APP_DIR" ]; then
     echo "error: no app bundle at $APP_DIR; run without --sign-existing first" >&2
     exit 1
+fi
+
+# MissionStrike supports Apple silicon only; the cask, install.sh and updater rely on it.
+ARCHITECTURES="$(lipo -archs "$APP_DIR/Contents/MacOS/MissionStrike")"
+if ! printf '%s\n' "$ARCHITECTURES" | tr ' ' '\n' | grep -qx 'arm64'; then
+    echo "error: MissionStrike must be built for arm64; found: $ARCHITECTURES" >&2
+    exit 1
+fi
+
+if [ "$MODE" = "--unsigned" ]; then
+    echo "==> Done: unsigned app bundle at $APP_DIR"
+    exit 0
 fi
 
 WORK_DIR="$(mktemp -d)"
