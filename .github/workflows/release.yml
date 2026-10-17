@@ -3,9 +3,8 @@ name: Build and Release MissionStrike
 on:
   push:
     tags:
-      - 'v*' # Trigger on tags like v1.0.0
+      - 'v*'
 
-# Nothing by default; the release job asks for exactly what it needs.
 permissions: {}
 
 concurrency:
@@ -13,22 +12,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: macos-latest
+  build:
+    runs-on: macos-14
     permissions:
-      contents: write     # create the GitHub release
-      id-token: write     # sign the build provenance attestation
-      attestations: write # store the attestation
+      contents: read
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
     steps:
-    # Third-party actions are pinned to full commit SHAs so a moved tag cannot change them.
     - name: Checkout Repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        fetch-depth: 0 # full history and tags, for the release notes
+        fetch-depth: 0
+
+    - name: Verify tag is on main
+      run: |
+        git fetch --no-tags origin main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "::error::Ref $GITHUB_REF_NAME is not reachable from origin/main. Refusing to build a release."
+          exit 1
+        fi
 
     - name: Set up Swift
       uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
@@ -48,20 +51,68 @@ jobs:
         cd MissionStrike
         swift test
 
-    - name: Build, sign and package
+    # Compile and assemble before the protected signing environment is entered.
+    - name: Build unsigned app bundle
+      run: scripts/package-app.sh --unsigned
+
+    - name: Archive unsigned app bundle
+      run: |
+        cd MissionStrike/dist
+        ditto -c -k --keepParent MissionStrike.app MissionStrike.unsigned.zip
+
+    - name: Upload unsigned app archive
+      uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      with:
+        name: MissionStrike-unsigned-app
+        path: MissionStrike/dist/MissionStrike.unsigned.zip
+        if-no-files-found: error
+
+  sign-and-release:
+    needs: build
+    runs-on: macos-14
+    # Configure this environment with required reviewers and protected-tag deployment rules.
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+
+    - name: Download unsigned app bundle
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: MissionStrike-unsigned-app
+        path: MissionStrike/dist
+
+    - name: Verify tag is on main before signing
+      run: |
+        git fetch --no-tags origin main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "::error::Ref $GITHUB_REF_NAME is not reachable from origin/main. Refusing to sign it."
+          exit 1
+        fi
+        ditto -x -k MissionStrike/dist/MissionStrike.unsigned.zip MissionStrike/dist
+
+    # The only step which receives the signing material. It does not compile source.
+    - name: Sign and package
       env:
         MISSIONSTRIKE_P12_BASE64: ${{ secrets.MISSIONSTRIKE_P12_BASE64 }}
         MISSIONSTRIKE_P12_PASSWORD: ${{ secrets.MISSIONSTRIKE_P12_PASSWORD }}
         MISSIONSTRIKE_REQUIRE_SIGNING: '1'
-      run: scripts/package-app.sh
+      run: scripts/package-app.sh --sign-existing
 
     - name: Attest build provenance
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: MissionStrike/dist/MissionStrike.app.zip
 
-    # The in-app update window shows these notes. Changes land on main without pull
-    # requests, so GitHub's generated notes would be empty; list the commit subjects instead.
     - name: Write release notes
       run: |
         PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
@@ -75,21 +126,42 @@ jobs:
             echo "**Full Changelog**: [$PREVIOUS_TAG...$GITHUB_REF_NAME](https://github.com/$GITHUB_REPOSITORY/compare/$PREVIOUS_TAG...$GITHUB_REF_NAME)"
           fi
         } > release-notes.md
-        cat release-notes.md
 
-    - name: Create GitHub Release
+    - name: Create or update GitHub Release
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        gh release create "$GITHUB_REF_NAME" \
-          MissionStrike/dist/MissionStrike.app.zip \
-          MissionStrike/dist/MissionStrike.app.zip.sha256 \
-          --title "$GITHUB_REF_NAME" \
-          --notes-file release-notes.md \
-          --verify-tag
+        if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          gh release upload "$GITHUB_REF_NAME" \
+            MissionStrike/dist/MissionStrike.app.zip \
+            MissionStrike/dist/MissionStrike.app.zip.sha256 \
+            install.sh \
+            --clobber
+          gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+        else
+          gh release create "$GITHUB_REF_NAME" \
+            MissionStrike/dist/MissionStrike.app.zip \
+            MissionStrike/dist/MissionStrike.app.zip.sha256 \
+            install.sh \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag
+        fi
 
-    # Bumps the cask in SchoofsEbert/homebrew-tap. The deploy key can write to that
-    # repo only; the step is skipped until the secret exists.
+  publish-cask:
+    needs: sign-and-release
+    runs-on: macos-14
+    environment: release
+    permissions:
+      contents: read
+    steps:
+    - name: Download release checksum
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p MissionStrike/dist
+        gh release download "$GITHUB_REF_NAME" --pattern MissionStrike.app.zip.sha256 --dir MissionStrike/dist --clobber
+
     - name: Update Homebrew cask
       env:
         TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
@@ -103,7 +175,6 @@ jobs:
         KEY_FILE="$RUNNER_TEMP/tap_key"
         ( umask 077; printf '%s\n' "$TAP_DEPLOY_KEY" > "$KEY_FILE" )
         trap 'rm -f "$KEY_FILE"' EXIT
-        # GitHub's published host key (api.github.com/meta), so the push can't be redirected.
         echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" \
           > "$RUNNER_TEMP/known_hosts"
         export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
@@ -113,6 +184,14 @@ jobs:
           -e "s/^  version \".*\"/  version \"$VERSION\"/" \
           -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" \
           Casks/missionstrike.rb
+        if ! grep -qx '  depends_on arch: :arm64' Casks/missionstrike.rb; then
+          sed -i '' -e '/^  sha256 /a\\
+  depends_on arch: :arm64' Casks/missionstrike.rb
+        fi
+        if git diff --quiet; then
+          echo "Cask already matches $VERSION; nothing to commit."
+          exit 0
+        fi
         git diff
         git -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \

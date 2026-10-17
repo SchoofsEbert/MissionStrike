@@ -12,6 +12,12 @@
 #   3. Ad-hoc, unless MISSIONSTRIKE_REQUIRE_SIGNING=1
 set -euo pipefail
 
+MODE="${1:-package}"
+if [ "$MODE" != "package" ] && [ "$MODE" != "--unsigned" ] && [ "$MODE" != "--sign-existing" ]; then
+    echo "usage: $0 [--unsigned|--sign-existing]" >&2
+    exit 64
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE_DIR="$REPO_ROOT/MissionStrike"
 DIST_DIR="$PACKAGE_DIR/dist"
@@ -27,6 +33,37 @@ if [ -z "$REQUIREMENT" ]; then
     exit 1
 fi
 
+if [ "$MODE" != "--sign-existing" ]; then
+    echo "==> Building release binary"
+    (cd "$PACKAGE_DIR" && swift build -c release)
+
+    BINARY="$PACKAGE_DIR/.build/release/MissionStrike"
+    ARCHITECTURES="$(lipo -archs "$BINARY")"
+    if ! printf '%s\n' "$ARCHITECTURES" | tr ' ' '\n' | grep -qx 'arm64'; then
+        echo "error: MissionStrike must be built for arm64; found: $ARCHITECTURES" >&2
+        exit 1
+    fi
+
+    echo "==> Assembling app bundle"
+    rm -rf "$DIST_DIR"
+    mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+    cp "$BINARY" "$APP_DIR/Contents/MacOS/"
+    cp "$PACKAGE_DIR/Info.plist" "$APP_DIR/Contents/"
+    # Icon: compiled from MissionStrike/Icon/MissionStrike.icon by scripts/build-icon.sh
+    cp "$PACKAGE_DIR/Icon/Compiled/Assets.car" "$PACKAGE_DIR/Icon/Compiled/MissionStrike.icns" \
+        "$APP_DIR/Contents/Resources/"
+fi
+
+if [ "$MODE" = "--unsigned" ]; then
+    echo "==> Done: unsigned app bundle at $APP_DIR"
+    exit 0
+fi
+
+if [ ! -d "$APP_DIR" ]; then
+    echo "error: no app bundle at $APP_DIR; run without --sign-existing first" >&2
+    exit 1
+fi
+
 WORK_DIR="$(mktemp -d)"
 KEYCHAIN="$WORK_DIR/signing.keychain-db"
 ORIGINAL_KEYCHAINS=()
@@ -38,18 +75,6 @@ cleanup() {
     rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
-
-echo "==> Building release binary"
-(cd "$PACKAGE_DIR" && swift build -c release)
-
-echo "==> Assembling app bundle"
-rm -rf "$DIST_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-cp "$PACKAGE_DIR/.build/release/MissionStrike" "$APP_DIR/Contents/MacOS/"
-cp "$PACKAGE_DIR/Info.plist" "$APP_DIR/Contents/"
-# Icon: compiled from MissionStrike/Icon/MissionStrike.icon by scripts/build-icon.sh
-cp "$PACKAGE_DIR/Icon/Compiled/Assets.car" "$PACKAGE_DIR/Icon/Compiled/MissionStrike.icns" \
-    "$APP_DIR/Contents/Resources/"
 
 P12_PATH=""
 P12_PASSWORD=""

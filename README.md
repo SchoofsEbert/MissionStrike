@@ -37,10 +37,11 @@ brew install --cask schoofsebert/tap/missionstrike
 ### Install script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SchoofsEbert/MissionStrike/main/install.sh | bash
+curl -fsSLO https://github.com/SchoofsEbert/MissionStrike/releases/latest/download/install.sh
+bash install.sh
 ```
 
-The script downloads the latest release, checks its signature and installs it to `/Applications`.
+The script is downloaded from a GitHub Release, then downloads the latest app release, checks its signature and installs it to `/Applications`.
 
 ### Manual
 
@@ -64,7 +65,7 @@ Homebrew leaves updates to the app, so `brew upgrade` only updates MissionStrike
 
 ## Building from Source
 
-Requires Xcode or the Swift command line tools.
+Requires an Apple-silicon Mac, Xcode or the Swift command line tools. MissionStrike is Apple-silicon only.
 
 ```bash
 git clone https://github.com/SchoofsEbert/MissionStrike.git
@@ -77,6 +78,8 @@ The signed app and zip end up in `MissionStrike/dist/`. Without the MissionStrik
 ### Release signing
 
 Releases are signed with a self-signed certificate; the in-app updater and `install.sh` reject downloads that aren't. Each release also has a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations): `gh attestation verify MissionStrike.app.zip --repo SchoofsEbert/MissionStrike`.
+
+The `release` GitHub Actions environment must require reviewers and allow deployment only from protected `v*` tags. Keep the signing P12 and password as secrets scoped to that environment. If the certificate is lost or compromised, create a replacement certificate, update the pinned requirement in `CodeSigning.swift` and `install.sh`, update the environment secrets, and publish recovery instructions: existing installations will need to reinstall and grant Accessibility again because the signing identity changes.
 
 ## How it Works
 
