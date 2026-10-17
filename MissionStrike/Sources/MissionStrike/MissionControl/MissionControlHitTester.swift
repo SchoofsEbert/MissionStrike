@@ -39,10 +39,11 @@ protocol HitTestEnvironment {
     /// Height of the primary display, for the Y-flip.
     var mainDisplayHeight: CGFloat { get }
     func element(at point: CGPoint) -> Element?
-    /// WindowManager's Spaces Bar, when it has one.
-    func spacesBar() -> Element?
-    /// The buttons that can remove a Space (`AXRemoveDesktop`).
-    func removableDesktopButtons() -> [Element]
+    /// Frame of WindowManager's Spaces Bar, when it has one.
+    func spacesBarFrame() -> CGRect?
+    /// The buttons that can remove a Space (`AXRemoveDesktop`) with their frames: those in
+    /// `bar`, or anywhere in WindowManager when nil.
+    func desktops(in bar: Element?) -> [(element: Element, frame: CGRect)]
     /// The app window behind a thumbnail's CGWindowID; nil for system windows.
     func appWindow(withID windowID: CGWindowID) -> AppWindow?
     /// Whether the element belongs to the Dock, WindowManager or another system overlay.
@@ -74,9 +75,13 @@ enum MissionControlHitTester {
 
     // MARK: - Public API
 
+    /// How deep tree walks go below WindowManager's application element.
+    private static let walkDepthLimit = 12
+
     /// - Parameter clickPoint: Cursor position (`NSEvent.mouseLocation` space).
     static func resolve(clickPoint: CGPoint) -> Resolution? {
-        resolve(clickPoint: clickPoint, in: LiveHitTestEnvironment())
+        // Outside a session (Mission Control not seen open yet) a throwaway one does.
+        resolve(clickPoint: clickPoint, in: MissionControlSession.current ?? MissionControlSession())
     }
 
     static func resolve<Environment: HitTestEnvironment>(
@@ -136,10 +141,10 @@ enum MissionControlHitTester {
                 return element
             }
             if element.title == "Spaces Bar" {
-                return nearestDesktop(in: framed(removableDesktopButtons(in: element)), to: point)
+                return nearestDesktop(in: environment.desktops(in: element), to: point)
             }
         }
-        return nearestDesktop(in: framed(environment.removableDesktopButtons()), to: point)
+        return nearestDesktop(in: environment.desktops(in: nil), to: point)
     }
 
     private static func isInSpacesStrip<Environment: HitTestEnvironment>(
@@ -147,7 +152,7 @@ enum MissionControlHitTester {
         hit: Environment.Element?,
         in environment: Environment
     ) -> Bool {
-        if let bar = environment.spacesBar()?.frame, bar.insetBy(dx: 0, dy: -32).contains(point) {
+        if let bar = environment.spacesBarFrame(), bar.insetBy(dx: 0, dy: -32).contains(point) {
             return true
         }
         return ancestors(of: hit).contains { $0.title == "Spaces Bar" || $0.hasAction("AXRemoveDesktop") }
@@ -166,37 +171,42 @@ enum MissionControlHitTester {
         hypot(frame.midX - point.x, frame.midY - point.y)
     }
 
-    private static func framed<Element: AccessibilityElement>(_ elements: [Element]) -> [(element: Element, frame: CGRect)] {
+    static func framed<Element: AccessibilityElement>(_ elements: [Element]) -> [(element: Element, frame: CGRect)] {
         elements.compactMap { element in element.frame.map { (element, $0) } }
     }
 
-    /// Every element under `root` that can remove a Space.
+    /// Every element under `root` that can remove a Space. Thumbnails hold no Spaces, so
+    /// their subtrees are skipped.
     static func removableDesktopButtons<Element: AccessibilityElement>(in root: Element) -> [Element] {
         var result: [Element] = []
-        func walk(_ element: Element) {
+        func walk(_ element: Element, depth: Int) {
             if element.hasAction("AXRemoveDesktop") {
                 result.append(element)
             }
-            for child in element.children {
-                walk(child)
+            guard depth < walkDepthLimit else { return }
+            for child in element.walkStep().children {
+                walk(child, depth: depth + 1)
             }
         }
-        walk(root)
+        walk(root, depth: 0)
         return result
     }
 
-    /// First element in `root`'s tree, depth first, that matches.
-    static func descendant<Element: AccessibilityElement>(
-        in root: Element,
-        matching predicate: (Element) -> Bool
-    ) -> Element? {
-        if predicate(root) { return root }
-        for child in root.children {
-            if let found = descendant(in: child, matching: predicate) {
-                return found
+    /// First element in `root`'s tree, depth first, with this title. Thumbnails' subtrees
+    /// are skipped.
+    static func firstDescendant<Element: AccessibilityElement>(of root: Element, titled title: String) -> Element? {
+        func search(_ element: Element, depth: Int) -> Element? {
+            let step = element.walkStep()
+            if step.title == title { return element }
+            guard depth < walkDepthLimit else { return nil }
+            for child in step.children {
+                if let found = search(child, depth: depth + 1) {
+                    return found
+                }
             }
+            return nil
         }
-        return nil
+        return search(root, depth: 0)
     }
 
     // MARK: - Windows (wid)
@@ -254,49 +264,5 @@ enum MissionControlHitTester {
             current = element.parent
         }
         return result
-    }
-}
-
-/// Hit testing against the live Accessibility tree and window list.
-@MainActor
-struct LiveHitTestEnvironment: HitTestEnvironment {
-    var flipsY: Bool { MissionControlHitTester.shouldYFlipForMissionControl() }
-
-    var mainDisplayHeight: CGFloat { ScreenCoordinates.mainDisplayHeight }
-
-    func element(at point: CGPoint) -> AXElement? {
-        AXElement.at(point)
-    }
-
-    func spacesBar() -> AXElement? {
-        guard let root = Self.windowManager() else { return nil }
-        return MissionControlHitTester.descendant(in: root) { $0.title == "Spaces Bar" }
-    }
-
-    func removableDesktopButtons() -> [AXElement] {
-        guard let root = Self.windowManager() else { return [] }
-        return MissionControlHitTester.removableDesktopButtons(in: root)
-    }
-
-    func appWindow(withID windowID: CGWindowID) -> AppWindow? {
-        WindowList.appWindow(withID: windowID)
-    }
-
-    func isSystemOverlay(_ element: AXElement) -> Bool {
-        guard let pid = element.pid,
-              let name = NSRunningApplication(processIdentifier: pid)?.localizedName else {
-            return false
-        }
-        return MissionStrikeConfig.default.ignoredWindowOwners.contains(name)
-    }
-
-    private static func windowManager() -> AXElement? {
-        let apps = NSWorkspace.shared.runningApplications
-        guard let app = apps.first(where: {
-            $0.localizedName == "WindowManager" || $0.bundleIdentifier == "com.apple.WindowManager"
-        }) else {
-            return nil
-        }
-        return AXElement.application(app.processIdentifier)
     }
 }

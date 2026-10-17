@@ -159,6 +159,7 @@ extension EventTapManager {
             return false
         }
         if type.rawValue == systemDefinedEventType || type.rawValue == dockGestureEventType {
+            MissionControlSession.reset()
             HoverBadgeController.shared.dismissFlash()
             return false
         }
@@ -176,6 +177,7 @@ extension EventTapManager {
         // the background). Mission Control's windows only go once its closing animation is over,
         // so drop the confirmation badge now rather than waiting for them.
         if !decision.swallows, type == .keyDown || type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
+            MissionControlSession.inputPassedThrough()
             HoverBadgeController.shared.dismissFlash()
         }
         return decision.swallows
@@ -266,7 +268,7 @@ private extension TapEvent {
 @MainActor
 private struct LiveTapEnvironment: TapEnvironment {
     func isMissionControlActive() -> Bool {
-        MissionControlDetector().isActive()
+        MissionControlSession.isActive()
     }
 
     var isContextMenuOpen: Bool {

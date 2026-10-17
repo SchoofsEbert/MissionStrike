@@ -19,7 +19,7 @@ class MissionControlManager {
         Diagnostics.shared.record(input, resolution: resolution)
         // Mission Control may have closed while the click waited to be resolved;
         // acting then would close a window the user can no longer see being targeted.
-        guard let resolution, MissionControlDetector().isActive() else { return }
+        guard let resolution, MissionControlSession.isActive(maxAge: .zero) else { return }
         perform(resolution: resolution, action: action)
     }
 
@@ -71,6 +71,7 @@ class MissionControlManager {
         }
         let result = button.perform("AXRemoveDesktop")
         if result == .success {
+            MissionControlSession.current?.forgetSpaces()
             CloseEffect.play(at: NSEvent.mouseLocation)
             logger.debug("Closed Space via AXRemoveDesktop.")
         } else {

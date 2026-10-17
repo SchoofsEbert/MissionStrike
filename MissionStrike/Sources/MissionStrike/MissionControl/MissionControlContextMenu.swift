@@ -47,7 +47,7 @@ final class MissionControlContextMenu: NSObject {
             next = nil
             let current = Self.target(at: point)
             // The menu opens after the right-click; Mission Control may have closed by then.
-            guard MissionControlDetector().isActive(),
+            guard MissionControlSession.isActive(),
                   let menu = makeMenu(for: current) else { break }
             if case .thumbnail(let resolution) = current {
                 self.resolution = resolution

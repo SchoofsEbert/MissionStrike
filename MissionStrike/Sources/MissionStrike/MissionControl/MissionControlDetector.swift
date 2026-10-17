@@ -12,14 +12,15 @@ import CoreGraphics
 struct MissionControlDetector: Sendable {
     var config: MissionStrikeConfig = .default
 
-    /// Live check using system APIs (CGWindowList + NSScreen).
-    func isActive() -> Bool {
+    /// Live check using system APIs (CGWindowList + NSScreen). Also returns the window list
+    /// it looked at, so diagnostics can show it without copying it again.
+    func detect() -> (isActive: Bool, windowList: [[String: Any]]) {
         let options = CGWindowListOption.optionOnScreenOnly
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return false
+            return (false, [])
         }
         let screenSizes = NSScreen.screens.map { $0.frame.size }
-        return Self.isActive(windowList: windowList, screenSizes: screenSizes, config: config)
+        return (Self.isActive(windowList: windowList, screenSizes: screenSizes, config: config), windowList)
     }
 
     /// Pure, testable detection logic with no system dependencies.

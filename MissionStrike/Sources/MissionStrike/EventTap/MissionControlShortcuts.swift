@@ -48,7 +48,7 @@ extension MissionControlManager {
     func handle(_ shortcut: MissionControlShortcut, isRepeat: Bool, at pointer: CGPoint, replay: CGEvent) {
         let hit = MissionControlHitTester.resolve(clickPoint: pointer)
         // Mission Control closed in the meantime: neither act nor send ⌘W to the app now in front.
-        guard MissionControlDetector().isActive() else { return }
+        guard MissionControlSession.isActive(maxAge: .zero) else { return }
         Diagnostics.shared.record("shortcut", resolution: hit)
         guard let resolution = hit,
               shortcut.applies(to: resolution.target, spaceClosingEnabled: Self.isSpaceClosingEnabled) else {
