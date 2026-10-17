@@ -173,7 +173,7 @@ final class HoverBadgeController {
     }
 
     /// Circle centre sits just inside the thumbnail's top-left corner, like a window's close button.
-    private static func badgeFrame(size: CGSize, on thumbnail: CGRect) -> NSRect {
+    static func badgeFrame(size: CGSize, on thumbnail: CGRect) -> NSRect {
         let origin = NSPoint(
             x: thumbnail.minX + cornerInset - circleCentre,
             y: thumbnail.maxY - cornerInset - size.height + circleCentre
