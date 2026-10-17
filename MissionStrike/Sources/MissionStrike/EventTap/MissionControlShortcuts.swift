@@ -26,46 +26,66 @@ enum MissionControlShortcut: Sendable {
         guard modifiers == .maskCommand else { return nil }
         self.init(keyCode: keyCode)
     }
+
+    /// Whether the shortcut can act on what the hit-test found: only ⌘W acts on a Space,
+    /// and only while Space closing is on.
+    func applies(to resolution: MissionControlHitTester.Resolution) -> Bool {
+        guard case .removeDesktop = resolution.target else { return true }
+        return self == .closeWindow && MissionControlManager.isSpaceClosingEnabled
+    }
 }
+
+/// Marks key presses MissionStrike posts again after deciding not to act on them, so the
+/// tap lets them through. Hardware events carry 0 here.
+let replayedEventMarker: Int64 = 0x4D53_5452
 
 /// ⌘W / ⌘M / ⌘H / ⌘Q act on the hovered thumbnail while Mission Control is open.
 /// Everything else (other keys, other modifiers, no thumbnail under the cursor) passes through.
-/// Runs on the event tap callback, so the cheap key checks come before the Mission Control check.
-func handleMissionControlShortcut(_ event: CGEvent) -> Unmanaged<CGEvent>? {
-    let pass = Unmanaged.passUnretained(event)
+///
+/// Runs on the event tap callback, which must not wait on Accessibility: a slow app or
+/// WindowManager would hold up all input and get the tap disabled. So the decision uses
+/// cheap checks only: the key is swallowed while Mission Control is open and resolved after
+/// the callback returns. When nothing under the pointer takes the shortcut, the key is posted
+/// again, so it reaches the system as if it had passed through.
+/// Returns true when the key press is swallowed.
+@MainActor
+func handleMissionControlShortcut(_ event: CGEvent) -> Bool {
     guard let shortcut = MissionControlShortcut(
             keyCode: event.getIntegerValueField(.keyboardEventKeycode),
             flags: event.flags
           ),
           UserDefaults.standard.bool(forKey: "enableKeyboardShortcuts"),
-          MissionControlActiveChecker().isActive() else {
-        return pass
+          MissionControlActiveChecker().isActive(),
+          let replay = event.copy() else {
+        return false
     }
-    let hit = MissionControlHitTester.resolve(clickPoint: NSEvent.mouseLocation)
-    Diagnostics.shared.record("shortcut", resolution: hit)
-    guard let resolution = hit else {
-        return pass
-    }
-
-    // Only ⌘W acts on a Space, and only while Space closing is on.
-    if case .removeDesktop = resolution.target,
-       shortcut != .closeWindow || !MissionControlManager.isSpaceClosingEnabled {
-        return pass
-    }
-    // Swallow key repeats without acting: holding ⌘W must not close a window per repeat,
-    // nor leak ⌘W through to the app behind Mission Control.
-    guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else {
-        return nil
-    }
-
+    let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+    let pointer = NSEvent.mouseLocation
     Task { @MainActor in
-        guard MissionControlActiveChecker().isActive() else { return }
-        MissionControlManager.shared.perform(shortcut, on: resolution)
+        MissionControlManager.shared.handle(shortcut, isRepeat: isRepeat, at: pointer, replay: replay)
     }
-    return nil
+    return true
 }
 
 extension MissionControlManager {
+    /// Resolves a swallowed shortcut after the tap callback and acts on the hovered thumbnail,
+    /// or posts the key again when there is nothing for it to act on.
+    func handle(_ shortcut: MissionControlShortcut, isRepeat: Bool, at pointer: CGPoint, replay: CGEvent) {
+        let hit = MissionControlHitTester.resolve(clickPoint: pointer)
+        // Mission Control closed in the meantime: neither act nor send ⌘W to the app now in front.
+        guard MissionControlActiveChecker().isActive() else { return }
+        Diagnostics.shared.record("shortcut", resolution: hit)
+        guard let resolution = hit, shortcut.applies(to: resolution) else {
+            replay.setIntegerValueField(.eventSourceUserData, value: replayedEventMarker)
+            replay.post(tap: .cgSessionEventTap)
+            return
+        }
+        // Swallow key repeats without acting: holding ⌘W must not close a window per repeat,
+        // nor leak ⌘W through to the app behind Mission Control.
+        guard !isRepeat else { return }
+        perform(shortcut, on: resolution)
+    }
+
     /// Runs a keyboard shortcut on the hovered thumbnail. ⌘W on a Space removes it.
     func perform(_ shortcut: MissionControlShortcut, on resolution: MissionControlHitTester.Resolution) {
         switch shortcut {

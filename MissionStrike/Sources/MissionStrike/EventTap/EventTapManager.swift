@@ -83,6 +83,8 @@ class EventTapManager {
 
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
 
+        DockIconCache.shared.startObserving()
+
         if let runLoopSource = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
@@ -122,6 +124,13 @@ nonisolated(unsafe) private var lastProcessedClickTime: UInt64 = 0
 /// Releases of swallowed presses. Only accessed from the run-loop thread (event tap callback).
 nonisolated(unsafe) private var swallowedMouseUps = SwallowedMouseUps()
 
+/// The event a callback is handling, for main-actor code it calls synchronously. The callback
+/// already runs on the main thread, so nothing is shared across threads.
+private struct TappedEvent: @unchecked Sendable {
+    let event: CGEvent
+    init(_ event: CGEvent) { self.event = event }
+}
+
 /// Media and special keys, including the Mission Control key (`NX_SYSDEFINED`).
 private let systemDefinedEventType: UInt32 = 14
 /// Trackpad swipes that drive Mission Control and Spaces (private `kCGSEventDockControl`).
@@ -137,6 +146,10 @@ private func eventTapCallback(
 ) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         return handleTapDisabled(event: event, refcon: refcon)
+    }
+    // Keys MissionStrike posted again after deciding not to act on them.
+    if event.getIntegerValueField(.eventSourceUserData) == replayedEventMarker {
+        return Unmanaged.passUnretained(event)
     }
     if type.rawValue == systemDefinedEventType || type.rawValue == dockGestureEventType {
         dismissConfirmationBadge()
@@ -179,12 +192,24 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
         return handleRightMouseDown(event)
     }
 
-    if type == .otherMouseDown, handleDockMiddleClick(event) {
-        swallowedMouseUps.swallowRelease(of: type)
-        return nil
+    let flags = event.flags
+    // Middle-clicks on a running app's Dock icon come first, in or out of Mission Control.
+    // When the cached Dock layout can't tell, the click goes its usual way and the Dock is
+    // asked once the callback has returned.
+    var dockProbe: [CGPoint]?
+    if type == .otherMouseDown {
+        let verdict = DockMiddleClick.verdict(for: event)
+        let candidates = DockMiddleClick.candidates(for: event)
+        if verdict == .runningApp {
+            swallowedMouseUps.swallowRelease(of: type)
+            Task { @MainActor in
+                DockMiddleClick.perform(at: candidates, closeWindowsOnly: flags.contains(.maskAlternate))
+            }
+            return nil
+        }
+        dockProbe = verdict == .maybe ? candidates : nil
     }
 
-    let flags = event.flags
     let isTrigger = ClickTrigger.matches(
         type: type,
         buttonNumber: event.getIntegerValueField(.mouseEventButtonNumber),
@@ -193,6 +218,7 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
         leftClickModifier: TriggerModifier(rawValue: UserDefaults.standard.string(forKey: "leftClickModifier") ?? "option")
     )
     guard isTrigger else {
+        probeDock(dockProbe, flags: flags)
         return Unmanaged.passUnretained(event)
     }
 
@@ -221,6 +247,10 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
         let input = type == .otherMouseDown ? "middle-click" : "modifier-click"
         let action = MouseAction(flags: flags)
         Task { @MainActor in
+            if let dockProbe,
+               DockMiddleClick.perform(at: dockProbe, closeWindowsOnly: flags.contains(.maskAlternate)) {
+                return
+            }
             let resolution = MissionControlHitTester.resolve(clickPoint: clickPoint)
             Diagnostics.shared.record(input, resolution: resolution)
             // Mission Control may have closed while the click waited to be resolved;
@@ -233,14 +263,26 @@ private func handleInput(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent
         return nil
     }
 
+    probeDock(dockProbe, flags: flags)
     // passUnretained: the caller owns the event, we must not retain it
     return Unmanaged.passUnretained(event)
+}
+
+/// Asks the Dock about a middle-click that passed through, once the callback has returned.
+private func probeDock(_ candidates: [CGPoint]?, flags: CGEventFlags) {
+    guard let candidates else { return }
+    Task { @MainActor in
+        DockMiddleClick.perform(at: candidates, closeWindowsOnly: flags.contains(.maskAlternate))
+    }
 }
 
 /// ⌘-shortcuts act on the hovered thumbnail; modifier changes drive the hover badge.
 private func handleKeyboardEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
     guard type == .flagsChanged else {
-        return handleMissionControlShortcut(event)
+        // The tap's run loop source lives on the main run loop.
+        let tapped = TappedEvent(event)
+        let swallowed = MainActor.assumeIsolated { handleMissionControlShortcut(tapped.event) }
+        return swallowed ? nil : Unmanaged.passUnretained(event)
     }
     let flags = event.flags
     Task { @MainActor in

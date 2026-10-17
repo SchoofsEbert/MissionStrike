@@ -14,6 +14,11 @@ enum ScreenCoordinates {
             ?? 0
     }
 
+    /// Every screen's frame in AX (top-left origin) space.
+    static var axScreenFrames: [CGRect] {
+        NSScreen.screens.map { yFlipped($0.frame) }
+    }
+
     static func yFlipped(_ point: CGPoint) -> CGPoint {
         let h = mainDisplayHeight
         guard h > 0 else { return point }

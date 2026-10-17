@@ -34,16 +34,53 @@ enum DockHitTester {
         return nil
     }
 
-    /// The running app behind a Dock icon, or nil when the app isn't running.
-    private static func runningApp(for item: AXUIElement) -> NSRunningApplication? {
-        var urlRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(item, kAXURLAttribute as CFString, &urlRef) == .success,
-              let url = (urlRef as? URL)?.standardizedFileURL else {
+    /// Where the Dock and its running apps' icons are now, for `DockIconCache`.
+    static func snapshot() -> DockSnapshot? {
+        guard let dock = NSRunningApplication
+            .runningApplications(withBundleIdentifier: "com.apple.dock").first else {
             return nil
         }
+        let dockElement = AXUIElementCreateApplication(dock.processIdentifier)
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.standardizedFileURL })
+
+        var snapshot = DockSnapshot(listFrames: [], runningAppIcons: [], magnification: magnificationReach())
+        for list in children(of: dockElement) where string(list, kAXRoleAttribute) == kAXListRole {
+            guard let listFrame = frame(of: list) else { continue }
+            snapshot.listFrames.append(listFrame)
+            for item in children(of: list) where string(item, kAXSubroleAttribute) == "AXApplicationDockItem" {
+                guard let url = url(of: item), running.contains(url), let iconFrame = frame(of: item) else {
+                    continue
+                }
+                snapshot.runningAppIcons.append(iconFrame)
+            }
+        }
+        return snapshot
+    }
+
+    /// How much bigger than at rest a magnified icon gets; 0 with magnification off.
+    private static func magnificationReach() -> CGFloat {
+        let dockDefaults = UserDefaults(suiteName: "com.apple.dock")
+        guard dockDefaults?.bool(forKey: "magnification") == true else { return 0 }
+        let tileSize = dockDefaults?.double(forKey: "tilesize") ?? 0
+        let largeSize = dockDefaults?.double(forKey: "largesize") ?? 0
+        // The Dock's own maximum when the sizes aren't stored.
+        return largeSize > tileSize ? CGFloat(largeSize - tileSize) : 128
+    }
+
+    /// The running app behind a Dock icon, or nil when the app isn't running.
+    private static func runningApp(for item: AXUIElement) -> NSRunningApplication? {
+        guard let url = url(of: item) else { return nil }
         return NSWorkspace.shared.runningApplications.first {
             $0.bundleURL?.standardizedFileURL == url
         }
+    }
+
+    private static func url(of item: AXUIElement) -> URL? {
+        var urlRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(item, kAXURLAttribute as CFString, &urlRef) == .success else {
+            return nil
+        }
+        return (urlRef as? URL)?.standardizedFileURL
     }
 
     // MARK: - AX helpers
