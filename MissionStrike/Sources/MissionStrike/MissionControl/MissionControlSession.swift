@@ -156,6 +156,10 @@ extension MissionControlSession: HitTestEnvironment {
         WindowList.appWindow(withID: windowID, onScreenOnly: true)
     }
 
+    func appWindows(withIDs windowIDs: [CGWindowID]) -> [CGWindowID: AppWindow] {
+        WindowList.appWindows(withIDs: windowIDs, onScreenOnly: true)
+    }
+
     func isSystemOverlay(_ element: AXElement) -> Bool {
         guard let pid = element.pid,
               let name = NSRunningApplication(processIdentifier: pid)?.localizedName else {

@@ -44,19 +44,39 @@ struct PendingClose {
 
     @MainActor
     func state() -> WindowCloseState {
+        Self.states(of: [self])[0]
+    }
+
+    /// Each close's state, from one window-list call and asking each app for its windows once.
+    @MainActor
+    static func states(of closes: [PendingClose]) -> [WindowCloseState] {
         // The window list knows at once when a window is destroyed, even if the app is slow to answer.
-        if let windowID, WindowList.appWindow(withID: windowID) == nil {
-            return .gone
+        let listed = WindowList.appWindows(withIDs: closes.compactMap(\.windowID))
+        var windowsByApp: [pid_t: [(element: AXElement, windowID: CGWindowID?)]?] = [:]
+        return closes.map { close in
+            if let windowID = close.windowID, listed[windowID] == nil {
+                return .gone
+            }
+            let windows: [(element: AXElement, windowID: CGWindowID?)]?
+            if let asked = windowsByApp[close.pid] {
+                windows = asked
+            } else {
+                windows = AXElement.application(close.pid).windows?.map { ($0, $0.windowID) }
+                windowsByApp[close.pid] = .some(windows)
+            }
+            guard let windows else {
+                // Can't ask the app: it may be busy closing, so let it run into the timeout.
+                return .open(hasSheet: false)
+            }
+            // An app that keeps the window around after closing it drops it from its window list.
+            let match = windows.first { candidate in
+                close.windowID.map { candidate.windowID == $0 } ?? (candidate.element == close.window)
+            }
+            guard let window = match?.element else {
+                return .gone
+            }
+            return .open(hasSheet: window.children.contains { $0.role == kAXSheetRole })
         }
-        guard let windows = AXElement.application(pid).windows else {
-            // Can't ask the app: it may be busy closing, so let it run into the timeout.
-            return .open(hasSheet: false)
-        }
-        // An app that keeps the window around after closing it drops it from its window list.
-        guard let window = windows.first(where: isSameWindow) else {
-            return .gone
-        }
-        return .open(hasSheet: window.children.contains { $0.role == kAXSheetRole })
     }
 
     private func isSameWindow(_ candidate: AXElement) -> Bool {
@@ -87,10 +107,10 @@ extension MissionControlManager {
             while !waiting.isEmpty {
                 try? await Task.sleep(for: Self.closeCheckInterval)
                 let timedOut = ContinuousClock.now - start >= Self.closeCheckTimeout
-                waiting = waiting.filter { close in
-                    guard let outcome = CloseOutcome.decide(close.state(), timedOut: timedOut) else { return true }
+                waiting = zip(waiting, PendingClose.states(of: waiting)).compactMap { close, state in
+                    guard let outcome = CloseOutcome.decide(state, timedOut: timedOut) else { return close }
                     batch.record(outcome, for: close)
-                    return false
+                    return nil
                 }
             }
             if batch.failed {

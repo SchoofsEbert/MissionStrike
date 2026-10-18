@@ -58,6 +58,10 @@ final class HoverBadgeController {
     /// While the pointer rests, hit-test again this often anyway: Mission Control re-lays out
     /// its thumbnails when a window opens or closes.
     private static let refreshInterval: Duration = .milliseconds(300)
+    /// How old a Mission Control check each tick may reuse. Each check copies the window list;
+    /// the session's watcher checks this often anyway, and input that may close Mission Control
+    /// drops the reused check at once.
+    private static let detectionMaxAge: Duration = .milliseconds(250)
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<HoverBadgeView>?
@@ -106,7 +110,7 @@ final class HoverBadgeController {
     private func update() {
         guard isTriggerHeld,
               !MissionControlContextMenu.isOpen,
-              MissionControlSession.isActive() else {
+              MissionControlSession.isActive(maxAge: Self.detectionMaxAge) else {
             stop()
             return
         }
@@ -132,6 +136,10 @@ final class HoverBadgeController {
     }
 
     private func show(style: HoverBadgeStyle, at thumbnail: CGRect) {
+        // Hit-tested again while resting on the same thumbnail: nothing to redraw.
+        if style == currentStyle, thumbnail == currentThumbnail, panel?.isVisible == true {
+            return
+        }
         let panel = self.panel ?? Self.makePanel()
         self.panel = panel
         currentStyle = style

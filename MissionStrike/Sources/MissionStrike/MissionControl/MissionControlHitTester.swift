@@ -54,8 +54,20 @@ protocol HitTestEnvironment {
     /// The app window behind a thumbnail's CGWindowID; nil for system windows and for windows
     /// that aren't on screen, such as those on other Spaces.
     func appWindow(withID windowID: CGWindowID) -> AppWindow?
+    /// `appWindow(withID:)` for many windows at once, keyed by CGWindowID.
+    func appWindows(withIDs windowIDs: [CGWindowID]) -> [CGWindowID: AppWindow]
     /// Whether the element belongs to the Dock, WindowManager or another system overlay.
     func isSystemOverlay(_ element: Element) -> Bool
+}
+
+extension HitTestEnvironment {
+    func appWindows(withIDs windowIDs: [CGWindowID]) -> [CGWindowID: AppWindow] {
+        var windows: [CGWindowID: AppWindow] = [:]
+        for windowID in windowIDs {
+            windows[windowID] = appWindow(withID: windowID)
+        }
+        return windows
+    }
 }
 
 /// Hit testing for clicks, shortcuts and the hover badge in Mission Control. Asks other
@@ -101,19 +113,23 @@ enum MissionControlHitTester {
         let useFlip = environment.flipsY
         let height = environment.mainDisplayHeight
         let point = useFlip ? ScreenCoordinates.yFlipped(clickPoint, mainDisplayHeight: height) : clickPoint
-        // Every step below starts from the element under the point; ask for it once.
+        // Every step below starts from the element under the point and its ancestors; ask for
+        // each of them once, and only as far up as a step looks.
         let hit = environment.element(at: point)
+        let ancestors = Ancestors(of: hit)
+        let stripElement = point.y < spaceButtonMaxY ? spacesStripElement(in: ancestors) : nil
 
-        if let button = spaceButton(at: point, hit: hit, in: environment) {
+        if let button = spaceButton(at: point, stripElement: stripElement, in: environment) {
             return HitResolution(target: .removeDesktop(button), point: point)
         }
 
         // Missed a desktop but still in the Spaces strip → do not close a window.
-        if point.y < spacesStripMaxY, isInSpacesStrip(point, hit: hit, in: environment) {
+        if point.y < spacesStripMaxY, isInSpacesStrip(point, stripElement: stripElement, in: environment) {
             return nil
         }
 
-        if let hit, let (window, frame) = thumbnailWindow(at: point, hit: hit, in: environment) {
+        let thumbnail = enclosingThumbnail(in: ancestors)
+        if let thumbnail, let (window, frame) = thumbnailWindow(at: point, button: thumbnail, in: environment) {
             return HitResolution(
                 target: .window(pid: window.pid, ownerName: window.ownerName, windowID: window.windowID),
                 point: point,
@@ -122,7 +138,7 @@ enum MissionControlHitTester {
         }
 
         // Pre-wid Mission Control (≤26): enclosing AXWindow, unflipped path only.
-        if !useFlip, let hit, let window = legacyWindow(hit: hit, in: environment) {
+        if !useFlip, thumbnail == nil, let hit, let window = legacyWindow(hit: hit, ancestors: ancestors, in: environment) {
             return HitResolution(target: .legacyAXWindow(window), point: point)
         }
         return nil
@@ -137,35 +153,52 @@ enum MissionControlHitTester {
 
     // MARK: - Spaces
 
+    /// The part of the Spaces strip under the point, from the element there up.
+    private enum StripElement<Element> {
+        case desktop(Element)
+        case bar(Element)
+    }
+
+    private static func spacesStripElement<Element>(in ancestors: Ancestors<Element>) -> StripElement<Element>? {
+        for element in ancestors.prefix(ancestorLimit) {
+            if element.hasAction("AXRemoveDesktop") {
+                return .desktop(element)
+            }
+            if element.title == "Spaces Bar" {
+                return .bar(element)
+            }
+        }
+        return nil
+    }
+
     /// Desktop button for `AXRemoveDesktop` at an AX-space point.
     private static func spaceButton<Environment: HitTestEnvironment>(
         at point: CGPoint,
-        hit: Environment.Element?,
+        stripElement: StripElement<Environment.Element>?,
         in environment: Environment
     ) -> Environment.Element? {
         guard point.y < spaceButtonMaxY else { return nil }
 
         // Prefer live hit-test once the Spaces Bar is revealed.
-        for element in ancestors(of: hit) {
-            if element.hasAction("AXRemoveDesktop") {
-                return element
-            }
-            if element.title == "Spaces Bar" {
-                return nearestDesktop(in: environment.desktops(in: element), to: point)
-            }
+        switch stripElement {
+        case .desktop(let button):
+            return button
+        case .bar(let bar):
+            return nearestDesktop(in: environment.desktops(in: bar), to: point)
+        case nil:
+            return nearestDesktop(in: environment.desktops(in: nil), to: point)
         }
-        return nearestDesktop(in: environment.desktops(in: nil), to: point)
     }
 
     private static func isInSpacesStrip<Environment: HitTestEnvironment>(
         _ point: CGPoint,
-        hit: Environment.Element?,
+        stripElement: StripElement<Environment.Element>?,
         in environment: Environment
     ) -> Bool {
         if let bar = environment.spacesBarFrame(), bar.insetBy(dx: 0, dy: -32).contains(point) {
             return true
         }
-        return ancestors(of: hit).contains { $0.title == "Spaces Bar" || $0.hasAction("AXRemoveDesktop") }
+        return stripElement != nil
     }
 
     /// Nearest desktop whose inflated frame contains the point, else nil.
@@ -227,12 +260,14 @@ enum MissionControlHitTester {
         in root: Environment.Element,
         environment: Environment
     ) -> [WindowThumbnail] {
-        thumbnailButtons(in: root).compactMap { button in
-            guard let frame = button.element.frame,
-                  let window = environment.appWindow(withID: button.windowID) else {
+        let buttons = thumbnailButtons(in: root)
+        // One window-list call for all of them.
+        let windows = environment.appWindows(withIDs: buttons.map(\.windowID))
+        let height = environment.mainDisplayHeight
+        return buttons.compactMap { button in
+            guard let window = windows[button.windowID], let frame = button.element.frame else {
                 return nil
             }
-            let height = environment.mainDisplayHeight
             return WindowThumbnail(
                 window: window,
                 frame: environment.flipsY ? ScreenCoordinates.yFlipped(frame, mainDisplayHeight: height) : frame
@@ -262,22 +297,37 @@ enum MissionControlHitTester {
         return result
     }
 
+    /// The nearest thumbnail button at or above the element under the point, with its window ID.
+    private static func enclosingThumbnail<Element>(in ancestors: Ancestors<Element>) -> (element: Element, windowID: CGWindowID)? {
+        for element in ancestors.prefix(ancestorLimit) {
+            if let windowID = element.thumbnailWindowID {
+                return (element, windowID)
+            }
+        }
+        return nil
+    }
+
     private static func thumbnailWindow<Environment: HitTestEnvironment>(
         at point: CGPoint,
-        hit: Environment.Element,
+        button: (element: Environment.Element, windowID: CGWindowID),
         in environment: Environment
     ) -> (AppWindow, CGRect)? {
-        guard let button = ancestors(of: hit).first(where: { $0.thumbnailWindowID != nil }) else { return nil }
-        // WindowManager keeps hidden thumbnails for the windows on other Spaces, and
-        // Accessibility's hit-test can land on one of those. The thumbnail shown is then a sibling.
-        for candidate in [button] + (button.parent?.children ?? []) {
-            guard let windowID = candidate.thumbnailWindowID,
-                  let frame = candidate.frame,
-                  thumbnailHitArea(of: frame)?.contains(point) == true,
+        func hit(_ windowID: CGWindowID, frame: CGRect?) -> (AppWindow, CGRect)? {
+            guard let frame, thumbnailHitArea(of: frame)?.contains(point) == true,
                   let window = environment.appWindow(withID: windowID) else {
-                continue
+                return nil
             }
             return (window, frame)
+        }
+        if let found = hit(button.windowID, frame: button.element.frame) {
+            return found
+        }
+        // WindowManager keeps hidden thumbnails for the windows on other Spaces, and
+        // Accessibility's hit-test can land on one of those. The thumbnail shown is then a sibling.
+        for candidate in button.element.parent?.children ?? [] where candidate != button.element {
+            if let windowID = candidate.thumbnailWindowID, let found = hit(windowID, frame: candidate.frame) {
+                return found
+            }
         }
         return nil
     }
@@ -293,32 +343,43 @@ enum MissionControlHitTester {
 
     // MARK: - Legacy ≤26
 
+    /// The enclosing `AXWindow`, for a hit outside every thumbnail.
     private static func legacyWindow<Environment: HitTestEnvironment>(
         hit: Environment.Element,
+        ancestors: Ancestors<Environment.Element>,
         in environment: Environment
     ) -> Environment.Element? {
-        guard !ancestors(of: hit).contains(where: { $0.thumbnailWindowID != nil }),
-              !environment.isSystemOverlay(hit) else {
-            return nil
-        }
-        var current: Environment.Element? = hit
-        while let element = current {
-            if element.role == kAXWindowRole { return element }
-            current = element.parent
-        }
-        return nil
+        guard !environment.isSystemOverlay(hit) else { return nil }
+        return ancestors.first { $0.role == kAXWindowRole }
+    }
+}
+
+// MARK: - Tree
+
+/// An element and its ancestors, nearest first. Each parent is asked for once, and only when a
+/// search gets that far: with Accessibility every step up is a round trip to the app.
+final class Ancestors<Element: AccessibilityElement>: Sequence {
+    private var elements: [Element]
+    private var reachedRoot: Bool
+
+    init(of element: Element?) {
+        elements = element.map { [$0] } ?? []
+        reachedRoot = element == nil
     }
 
-    // MARK: - Tree
-
-    /// The element and its ancestors, nearest first, `ancestorLimit` at most.
-    private static func ancestors<Element: AccessibilityElement>(of element: Element?) -> [Element] {
-        var result: [Element] = []
-        var current = element
-        while let element = current, result.count < ancestorLimit {
-            result.append(element)
-            current = element.parent
+    func makeIterator() -> AnyIterator<Element> {
+        var index = 0
+        return AnyIterator {
+            defer { index += 1 }
+            if index < self.elements.count {
+                return self.elements[index]
+            }
+            guard !self.reachedRoot, let parent = self.elements.last?.parent else {
+                self.reachedRoot = true
+                return nil
+            }
+            self.elements.append(parent)
+            return parent
         }
-        return result
     }
 }

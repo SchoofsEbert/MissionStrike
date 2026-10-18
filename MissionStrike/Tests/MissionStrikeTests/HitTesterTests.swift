@@ -10,8 +10,15 @@ final class FakeElement: AccessibilityElement {
     var frame: CGRect?
     var thumbnailWindowID: CGWindowID?
     var actions: Set<String> = []
-    weak var parent: FakeElement?
+    private weak var parentElement: FakeElement?
     private(set) var children: [FakeElement] = []
+    /// How often `parent` was read: each read is a round trip to the app with Accessibility.
+    private(set) var parentReads = 0
+
+    var parent: FakeElement? {
+        parentReads += 1
+        return parentElement
+    }
 
     init(role: String? = nil, title: String? = nil, frame: CGRect? = nil, wid: CGWindowID? = nil, actions: Set<String> = []) {
         self.role = role
@@ -23,7 +30,7 @@ final class FakeElement: AccessibilityElement {
 
     @discardableResult
     func add(_ child: FakeElement) -> FakeElement {
-        child.parent = self
+        child.parentElement = self
         children.append(child)
         return child
     }
@@ -115,6 +122,23 @@ struct HitTesterTests {
         }
         #expect(pid == 7 && owner == "Notes" && windowID == 42)
         #expect(hit?.thumbnailFrame == CGRect(x: 100, y: 200, width: 400, height: 300))
+    }
+
+    @Test("Hit-testing asks for each parent once, and only as far up as it needs")
+    func parentReads() {
+        var screen = MissionControlScreen()
+        // Lands on the image inside the thumbnail: one step up finds the thumbnail.
+        let image = screen.thumbnail.children[0]
+        #expect(screen.resolve(CGPoint(x: 300, y: 350)) != nil)
+        #expect(image.parentReads == 1)
+        #expect(screen.thumbnail.parentReads == 0)
+
+        // A thumbnail that misses looks at its siblings, and no further up.
+        screen.environment.windows = [:]
+        #expect(screen.resolve(CGPoint(x: 300, y: 350)) == nil)
+        #expect(image.parentReads == 2)
+        #expect(screen.thumbnail.parentReads == 1)
+        #expect(screen.root.parentReads == 0)
     }
 
     @Test("The padding along a thumbnail's edge is not a hit")

@@ -21,7 +21,9 @@ final class Diagnostics {
     private static let slowCallback: Duration = .milliseconds(10)
 
     private var events: [(time: ContinuousClock.Instant, line: String)] = []
-    private var overlaySnapshot = "  (Mission Control not seen since launch)"
+    /// The window list Mission Control was last detected from at a recorded event; formatted
+    /// only when a report is asked for.
+    private var overlayWindowList: [[String: Any]]?
     private var tapHealth = TapHealth()
 
     /// How the event tap callback has been doing since launch.
@@ -36,15 +38,25 @@ final class Diagnostics {
 
     /// Records a click or shortcut in Mission Control and what it resolved to. Called after
     /// the action, never from inside the event tap callback.
-    /// - Parameter pointer: Where the input happened (`NSEvent.mouseLocation` space).
-    func record(_ input: String, at pointer: CGPoint, resolution: MissionControlHitTester.Resolution?) {
+    /// - Parameters:
+    ///   - pointer: Where the input happened (`NSEvent.mouseLocation` space).
+    ///   - describesMiss: Whether a miss records the elements under the pointer, which asks
+    ///     Accessibility a few dozen times. Off where a miss is expected and something waits on
+    ///     the record, like the background menu.
+    func record(
+        _ input: String,
+        at pointer: CGPoint,
+        resolution: MissionControlHitTester.Resolution?,
+        describesMiss: Bool = true
+    ) {
         let flipped = MissionControlHitTester.shouldYFlipForMissionControl()
         let axPoint = flipped ? ScreenCoordinates.yFlipped(pointer) : pointer
-        let outcome = resolution.map(Self.describe) ?? "nothing — under pointer: \(Self.axChain(at: axPoint))"
+        let outcome = resolution.map(Self.describe)
+            ?? (describesMiss ? "nothing — under pointer: \(Self.axChain(at: axPoint))" : "nothing")
         events.append((.now, "\(input) near \(Self.format(axPoint))\(flipped ? " (flipped)" : "") → \(outcome)"))
         if events.count > Self.maxEvents { events.removeFirst(events.count - Self.maxEvents) }
         // The window list Mission Control was last detected from; no need to copy it again.
-        overlaySnapshot = Self.missionControlWindows(in: MissionControlSession.lastWindowList)
+        overlayWindowList = MissionControlSession.lastWindowList
     }
 
     /// Called at the end of every tap callback; only adds up numbers.
@@ -81,7 +93,7 @@ final class Diagnostics {
             Event tap: \(tapSummary())
 
             Mission Control windows (at the last recorded event):
-            \(overlaySnapshot)
+            \(overlayWindowList.map(Self.missionControlWindows) ?? "  (Mission Control not seen since launch)")
 
             Recent Mission Control input:
             \(recent)

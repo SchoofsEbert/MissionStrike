@@ -74,7 +74,8 @@ final class MissionControlContextMenu: NSObject {
 
     private static func target(at point: CGPoint) -> ContextMenuTarget {
         let resolution = MissionControlHitTester.resolve(clickPoint: point)
-        Diagnostics.shared.record("right-click", at: point, resolution: resolution)
+        // A miss is the background menu, which waits on this: leave out what's under the pointer.
+        Diagnostics.shared.record("right-click", at: point, resolution: resolution, describesMiss: false)
         return resolution.map(ContextMenuTarget.thumbnail) ?? .background
     }
 
