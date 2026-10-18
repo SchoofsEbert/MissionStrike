@@ -48,35 +48,48 @@ struct PendingClose {
     }
 
     /// Each close's state, from one window-list call and asking each app for its windows once.
+    /// A window is asked for its ID only when a match needs it, and only once.
     @MainActor
     static func states(of closes: [PendingClose]) -> [WindowCloseState] {
         // The window list knows at once when a window is destroyed, even if the app is slow to answer.
         let listed = WindowList.appWindows(withIDs: closes.compactMap(\.windowID))
-        var windowsByApp: [pid_t: [(element: AXElement, windowID: CGWindowID?)]?] = [:]
-        return closes.map { close in
+        var windowsByApp: [pid_t: [AXElement]?] = [:]
+        var windowIDs: [AXElement: CGWindowID?] = [:]
+        var states: [WindowCloseState] = []
+        for close in closes {
             if let windowID = close.windowID, listed[windowID] == nil {
-                return .gone
+                states.append(.gone)
+                continue
             }
-            let windows: [(element: AXElement, windowID: CGWindowID?)]?
+            let windows: [AXElement]?
             if let asked = windowsByApp[close.pid] {
                 windows = asked
             } else {
-                windows = AXElement.application(close.pid).windows?.map { ($0, $0.windowID) }
+                windows = AXElement.application(close.pid).windows
                 windowsByApp[close.pid] = .some(windows)
             }
             guard let windows else {
                 // Can't ask the app: it may be busy closing, so let it run into the timeout.
-                return .open(hasSheet: false)
+                states.append(.open(hasSheet: false))
+                continue
             }
             // An app that keeps the window around after closing it drops it from its window list.
             let match = windows.first { candidate in
-                close.windowID.map { candidate.windowID == $0 } ?? (candidate.element == close.window)
+                guard let windowID = close.windowID else { return candidate == close.window }
+                if let known = windowIDs[candidate] {
+                    return known == windowID
+                }
+                let candidateID = candidate.windowID
+                windowIDs[candidate] = .some(candidateID)
+                return candidateID == windowID
             }
-            guard let window = match?.element else {
-                return .gone
+            guard let window = match else {
+                states.append(.gone)
+                continue
             }
-            return .open(hasSheet: window.children.contains { $0.role == kAXSheetRole })
+            states.append(.open(hasSheet: window.children.contains { $0.role == kAXSheetRole }))
         }
+        return states
     }
 
     private func isSameWindow(_ candidate: AXElement) -> Bool {
