@@ -4,16 +4,27 @@ import QuartzCore
 /// Optional "poof" cloud where a window or Space was closed (off by default).
 ///
 /// `NSAnimationEffect.poof` draws below Mission Control's overlay, so only its sound
-/// came through. The puff is drawn in our own panel instead, at the hover badge's level.
+/// came through. The puff is played in our own panel instead, at the hover badge's level,
+/// from the same five frames macOS uses for the Dock's poof.
 @MainActor
 enum CloseEffect {
-    private static let size: CGFloat = 96
-    private static let duration: CFTimeInterval = 0.45
+    private static let size: CGFloat = 80
+    private static let duration: CFTimeInterval = 0.3
     private static let sound = NSSound(
         contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/"
             + "SystemSounds/dock/poof item off dock.aif",
         byReference: true
     )
+
+    /// The system's poof frames, largest cloud first; nil if this macOS doesn't have them.
+    private static let frames: [CGImage]? = {
+        let directory = "/System/Library/PrivateFrameworks/Slideshows.framework/Versions/A/Frameworks/"
+            + "OpusFoundation.framework/Versions/A/Resources/OpusFoundation.bundle"
+        let images = (1...5).compactMap { index in
+            NSImage(contentsOfFile: "\(directory)/poof\(index).png")?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+        return images.count == 5 ? images : nil
+    }()
 
     /// `point` is in AppKit screen coordinates.
     static func play(at point: NSPoint) {
@@ -37,7 +48,11 @@ enum CloseEffect {
         view.layer = root
         view.wantsLayer = true
         panel.contentView = view
-        addPuffs(to: root)
+        if let frames {
+            addSystemPoof(frames, to: root)
+        } else {
+            addPuffs(to: root)
+        }
 
         panel.orderFrontRegardless()
         sound?.stop()
@@ -47,7 +62,39 @@ enum CloseEffect {
         }
     }
 
-    /// A ring of soft cloud puffs around a centre puff that swell, drift outward and fade.
+    /// The system poof's frames in turn, as the Dock plays them. With Reduce Motion the
+    /// first frame only fades.
+    private static func addSystemPoof(_ frames: [CGImage], to root: CALayer) {
+        let poof = CALayer()
+        poof.frame = root.bounds
+        poof.contentsGravity = .resizeAspect
+        poof.contents = frames.last
+        poof.opacity = 0
+        root.addSublayer(poof)
+
+        let animation: CAAnimation
+        if ActionFeedback.reduceMotion {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0
+            poof.contents = frames.first
+            animation = fade
+        } else {
+            let flipbook = CAKeyframeAnimation(keyPath: "contents")
+            flipbook.values = frames
+            flipbook.calculationMode = .discrete
+            let shown = CABasicAnimation(keyPath: "opacity")
+            shown.fromValue = 1
+            shown.toValue = 1
+            let group = CAAnimationGroup()
+            group.animations = [flipbook, shown]
+            animation = group
+        }
+        animation.duration = duration
+        poof.add(animation, forKey: "poof")
+    }
+
+    /// Drawn instead when the system's frames are missing: a ring of soft cloud puffs around a centre puff that swell, drift outward and fade.
     /// With Reduce Motion they only fade, in place.
     private static func addPuffs(to root: CALayer) {
         let reduceMotion = ActionFeedback.reduceMotion
