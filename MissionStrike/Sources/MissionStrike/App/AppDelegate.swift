@@ -275,20 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
 
     @objc func openSettingsWindow() {
         if settingsWindow == nil {
-            let view = SettingsView()
-            let hostingController = NSHostingController(rootView: view)
-
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 460, height: 700),
-                styleMask: [.titled, .closable],
-                backing: .buffered,
-                defer: false
-            )
-            window.center()
-            window.title = "MissionStrike Settings"
-            window.contentViewController = hostingController
-            window.isReleasedWhenClosed = false
-            self.settingsWindow = window
+            settingsWindow = SettingsWindow.make()
         }
 
         settingsWindow?.makeKeyAndOrderFront(nil)
