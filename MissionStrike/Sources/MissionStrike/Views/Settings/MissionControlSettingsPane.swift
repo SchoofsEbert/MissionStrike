@@ -21,7 +21,7 @@ struct MissionControlSettingsPane: View {
             keyboardSection
             spacesSection
         }
-        .settingsPane(height: 570)
+        .formStyle(.grouped)
     }
 
     private var mouseSection: some View {

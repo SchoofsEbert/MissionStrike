@@ -13,22 +13,62 @@ struct GeneralSettingsPane: View {
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
     @State private var accessibilityRetryTask: Task<Void, Never>?
 
-    private let appVersion: String = {
-        Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.6.1"
-    }()
-
     /// Fires when any app's accessibility trust status changes in System Settings.
     private let accessibilityChanged = DistributedNotificationCenter.default()
         .publisher(for: Notification.Name("com.apple.accessibility.api"))
 
     var body: some View {
         Form {
-            statusSection
-            generalSection
+            Section {
+                LabeledContent {
+                    if isAccessibilityEnabled {
+                        Label {
+                            Text("Allowed")
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    } else {
+                        Button("Grant Access…") {
+                            AccessibilityPermission.request()
+                        }
+                    }
+                } label: {
+                    Text("Accessibility")
+                    Text("Needed to see and act on windows in Mission Control.")
+                }
+            }
+
+            Section {
+                Toggle("Show in Menu Bar", isOn: $showMenuBarIcon)
+
+                Toggle("Start at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) {
+                        toggleLaunchAtLogin()
+                    }
+            }
+
+            Section {
+                LabeledContent("Software Update") {
+                    Button("Check for Updates…") {
+                        UpdateChecker.shared.checkNow()
+                    }
+                }
+
+                LabeledContent("Setup Guide") {
+                    Button("Open…") {
+                        (NSApp.delegate as? AppDelegate)?.openOnboardingWindow()
+                    }
+                }
+
+                LabeledContent("About MissionStrike") {
+                    Button("Show…") {
+                        (NSApp.delegate as? AppDelegate)?.openAboutWindow()
+                    }
+                }
+            }
         }
-        .settingsPane(height: 330)
+        .formStyle(.grouped)
         .onAppear {
             refreshAccessibilityStatus()
         }
@@ -42,87 +82,6 @@ struct GeneralSettingsPane: View {
                 refreshAccessibilityStatus()
             }
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(spacing: 6) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .frame(width: 64, height: 64)
-            Text("MissionStrike")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundStyle(.primary)
-            Text("Version \(appVersion)")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, 8)
-        .textCase(nil)
-    }
-
-    // MARK: - Status
-
-    private var statusSection: some View {
-        Section {
-            LabeledContent {
-                if isAccessibilityEnabled {
-                    Label {
-                        Text("Allowed")
-                    } icon: {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    }
-                } else {
-                    Button("Grant Access…") {
-                        AccessibilityPermission.request()
-                    }
-                }
-            } label: {
-                Text("Accessibility")
-                Text("Needed to see and act on windows in Mission Control.")
-            }
-        } header: {
-            header
-        }
-    }
-
-    // MARK: - General
-
-    private var generalSection: some View {
-        Section {
-            Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
-
-            Toggle("Start at Login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) {
-                    toggleLaunchAtLogin()
-                }
-        } footer: {
-            footerLinks
-        }
-    }
-
-    // MARK: - Footer Links
-
-    private var footerLinks: some View {
-        HStack(spacing: 16) {
-            Button("Check for Updates…") {
-                UpdateChecker.shared.checkNow()
-            }
-            Button("Setup Guide") {
-                (NSApp.delegate as? AppDelegate)?.openOnboardingWindow()
-            }
-            Button("About MissionStrike") {
-                (NSApp.delegate as? AppDelegate)?.openAboutWindow()
-            }
-        }
-        .buttonStyle(.link)
-        .font(.callout)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
     }
 
     // MARK: - Logic

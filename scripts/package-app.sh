@@ -42,7 +42,13 @@ fi
 
 if [ "$MODE" != "--sign-existing" ]; then
     echo "==> Building release binary"
-    (cd "$PACKAGE_DIR" && swift build -c release)
+    # SwiftPM records the deployment target as the SDK version, and macOS runs apps built
+    # against an old SDK in compatibility mode, without the current system look. Record
+    # the SDK actually used instead.
+    SDK_VERSION="$(xcrun --show-sdk-version)"
+    MIN_MACOS="$(sed -n 's/.*\.macOS(\.v\([0-9]*\)).*/\1/p' "$PACKAGE_DIR/Package.swift").0"
+    (cd "$PACKAGE_DIR" && swift build -c release \
+        -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
 
     echo "==> Assembling app bundle"
     rm -rf "$DIST_DIR"

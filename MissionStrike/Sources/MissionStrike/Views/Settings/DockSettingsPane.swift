@@ -14,6 +14,6 @@ struct DockSettingsPane: View {
                 }
             }
         }
-        .settingsPane(height: 110)
+        .formStyle(.grouped)
     }
 }

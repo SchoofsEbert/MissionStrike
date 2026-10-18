@@ -17,9 +17,10 @@ struct FeedbackSettingsPane: View {
     @AppStorage(SettingKey.hapticFeedback.rawValue)
     private var hapticFeedback = SettingKey.hapticFeedback.defaultBool
 
-    /// The held key the hover badge and window counts appear for; nil when the left-click trigger is off.
-    private var modifier: TriggerModifier? {
-        TriggerModifier(rawValue: leftClickModifier).flatMap { $0.eventFlagMask == nil ? nil : $0 }
+    /// The symbol of the held key the hover badge and window counts appear for; nil when the
+    /// left-click trigger is off.
+    private var modifier: String? {
+        TriggerModifier(rawValue: leftClickModifier)?.symbol
     }
 
     var body: some View {
@@ -28,8 +29,7 @@ struct FeedbackSettingsPane: View {
             guidanceSection
             effectsSection
         }
-        // Leaves room for the footer that explains why the first section is off.
-        .settingsPane(height: modifier == nil ? 545 : 500)
+        .formStyle(.grouped)
     }
 
     private var whileHoldingSection: some View {
@@ -45,13 +45,13 @@ struct FeedbackSettingsPane: View {
             }
         } header: {
             if let modifier {
-                Text("While \(modifier.displayName) Is Held")
+                Text("While \(modifier) Is Held")
             } else {
                 Text("While the Modifier Is Held")
             }
         } footer: {
             if modifier == nil {
-                Text("Choose a left-click modifier under Mission Control to use these.")
+                Text("Choose a left-click modifier in Mission Control settings to use these.")
                     .foregroundStyle(.secondary)
                     .font(.callout)
             }
