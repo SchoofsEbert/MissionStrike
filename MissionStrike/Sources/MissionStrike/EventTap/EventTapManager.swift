@@ -322,6 +322,10 @@ private struct LiveTapEnvironment: TapEnvironment {
         DockIconCache.shared.verdict(at: DockMiddleClick.candidates(location: event.location, pointer: event.pointer))
     }
 
+    func isOnDock(_ event: TapEvent) -> Bool {
+        DockIconCache.shared.isOnDock(at: DockMiddleClick.candidates(location: event.location, pointer: event.pointer))
+    }
+
     var isKeyboardHintsActive: Bool {
         KeyboardHints.shared.isActive
     }

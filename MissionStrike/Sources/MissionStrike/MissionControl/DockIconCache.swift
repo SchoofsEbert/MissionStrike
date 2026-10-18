@@ -28,11 +28,34 @@ struct DockSnapshot: Equatable, Sendable {
            runningAppIcons.contains(where: { icon in candidates.contains(where: icon.contains) }) {
             return .runningApp
         }
+        return isOnDock(candidates) ? .maybe : .elsewhere
+    }
+
+    /// Whether any of the points is on or near the Dock, magnified icons included.
+    func isOnDock(_ candidates: [CGPoint]) -> Bool {
         let reach = magnification + Self.slack
-        let nearDock = listFrames.contains { list in
+        return listFrames.contains { list in
             candidates.contains(where: list.insetBy(dx: -reach, dy: -reach).contains)
         }
-        return nearDock ? .maybe : .elsewhere
+    }
+
+    /// The Dock as it shows when revealed: an auto-hidden Dock waits just past a screen edge,
+    /// and Mission Control slides it onto the screen it is closest to.
+    func revealed(on screens: [CGRect]) -> DockSnapshot {
+        var revealed = self
+        revealed.listFrames = listFrames.map { list in
+            let center = CGPoint(x: list.midX, y: list.midY)
+            guard let screen = screens.min(by: { $0.distance(to: center) < $1.distance(to: center) }) else {
+                return list
+            }
+            var shown = list
+            shown.origin.x = min(max(list.minX, screen.minX), screen.maxX - list.width)
+            shown.origin.y = min(max(list.minY, screen.minY), screen.maxY - list.height)
+            return shown
+        }
+        // Icons move with the Dock; they are only used for middle-clicks, which probe instead.
+        revealed.runningAppIcons = []
+        return revealed
     }
 
     /// Whether the Dock was showing, rather than hidden off screen, when this was taken.
@@ -77,6 +100,17 @@ final class DockIconCache {
         return snapshot.verdict(at: candidates)
     }
 
+    /// Whether the points are on the Dock as Mission Control shows it, auto-hidden or not.
+    /// False when that isn't known: a right-click there then opens MissionStrike's menu, as it
+    /// did before the Dock was checked.
+    func isOnDock(at candidates: [CGPoint]) -> Bool {
+        guard let snapshot, let capturedAt, ContinuousClock.now - capturedAt < Self.maxAge else {
+            scheduleRefresh()
+            return false
+        }
+        return snapshot.revealed(on: ScreenCoordinates.axScreenFrames).isOnDock(candidates)
+    }
+
     /// Re-takes the snapshot whenever the Dock's icons are likely to have moved.
     func startObserving() {
         guard observers.isEmpty else { return }
@@ -104,10 +138,6 @@ final class DockIconCache {
     }
 
     private func refresh() {
-        guard SettingsStore.shared.current.enableDockMiddleClick else {
-            snapshot = nil
-            return
-        }
         snapshot = DockHitTester.snapshot()
         capturedAt = .now
     }
@@ -128,5 +158,14 @@ final class DockIconCache {
             }
             return candidates.contains(where: bounds.contains)
         }
+    }
+}
+
+private extension CGRect {
+    /// How far a point is from the rectangle; 0 inside it.
+    func distance(to point: CGPoint) -> CGFloat {
+        let dx = max(minX - point.x, 0, point.x - maxX)
+        let dy = max(minY - point.y, 0, point.y - maxY)
+        return (dx * dx + dy * dy).squareRoot()
     }
 }

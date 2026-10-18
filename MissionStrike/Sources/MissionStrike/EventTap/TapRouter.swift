@@ -71,6 +71,8 @@ protocol TapEnvironment {
     /// Whether a point (Quartz space) lies on the open context menu.
     func menuContains(_ point: CGPoint) -> Bool
     func dockVerdict(for event: TapEvent) -> DockSnapshot.Verdict
+    /// Whether the event is on the Dock, which Mission Control leaves on screen.
+    func isOnDock(_ event: TapEvent) -> Bool
     /// Whether keyboard hints are up or starting: every plain key press belongs to them then.
     var isKeyboardHintsActive: Bool { get }
     /// Whether the cheat sheet was opened with `?`, so Esc closes it.
@@ -104,17 +106,18 @@ enum TapRouter {
 
         // While the context menu is open: clicks on the menu work as usual, a right-click
         // elsewhere swaps the menu, and any other click only closes the menu so Mission
-        // Control stays open.
+        // Control stays open. The Dock has its own menu, so a right-click there only closes ours.
         if environment.isContextMenuOpen {
             if environment.menuContains(event.location) {
                 return .pass
             }
             state.swallowedMouseUps.swallowRelease(of: event.type)
-            return .closeMenu(reopen: event.type == .rightMouseDown)
+            return .closeMenu(reopen: event.type == .rightMouseDown && !environment.isOnDock(event))
         }
 
         if event.type == .rightMouseDown {
-            guard settings.enableContextMenu, environment.isMissionControlActive() else { return .pass }
+            guard settings.enableContextMenu, environment.isMissionControlActive(),
+                  !environment.isOnDock(event) else { return .pass }
             state.swallowedMouseUps.swallowRelease(of: event.type)
             return .openMenu
         }

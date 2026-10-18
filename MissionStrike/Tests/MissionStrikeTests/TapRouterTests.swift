@@ -10,6 +10,7 @@ private final class FakeTapEnvironment: TapEnvironment {
     var isContextMenuOpen = false
     var menuFrame: CGRect = .null
     var dock: DockSnapshot.Verdict = .elsewhere
+    var onDock = false
     var isKeyboardHintsActive = false
     var isCheatSheetPinned = false
     private(set) var missionControlChecks = 0
@@ -25,6 +26,10 @@ private final class FakeTapEnvironment: TapEnvironment {
 
     func dockVerdict(for event: TapEvent) -> DockSnapshot.Verdict {
         dock
+    }
+
+    func isOnDock(_ event: TapEvent) -> Bool {
+        onDock
     }
 }
 
@@ -121,6 +126,20 @@ struct TapRouterTests {
         settings.enableContextMenu = true
         environment.missionControlActive = false
         #expect(decide(TapEvent(type: .rightMouseDown)) == .pass)
+    }
+
+    @Test("Right-click on the Dock in Mission Control goes to the Dock")
+    mutating func rightClickOnDockPasses() {
+        environment.onDock = true
+        #expect(decide(TapEvent(type: .rightMouseDown)) == .pass)
+        #expect(decide(TapEvent(type: .rightMouseUp)) == .pass)
+    }
+
+    @Test("With the menu open, a right-click on the Dock closes it without opening another")
+    mutating func menuOpenRightClickOnDock() {
+        environment.isContextMenuOpen = true
+        environment.onDock = true
+        #expect(decide(TapEvent(type: .rightMouseDown)) == .closeMenu(reopen: false))
     }
 
     @Test("With the menu open, clicks on it pass and clicks elsewhere close it")

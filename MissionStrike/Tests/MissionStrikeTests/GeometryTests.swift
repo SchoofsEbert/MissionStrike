@@ -79,6 +79,26 @@ struct DockSnapshotTests {
         #expect(snapshot.verdict(at: [CGPoint(x: 900, y: 500)]) == .elsewhere)
     }
 
+    @Test("On the Dock includes its edge and magnified icons")
+    func onDock() {
+        #expect(DockSnapshot(listFrames: [shownList], runningAppIcons: []).isOnDock([CGPoint(x: 900, y: 1035)]))
+        #expect(!DockSnapshot(listFrames: [shownList], runningAppIcons: []).isOnDock([CGPoint(x: 900, y: 990)]))
+        let magnified = DockSnapshot(listFrames: [shownList], runningAppIcons: [], magnification: 64)
+        #expect(magnified.isOnDock([CGPoint(x: 900, y: 990)]))
+    }
+
+    @Test("An auto-hidden Dock is revealed against the screen edge it waits past")
+    func revealedDock() {
+        let hidden = DockSnapshot(listFrames: [CGRect(x: 659, y: 1117, width: 410, height: 69)], runningAppIcons: [safari])
+        let revealed = hidden.revealed(on: [screen])
+        #expect(revealed.listFrames == [CGRect(x: 659, y: screen.maxY - 69, width: 410, height: 69)])
+        #expect(revealed.isOnDock([CGPoint(x: 700, y: screen.maxY - 30)]))
+        #expect(revealed.runningAppIcons.isEmpty)
+        let leftHidden = DockSnapshot(listFrames: [CGRect(x: -69, y: 300, width: 69, height: 410)], runningAppIcons: [])
+        #expect(leftHidden.revealed(on: [screen]).listFrames == [CGRect(x: 0, y: 300, width: 69, height: 410)])
+        #expect(DockSnapshot(listFrames: [shownList], runningAppIcons: []).revealed(on: [screen]).listFrames == [shownList])
+    }
+
     @Test("Any candidate point may hit")
     func candidates() {
         let snapshot = DockSnapshot(listFrames: [shownList], runningAppIcons: [safari])
