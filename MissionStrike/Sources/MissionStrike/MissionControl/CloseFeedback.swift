@@ -48,24 +48,55 @@ struct PendingClose {
     }
 
     /// Each close's state, from one window-list call and asking each app for its windows once.
-    /// A window is asked for its ID only when a match needs it, and only once.
     @MainActor
     static func states(of closes: [PendingClose]) -> [WindowCloseState] {
+        CloseStates.of(closes.map { ($0.pid, $0.windowID, $0.window) }, in: LiveCloseStateEnvironment())
+    }
+
+    private func isSameWindow(_ candidate: AXElement) -> Bool {
+        if let windowID {
+            return candidate.windowID == windowID
+        }
+        return candidate == window
+    }
+}
+
+/// What telling whether windows closed asks of the system. The live environment asks the
+/// window list and Accessibility; tests count what they're asked.
+@MainActor
+protocol CloseStateEnvironment {
+    associatedtype Window: Hashable
+    /// Which of these CGWindowIDs are still app windows in the window list.
+    func listedWindowIDs(_ windowIDs: [CGWindowID]) -> Set<CGWindowID>
+    /// The app's windows; nil when it can't be asked.
+    func windows(of pid: pid_t) -> [Window]?
+    func windowID(of window: Window) -> CGWindowID?
+    func hasSheet(_ window: Window) -> Bool
+}
+
+@MainActor
+enum CloseStates {
+    /// Each close's state, from one window-list call and asking each app for its windows once.
+    /// A window is asked for its ID only when a match needs it, and only once.
+    static func of<Environment: CloseStateEnvironment>(
+        _ closes: [(pid: pid_t, windowID: CGWindowID?, window: Environment.Window)],
+        in environment: Environment
+    ) -> [WindowCloseState] {
         // The window list knows at once when a window is destroyed, even if the app is slow to answer.
-        let listed = WindowList.appWindows(withIDs: closes.compactMap(\.windowID))
-        var windowsByApp: [pid_t: [AXElement]?] = [:]
-        var windowIDs: [AXElement: CGWindowID?] = [:]
+        let listed = environment.listedWindowIDs(closes.compactMap(\.windowID))
+        var windowsByApp: [pid_t: [Environment.Window]?] = [:]
+        var windowIDs: [Environment.Window: CGWindowID?] = [:]
         var states: [WindowCloseState] = []
         for close in closes {
-            if let windowID = close.windowID, listed[windowID] == nil {
+            if let windowID = close.windowID, !listed.contains(windowID) {
                 states.append(.gone)
                 continue
             }
-            let windows: [AXElement]?
+            let windows: [Environment.Window]?
             if let asked = windowsByApp[close.pid] {
                 windows = asked
             } else {
-                windows = AXElement.application(close.pid).windows
+                windows = environment.windows(of: close.pid)
                 windowsByApp[close.pid] = .some(windows)
             }
             guard let windows else {
@@ -79,7 +110,7 @@ struct PendingClose {
                 if let known = windowIDs[candidate] {
                     return known == windowID
                 }
-                let candidateID = candidate.windowID
+                let candidateID = environment.windowID(of: candidate)
                 windowIDs[candidate] = .some(candidateID)
                 return candidateID == windowID
             }
@@ -87,16 +118,28 @@ struct PendingClose {
                 states.append(.gone)
                 continue
             }
-            states.append(.open(hasSheet: window.children.contains { $0.role == kAXSheetRole }))
+            states.append(.open(hasSheet: environment.hasSheet(window)))
         }
         return states
     }
+}
 
-    private func isSameWindow(_ candidate: AXElement) -> Bool {
-        if let windowID {
-            return candidate.windowID == windowID
-        }
-        return candidate == window
+@MainActor
+private struct LiveCloseStateEnvironment: CloseStateEnvironment {
+    func listedWindowIDs(_ windowIDs: [CGWindowID]) -> Set<CGWindowID> {
+        Set(WindowList.appWindows(withIDs: windowIDs).keys)
+    }
+
+    func windows(of pid: pid_t) -> [AXElement]? {
+        AXElement.application(pid).windows
+    }
+
+    func windowID(of window: AXElement) -> CGWindowID? {
+        window.windowID
+    }
+
+    func hasSheet(_ window: AXElement) -> Bool {
+        window.children.contains { $0.role == kAXSheetRole }
     }
 }
 
