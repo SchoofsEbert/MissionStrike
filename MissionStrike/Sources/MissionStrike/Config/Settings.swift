@@ -16,20 +16,27 @@ enum SettingKey: String, CaseIterable, Sendable {
     case enableKeyboardHints
     case showCheatSheet
     case showFirstRunHint
+    case enableTabSwipe
+    case tabSwipeHaptics
+    case tabSwipeAppScope
+    case tabSwipeApps
 
     /// The value used until the user changes the setting.
     var defaultValue: any Sendable {
         switch self {
         case .leftClickModifier: TriggerModifier.option.rawValue
-        case .enableDockMiddleClick, .poofOnClose: false
+        case .tabSwipeAppScope: TabSwipeAppScope.allApps.rawValue
+        case .tabSwipeApps: [String]()
+        case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
              .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
-             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint: true
+             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics: true
         }
     }
 
     var defaultBool: Bool { defaultValue as? Bool ?? false }
     var defaultString: String { defaultValue as? String ?? "" }
+    var defaultStrings: [String] { defaultValue as? [String] ?? [] }
 
     /// Short name in the diagnostics report.
     var diagnosticsName: String {
@@ -48,6 +55,10 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .enableKeyboardHints: "keyboardHints"
         case .showCheatSheet: "cheatSheet"
         case .showFirstRunHint: "firstRunHint"
+        case .enableTabSwipe: "tabSwipe"
+        case .tabSwipeHaptics: "tabSwipeHaptics"
+        case .tabSwipeAppScope: "tabSwipeScope"
+        case .tabSwipeApps: "tabSwipeApps"
         }
     }
 
@@ -63,6 +74,10 @@ extension UserDefaults {
 
     func string(_ key: SettingKey) -> String {
         string(forKey: key.rawValue) ?? key.defaultString
+    }
+
+    func strings(_ key: SettingKey) -> [String] {
+        stringArray(forKey: key.rawValue) ?? key.defaultStrings
     }
 }
 
@@ -83,6 +98,9 @@ struct Settings: Equatable, Sendable {
     var enableKeyboardHints: Bool
     var showCheatSheet: Bool
     var showFirstRunHint: Bool
+    var enableTabSwipe: Bool
+    var tabSwipeHaptics: Bool
+    var tabSwipeApps: TabSwipeApps
 }
 
 extension Settings {
@@ -101,7 +119,10 @@ extension Settings {
         showWindowCounts: SettingKey.showWindowCounts.defaultBool,
         enableKeyboardHints: SettingKey.enableKeyboardHints.defaultBool,
         showCheatSheet: SettingKey.showCheatSheet.defaultBool,
-        showFirstRunHint: SettingKey.showFirstRunHint.defaultBool
+        showFirstRunHint: SettingKey.showFirstRunHint.defaultBool,
+        enableTabSwipe: SettingKey.enableTabSwipe.defaultBool,
+        tabSwipeHaptics: SettingKey.tabSwipeHaptics.defaultBool,
+        tabSwipeApps: TabSwipeApps(scope: .allApps, bundleIDs: [])
     )
 
     init(_ defaults: UserDefaults) {
@@ -119,6 +140,12 @@ extension Settings {
         enableKeyboardHints = defaults.bool(.enableKeyboardHints)
         showCheatSheet = defaults.bool(.showCheatSheet)
         showFirstRunHint = defaults.bool(.showFirstRunHint)
+        enableTabSwipe = defaults.bool(.enableTabSwipe)
+        tabSwipeHaptics = defaults.bool(.tabSwipeHaptics)
+        tabSwipeApps = TabSwipeApps(
+            scope: TabSwipeAppScope(rawValue: defaults.string(.tabSwipeAppScope)) ?? .allApps,
+            bundleIDs: Set(defaults.strings(.tabSwipeApps))
+        )
     }
 }
 

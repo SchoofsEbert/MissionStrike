@@ -7,6 +7,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case missionControl
     case feedback
     case dock
+    case trackpad
 
     var id: Self { self }
 
@@ -16,6 +17,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .missionControl: "Mission Control"
         case .feedback: "Feedback"
         case .dock: "Dock"
+        case .trackpad: "Trackpad"
         }
     }
 
@@ -25,6 +27,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .missionControl: "rectangle.3.group.fill"
         case .feedback: "sparkles"
         case .dock: "dock.rectangle"
+        case .trackpad: "hand.draw.fill"
         }
     }
 
@@ -35,6 +38,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .missionControl: .blue
         case .feedback: .pink
         case .dock: Color(white: 0.15)
+        case .trackpad: .orange
         }
     }
 
@@ -45,6 +49,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .missionControl: MissionControlSettingsPane()
         case .feedback: FeedbackSettingsPane()
         case .dock: DockSettingsPane()
+        case .trackpad: TrackpadSettingsPane()
         }
     }
 }

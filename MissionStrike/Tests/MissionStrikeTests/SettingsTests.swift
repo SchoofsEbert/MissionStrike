@@ -30,6 +30,9 @@ struct SettingsTests {
             #expect(settings.enableKeyboardHints)
             #expect(settings.showCheatSheet)
             #expect(settings.showFirstRunHint)
+            #expect(!settings.enableTabSwipe)
+            #expect(settings.tabSwipeHaptics)
+            #expect(settings.tabSwipeApps == TabSwipeApps(scope: .allApps, bundleIDs: []))
         }
     }
 
@@ -54,6 +57,13 @@ struct SettingsTests {
 
             defaults.set("hyper", forKey: SettingKey.leftClickModifier.rawValue)
             #expect(Settings(defaults).leftClickModifier == nil)
+
+            defaults.set(TabSwipeAppScope.onlyListed.rawValue, forKey: SettingKey.tabSwipeAppScope.rawValue)
+            defaults.set(["com.google.Chrome"], forKey: SettingKey.tabSwipeApps.rawValue)
+            #expect(Settings(defaults).tabSwipeApps == TabSwipeApps(scope: .onlyListed, bundleIDs: ["com.google.Chrome"]))
+
+            defaults.set("sometimes", forKey: SettingKey.tabSwipeAppScope.rawValue)
+            #expect(Settings(defaults).tabSwipeApps.scope == .allApps)
         }
     }
 

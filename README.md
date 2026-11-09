@@ -60,7 +60,7 @@ MissionStrike checks for updates once a day, or whenever you ask from the menu b
 
 </details>
 
-Every gesture can be switched off in Settings, where you can also change the modifier key, middle-click Dock icons to quit apps, or add a poof when a window closes.
+Every gesture can be switched off in Settings, where you can also change the modifier key, middle-click Dock icons to quit apps, switch tabs with a three-finger swipe, or add a poof when a window closes.
 
 ## Building from source
 

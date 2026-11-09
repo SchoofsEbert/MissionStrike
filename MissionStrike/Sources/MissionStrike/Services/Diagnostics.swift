@@ -156,7 +156,12 @@ final class Diagnostics {
     private static func settings() -> String {
         let defaults = UserDefaults.standard
         return SettingKey.allCases.map { key in
-            let value = key.defaultValue is Bool ? (defaults.bool(key) ? "on" : "off") : defaults.string(key)
+            let value = switch key.defaultValue {
+            case is Bool: defaults.bool(key) ? "on" : "off"
+            // Counted, not named: which apps someone uses stays out of the report.
+            case is [String]: "\(defaults.strings(key).count)"
+            default: defaults.string(key)
+            }
             return "\(key.diagnosticsName)=\(value)"
         }.joined(separator: ", ")
     }
