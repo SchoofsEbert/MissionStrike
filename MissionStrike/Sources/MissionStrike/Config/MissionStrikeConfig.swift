@@ -49,6 +49,17 @@ struct MissionStrikeConfig: Sendable {
     /// racing close operations on rapid double-clicks.
     let debounceInterval: TimeInterval
 
+    // MARK: - Tab Swipe
+
+    /// How far three fingers travel sideways before the first tab switch, in trackpad widths.
+    let tabSwipeFirstStep: CGFloat
+
+    /// How much further they travel for each tab after that, so a longer swipe goes further.
+    let tabSwipeRepeatStep: CGFloat
+
+    /// Vertical travel that makes a swipe Mission Control's or App Exposé's before it switches a tab.
+    let tabSwipeVerticalLimit: CGFloat
+
     // MARK: - Default Configuration
 
     static let `default` = MissionStrikeConfig(
@@ -59,6 +70,9 @@ struct MissionStrikeConfig: Sendable {
         ignoredWindowOwners: ["Dock", "Window Server", "Wallpaper", "WindowManager"],
         minimumOverlayAlpha: 0.01,
         minimumOverlayCount: 2,
-        debounceInterval: 0.3
+        debounceInterval: 0.3,
+        tabSwipeFirstStep: 0.06,
+        tabSwipeRepeatStep: 0.12,
+        tabSwipeVerticalLimit: 0.05
     )
 }

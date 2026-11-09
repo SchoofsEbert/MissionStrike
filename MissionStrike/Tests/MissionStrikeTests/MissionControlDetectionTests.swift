@@ -235,7 +235,10 @@ struct MissionControlDetectionTests {
             ignoredWindowOwners: [],
             minimumOverlayAlpha: 0.01,
             minimumOverlayCount: 2,
-            debounceInterval: 0.3
+            debounceInterval: 0.3,
+            tabSwipeFirstStep: 0.06,
+            tabSwipeRepeatStep: 0.12,
+            tabSwipeVerticalLimit: 0.05
         )
         let windowList = [
             mockWindowEntry(owner: "Dock", layer: 99, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
@@ -268,7 +271,10 @@ struct MissionControlDetectionTests {
             ignoredWindowOwners: [],
             minimumOverlayAlpha: 0.01,
             minimumOverlayCount: 2,
-            debounceInterval: 0.3
+            debounceInterval: 0.3,
+            tabSwipeFirstStep: 0.06,
+            tabSwipeRepeatStep: 0.12,
+            tabSwipeVerticalLimit: 0.05
         )
         // 1600x900 covers 83% of 1920x1080 -- passes 50% but fails 90%
         let windowList = [
@@ -297,7 +303,10 @@ struct MissionControlDetectionTests {
             ignoredWindowOwners: [],
             minimumOverlayAlpha: 0.01,
             minimumOverlayCount: 1,
-            debounceInterval: 0.3
+            debounceInterval: 0.3,
+            tabSwipeFirstStep: 0.06,
+            tabSwipeRepeatStep: 0.12,
+            tabSwipeVerticalLimit: 0.05
         )
         let windowList = [
             mockWindowEntry(owner: "Dock", layer: 18, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))

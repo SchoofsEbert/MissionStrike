@@ -97,6 +97,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
 
         // Start Event Tap
         EventTapManager.shared.start()
+        TabSwipe.shared.startObserving()
 
         // Only show onboarding on first launch, not on subsequent auto-starts (e.g., Login Items)
         if isFirstLaunch {
