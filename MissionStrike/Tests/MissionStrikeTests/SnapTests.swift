@@ -321,7 +321,8 @@ struct SnapBackdropTests {
             data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ))
-        context.draw(image, in: CGRect(x: -point.x, y: -(CGFloat(image.height) - 1 - point.y), width: CGFloat(image.width), height: CGFloat(image.height)))
+        let flippedY = CGFloat(image.height) - 1 - point.y
+        context.draw(image, in: CGRect(x: -point.x, y: -flippedY, width: CGFloat(image.width), height: CGFloat(image.height)))
         return (pixel[0], pixel[2])
     }
 
