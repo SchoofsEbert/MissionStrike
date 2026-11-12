@@ -2,6 +2,7 @@
 import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 
 @Suite("Snap Layout")
@@ -278,5 +279,72 @@ struct SnapAssistTests {
     func opposite() {
         #expect(SnapAssistModel.opposite(of: .left) == .right)
         #expect(SnapAssistModel.opposite(of: .bottom) == .top)
+    }
+}
+
+@Suite("Snap Backdrop")
+struct SnapBackdropTests {
+    /// A 400×200 picture, red on the left half and blue on the right, saved with `frames` copies.
+    private func wallpaper(frames: Int = 1) throws -> URL {
+        let context = try #require(CGContext(
+            data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+        context.setFillColor(red: 0, green: 0, blue: 1, alpha: 1)
+        context.fill(CGRect(x: 200, y: 0, width: 200, height: 200))
+        let image = try #require(context.makeImage())
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).tiff")
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.tiff" as CFString, frames, nil))
+        for _ in 0..<frames {
+            CGImageDestinationAddImage(destination, image, nil)
+        }
+        #expect(CGImageDestinationFinalize(destination))
+        return url
+    }
+
+    private func request(_ url: URL?, region: CGRect, fillsScreen: Bool = true) -> SnapBackdrop.Request {
+        SnapBackdrop.Request(
+            region: region,
+            screen: CGRect(x: 0, y: 0, width: 100, height: 100),
+            scale: 1,
+            fileURL: url,
+            fillsScreen: fillsScreen
+        )
+    }
+
+    /// The red and blue of the pixel at a point.
+    private func color(of image: CGImage, at point: CGPoint) throws -> (red: UInt8, blue: UInt8) {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = try #require(CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: -point.x, y: -(CGFloat(image.height) - 1 - point.y), width: CGFloat(image.width), height: CGFloat(image.height)))
+        return (pixel[0], pixel[2])
+    }
+
+    @Test("Cuts the region from the wallpaper as it fills the screen, cropped evenly")
+    func cropsFilledWallpaper() throws {
+        let url = try wallpaper()
+        defer { try? FileManager.default.removeItem(at: url) }
+        // A square screen shows the middle of the 2:1 picture: red on its left, blue on its right.
+        let left = try #require(SnapBackdrop.decode(request(url, region: CGRect(x: 0, y: 0, width: 40, height: 100))))
+        #expect(left.width == 40 && left.height == 100)
+        #expect(try color(of: left, at: CGPoint(x: 20, y: 50)).red > 200)
+        let right = try #require(SnapBackdrop.decode(request(url, region: CGRect(x: 60, y: 0, width: 40, height: 100))))
+        #expect(try color(of: right, at: CGPoint(x: 20, y: 50)).blue > 200)
+    }
+
+    @Test("Dynamic wallpapers and other placements aren't drawn from the file")
+    func refuses() throws {
+        let dynamic = try wallpaper(frames: 2)
+        defer { try? FileManager.default.removeItem(at: dynamic) }
+        #expect(SnapBackdrop.decode(request(dynamic, region: CGRect(x: 0, y: 0, width: 50, height: 100))) == nil)
+        let still = try wallpaper()
+        defer { try? FileManager.default.removeItem(at: still) }
+        #expect(SnapBackdrop.decode(request(still, region: CGRect(x: 0, y: 0, width: 50, height: 100), fillsScreen: false)) == nil)
+        #expect(SnapBackdrop.decode(request(nil, region: CGRect(x: 0, y: 0, width: 50, height: 100))) == nil)
     }
 }

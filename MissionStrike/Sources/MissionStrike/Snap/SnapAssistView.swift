@@ -1,20 +1,33 @@
 import AppKit
 import SwiftUI
 
-/// The picker: the free part of the screen outlined like macOS's own tiling preview, with the
-/// windows laid out in it like App Exposé.
+/// The picker: the wallpaper over the free part of the screen, or failing that an outline like
+/// macOS's own tiling preview, with the windows laid out on it like Mission Control.
 struct SnapAssistView: View {
     let candidates: [SnapCandidate]
     let icons: [pid_t: NSImage]
     let previews: [CGWindowID: CGImage]
+    let backdrop: SnapAssist.Backdrop
     let panel: CGRect
     let cards: [CGRect]
     let hovered: Int?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            SnapAreaOutline()
-                .placed(in: panel.insetBy(dx: 6, dy: 6), alignment: .center)
+            switch backdrop {
+            case .image(let wallpaper):
+                // The wallpaper where it is, a little darker, as Mission Control shows it.
+                Image(decorative: wallpaper, scale: 1)
+                    .resizable()
+                    .overlay(Color.black.opacity(0.12))
+                    .placed(in: panel, alignment: .topLeading)
+                    .transition(.opacity)
+            case .unavailable:
+                SnapAreaOutline()
+                    .placed(in: panel.insetBy(dx: 6, dy: 6), alignment: .center)
+            case .loading:
+                EmptyView()
+            }
 
             ForEach(Array(zip(candidates.indices, cards)), id: \.0) { index, cell in
                 let candidate = candidates[index]
@@ -30,6 +43,7 @@ struct SnapAssistView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: previews.count)
+        .animation(.easeOut(duration: 0.15), value: backdrop.isLoaded)
     }
 }
 
@@ -138,5 +152,12 @@ private struct NumberBadge: View {
                 .background(.regularMaterial, in: Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
         }
+    }
+}
+
+extension SnapAssist.Backdrop {
+    var isLoaded: Bool {
+        if case .loading = self { return false }
+        return true
     }
 }

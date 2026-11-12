@@ -14,26 +14,38 @@ enum SnapPreviews {
         CGPreflightScreenCaptureAccess()
     }
 
-    /// Pictures of these windows, taken at once; windows that can't be captured are left out.
-    static func capture(_ windowIDs: [CGWindowID]) async -> [CGWindowID: CGImage] {
+    /// Pictures of these windows and, with a request, of the wallpaper behind the picker, all
+    /// taken at once from one listing; windows that can't be captured are left out.
+    static func capture(
+        _ windowIDs: [CGWindowID],
+        backdrop: SnapBackdrop.Request?
+    ) async -> (previews: [CGWindowID: CGImage], backdrop: CGImage?) {
         let signpost = performanceSignposter.beginInterval("Snap previews")
         defer { performanceSignposter.endInterval("Snap previews", signpost) }
         let content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            content = try await SCShareableContent.excludingDesktopWindows(backdrop == nil, onScreenWindowsOnly: true)
         } catch {
             logger.info("Snap previews: no shareable content (\(error.localizedDescription, privacy: .public)).")
-            return [:]
+            return ([:], nil)
         }
+        guard !Task.isCancelled else { return ([:], nil) }
+
+        // Every capture is set up here, from the listing, then all run at once.
         let wanted = Set(windowIDs)
-        let windows = content.windows.filter { wanted.contains($0.windowID) }
-        return await withTaskGroup(of: (CGWindowID, CGImage?).self) { group in
-            for window in windows {
-                let request = CaptureRequest(
+        var requests: [(windowID: CGWindowID?, request: CaptureRequest)] = content.windows
+            .filter { wanted.contains($0.windowID) }
+            .map { window in
+                (window.windowID, CaptureRequest(
                     filter: SCContentFilter(desktopIndependentWindow: window),
                     configuration: configuration(for: window.frame.size)
-                )
-                let windowID = window.windowID
+                ))
+            }
+        if let backdrop, let wallpaper = SnapBackdrop.captureSetup(backdrop, from: content) {
+            requests.append((nil, CaptureRequest(filter: wallpaper.filter, configuration: wallpaper.configuration)))
+        }
+        return await withTaskGroup(of: (CGWindowID?, CGImage?).self) { group in
+            for (windowID, request) in requests {
                 group.addTask {
                     let image = try? await SCScreenshotManager.captureImage(
                         contentFilter: request.filter,
@@ -42,11 +54,16 @@ enum SnapPreviews {
                     return (windowID, image)
                 }
             }
-            var images: [CGWindowID: CGImage] = [:]
+            var previews: [CGWindowID: CGImage] = [:]
+            var wallpaper: CGImage?
             for await (windowID, image) in group {
-                images[windowID] = image
+                if let windowID {
+                    previews[windowID] = image
+                } else {
+                    wallpaper = image
+                }
             }
-            return images
+            return (previews, wallpaper)
         }
     }
 

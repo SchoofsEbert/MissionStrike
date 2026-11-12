@@ -29,6 +29,9 @@ final class SnapAssist {
         var candidates: [SnapCandidate]
         let icons: [pid_t: NSImage]
         var previews: [CGWindowID: CGImage] = [:]
+        var backdrop: Backdrop = .loading
+        /// Accessibility has said which windows can be placed.
+        var hasDetails = false
         /// Canvas coordinates of `screen`.
         let panel: CGRect
         var cards: [CGRect] = []
@@ -37,8 +40,16 @@ final class SnapAssist {
         var isRevealed = false
     }
 
-    /// How long the picker waits for Accessibility to say which windows can be placed before it
-    /// shows them all; after it shows, the numbers never change.
+    /// The wallpaper the windows are drawn on, like Mission Control's.
+    enum Backdrop {
+        case loading
+        case image(CGImage)
+        /// None to be had: the glass outline instead.
+        case unavailable
+    }
+
+    /// How long the picker waits for Accessibility to say which windows can be placed, and for
+    /// the wallpaper, before it shows anyway; after it shows, the numbers never change.
     private static let detailsWait: Duration = .milliseconds(120)
 
     private let canvas = OverlayCanvas()
@@ -100,25 +111,37 @@ final class SnapAssist {
             panel: OverlayCanvas.local(ScreenCoordinates.yFlipped(target), in: screen.frame)
         )
         WindowSnapper.shared.loadDetails(for: candidates, generation: generation)
-        // A picker already up is replaced at once, without waiting again.
-        if previous?.isRevealed == true {
-            reveal(generation: generation)
-        } else {
-            Task { @MainActor in
-                try? await Task.sleep(for: Self.detailsWait)
-                self.reveal(generation: generation)
-            }
+        // While cycling, the last picker stays on screen until this one is ready.
+        Task { @MainActor in
+            try? await Task.sleep(for: Self.detailsWait)
+            self.reveal(generation: generation)
         }
-        if SettingsStore.shared.current.showSnapPreviews {
-            let windowIDs = candidates.map(\.windowID)
-            previewTask = Task.detached(priority: .userInitiated) {
-                let allowed = SnapPreviews.isAllowed
+        loadPictures(
+            of: candidates.map(\.windowID),
+            backdrop: SnapBackdrop.request(region: target, on: screen),
+            generation: generation
+        )
+    }
+
+    /// With previews on and Screen Recording allowed, the windows and the wallpaper as they show,
+    /// in one go. Otherwise the wallpaper from its file, which captures nothing on screen.
+    private func loadPictures(of windowIDs: [CGWindowID], backdrop: SnapBackdrop.Request, generation: Int) {
+        let capturing = SettingsStore.shared.current.showSnapPreviews
+        previewTask = Task.detached(priority: .userInitiated) {
+            var pictures: (previews: [CGWindowID: CGImage], backdrop: CGImage?) = ([:], nil)
+            var allowed = false
+            if capturing {
+                allowed = SnapPreviews.isAllowed
                 await ScreenRecordingPermission.shared.report(allowed)
-                guard allowed else { return }
-                let previews = await SnapPreviews.capture(windowIDs)
-                guard !Task.isCancelled else { return }
-                await SnapAssist.shared.previewsLoaded(previews, generation: generation)
             }
+            if allowed {
+                pictures = await SnapPreviews.capture(windowIDs, backdrop: backdrop)
+            }
+            if pictures.backdrop == nil, !Task.isCancelled {
+                pictures.backdrop = SnapBackdrop.decode(backdrop)
+            }
+            guard !Task.isCancelled else { return }
+            await SnapAssist.shared.picturesLoaded(pictures.previews, backdrop: pictures.backdrop, generation: generation)
         }
     }
 
@@ -135,13 +158,16 @@ final class SnapAssist {
         render()
     }
 
-    /// The pictures arrived; they fade in over the icons.
-    func previewsLoaded(_ previews: [CGWindowID: CGImage], generation: Int) {
-        guard generation == self.generation, var session, !previews.isEmpty else { return }
+    /// The pictures arrived; previews fade in over the icons.
+    func picturesLoaded(_ previews: [CGWindowID: CGImage], backdrop: CGImage?, generation: Int) {
+        guard generation == self.generation, var session else { return }
         session.previews.merge(previews) { _, new in new }
+        session.backdrop = backdrop.map(Backdrop.image) ?? .unavailable
         self.session = session
         if session.isRevealed {
             render()
+        } else if session.hasDetails {
+            reveal(generation: generation)
         }
     }
 
@@ -163,9 +189,12 @@ final class SnapAssist {
             dismiss()
             return
         }
+        session.hasDetails = true
         self.session = session
         if session.isRevealed {
             render()
+        } else if case .loading = session.backdrop {
+            // The wallpaper is still on its way; the wait reveals the picker if it's slow.
         } else {
             reveal(generation: generation)
         }
@@ -232,6 +261,7 @@ final class SnapAssist {
             candidates: session.candidates,
             icons: session.icons,
             previews: session.previews,
+            backdrop: session.backdrop,
             panel: session.panel,
             cards: session.cards,
             hovered: session.hovered
