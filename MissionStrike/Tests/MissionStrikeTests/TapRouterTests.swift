@@ -14,7 +14,7 @@ private final class FakeTapEnvironment: TapEnvironment {
     var isKeyboardHintsActive = false
     var isCheatSheetPinned = false
     var isRecordingShortcut = false
-    var isSnapAssistActive = false
+    var snapAssistPhase = SnapAssistPhase.idle
     var snapAssistCards: [CGRect] = []
     var snapAssistFrame: CGRect = .null
     private(set) var missionControlChecks = 0
@@ -387,7 +387,7 @@ struct TapRouterSnapAssistTests {
     init() {
         settings.snapShortcuts = SnapShortcuts(SnapShortcuts.defaults)
         environment.missionControlActive = false
-        environment.isSnapAssistActive = true
+        environment.snapAssistPhase = .showing
         environment.snapAssistFrame = CGRect(x: 720, y: 0, width: 720, height: 900)
         environment.snapAssistCards = [CGRect(x: 800, y: 100, width: 200, height: 120)]
     }
@@ -421,6 +421,28 @@ struct TapRouterSnapAssistTests {
         #expect(decide(TapEvent(type: .leftMouseUp)) == .swallow)
         #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 1200, y: 800))) == .swallow)
         #expect(decide(TapEvent(type: .leftMouseUp)) == .swallow)
+    }
+
+    @Test("A held number or Esc repeats into nothing once the picker has closed")
+    mutating func heldKeys() {
+        #expect(decide(key(kVK_ANSI_2)) == .snapAssist(.pick(1)))
+        environment.snapAssistPhase = .idle
+        #expect(decide(TapEvent(type: .keyDown, keyCode: Int64(kVK_ANSI_2), isAutorepeat: true)) == .swallow)
+        #expect(decide(key(kVK_ANSI_2)) == .pass)
+        #expect(decide(TapEvent(type: .keyDown, keyCode: Int64(kVK_ANSI_2), isAutorepeat: true)) == .pass)
+    }
+
+    @Test("Before the picker is up, or over Mission Control, input closes it and goes its way")
+    mutating func pendingOrMissionControl() {
+        environment.snapAssistPhase = .pending
+        #expect(decide(key(kVK_ANSI_1)) == .snapAssist(.dismiss))
+        #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 850, y: 150))) == .snapAssist(.dismiss))
+        #expect(decide(TapEvent(type: .leftMouseUp)) == .pass)
+
+        environment.snapAssistPhase = .showing
+        environment.missionControlActive = true
+        #expect(decide(key(kVK_ANSI_1)) == .snapAssist(.dismiss))
+        #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 850, y: 150))) == .snapAssist(.dismiss))
     }
 
     @Test("A click outside the picker closes it and goes its way")

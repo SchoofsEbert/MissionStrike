@@ -10,6 +10,14 @@ struct SnapCandidate: Equatable, Sendable {
     var title: String?
 }
 
+/// What Accessibility said about the candidates' apps.
+struct SnapCandidateDetails: Sendable {
+    /// Apps that answered; for the others, nothing is known.
+    var answered: Set<pid_t> = []
+    /// The windows of answering apps that can be placed, with their titles (empty if none).
+    var titles: [CGWindowID: String] = [:]
+}
+
 /// What a key or click does while Snap Assist is up.
 enum SnapAssistInput: Equatable, Sendable {
     /// Swallowed; the window at this index fills the rest.
@@ -41,17 +49,28 @@ enum SnapAssistModel {
     static let maxCandidates = 9
     private static let minimumSize: CGFloat = 50
 
+    /// The snapped window, to leave out of the offer.
+    struct Snapped {
+        let windowID: CGWindowID?
+        let pid: pid_t
+        /// The frame it took (AX space, as window-list bounds are), for when its ID is unknown.
+        let frame: CGRect
+    }
+
     /// The app windows on screen, front to back as the window list has them, without the
-    /// snapped one, MissionStrike's own, system windows and small helpers.
+    /// snapped one, MissionStrike's own, system windows, small helpers and windows of apps
+    /// that aren't regular apps (`isRegularApp`).
     static func candidates(
         in windowList: [[String: Any]],
-        excluding snappedID: CGWindowID?,
+        excluding snapped: Snapped,
         ownPID: pid_t,
+        isRegularApp: (pid_t) -> Bool,
         ignoredOwners: Set<String> = MissionStrikeConfig.default.ignoredWindowOwners
     ) -> [SnapCandidate] {
         var result: [SnapCandidate] = []
+        var regular: [pid_t: Bool] = [:]
         for info in windowList {
-            guard let id = info[kCGWindowNumber as String] as? CGWindowID, id != snappedID,
+            guard let id = info[kCGWindowNumber as String] as? CGWindowID, id != snapped.windowID,
                   let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
                   let owner = info[kCGWindowOwnerName as String] as? String, !ignoredOwners.contains(owner),
                   info[kCGWindowLayer as String] as? Int == 0,
@@ -61,6 +80,12 @@ enum SnapAssistModel {
                   bounds.width >= minimumSize, bounds.height >= minimumSize else {
                 continue
             }
+            if snapped.windowID == nil, pid == snapped.pid, SnapLayout.isClose(bounds, snapped.frame) {
+                continue
+            }
+            let isRegular = regular[pid] ?? isRegularApp(pid)
+            regular[pid] = isRegular
+            guard isRegular else { continue }
             result.append(SnapCandidate(windowID: id, pid: pid, appName: owner))
             if result.count == maxCandidates { break }
         }

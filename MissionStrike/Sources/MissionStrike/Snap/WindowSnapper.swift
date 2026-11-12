@@ -28,7 +28,10 @@ final class WindowSnapper: @unchecked Sendable {
         // be the main one; AppKit can place them directly.
         if pid == ProcessInfo.processInfo.processIdentifier {
             SnapAssist.shared.dismiss()
-            Self.snapOwnWindow(action, areas: areas)
+            // Not inside the tap callback: a relayout of Settings would hold up all input.
+            Task { @MainActor in
+                Self.snapOwnWindow(action, areas: areas)
+            }
             return
         }
         queue.async {
@@ -61,7 +64,7 @@ final class WindowSnapper: @unchecked Sendable {
             // A snap that went nowhere still closes the picker an earlier one left up.
             if let assist, !offered {
                 Task { @MainActor in
-                    SnapAssist.shared.show(action: action, area: .zero, candidates: [], generation: assist)
+                    SnapAssist.shared.show(action: action, target: nil, screenArea: .zero, candidates: [], generation: assist)
                 }
             }
         }
@@ -85,7 +88,12 @@ final class WindowSnapper: @unchecked Sendable {
         let taken = Self.move(window, of: app, to: plan.frame, action: action, area: plan.area) ?? plan.frame
         if let assist {
             offered = true
-            offerTheRest(action: action, step: plan.step, area: plan.area, snapped: windowID, generation: assist)
+            offerTheRest(
+                action: action,
+                area: plan.area,
+                snapped: SnapAssistModel.Snapped(windowID: windowID, pid: pid, frame: taken),
+                generation: assist
+            )
         }
         guard let windowID else { return }
         if lastSnaps.count >= Self.maxRecords {
@@ -99,45 +107,52 @@ final class WindowSnapper: @unchecked Sendable {
     // MARK: - Snap Assist
 
     /// Hands Snap Assist the windows that could fill the rest, or tells it there's no rest.
-    private func offerTheRest(action: SnapAction, step: Int, area: CGRect, snapped: CGWindowID?, generation: Int) {
-        let rest = SnapLayout.complement(of: action, step: step, in: area)
+    private func offerTheRest(action: SnapAction, area: CGRect, snapped: SnapAssistModel.Snapped, generation: Int) {
+        let rest = SnapLayout.rest(beside: snapped.frame, of: action, in: area)
         let candidates = rest == nil ? [] : SnapAssistModel.candidates(
             in: CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [],
             excluding: snapped,
-            ownPID: ProcessInfo.processInfo.processIdentifier
+            ownPID: ProcessInfo.processInfo.processIdentifier,
+            isRegularApp: { NSRunningApplication(processIdentifier: $0)?.activationPolicy == .regular }
         )
         Task { @MainActor in
-            SnapAssist.shared.show(action: action, area: rest ?? .zero, candidates: candidates, generation: generation)
+            SnapAssist.shared.show(action: action, target: rest, screenArea: area, candidates: candidates, generation: generation)
         }
     }
 
-    /// Asks each app for its windows' titles, on a queue of its own so a slow app can't hold up
-    /// placing the window picked meanwhile.
-    func loadTitles(for candidates: [SnapCandidate], generation: Int) {
+    /// Asks each app for its windows: titles, and which can be placed. On a queue of its own so
+    /// a slow app can't hold up placing the window picked meanwhile.
+    func loadDetails(for candidates: [SnapCandidate], generation: Int) {
         titleQueue.async {
-            var titles: [CGWindowID: String] = [:]
+            var details = SnapCandidateDetails()
             let wanted = Set(candidates.map(\.windowID))
             for pid in Set(candidates.map(\.pid)) {
-                for window in AXElement.application(pid).windows ?? [] {
-                    guard let id = window.windowID, wanted.contains(id), let title = window.title, !title.isEmpty else { continue }
-                    titles[id] = title
+                guard let windows = AXElement.application(pid).windows else { continue }
+                details.answered.insert(pid)
+                for window in windows {
+                    guard let id = window.windowID, wanted.contains(id) else { continue }
+                    let values = window.attributes([kAXTitleAttribute, Self.fullScreenAttribute])
+                    guard values[Self.fullScreenAttribute] as? Bool != true else { continue }
+                    details.titles[id] = values[kAXTitleAttribute] as? String ?? ""
                 }
             }
             Task { @MainActor in
-                SnapAssist.shared.titlesLoaded(titles, generation: generation)
+                SnapAssist.shared.detailsLoaded(details, generation: generation)
             }
         }
     }
 
-    /// Puts the picked window in `area`, against the edge `hugging` names, and brings it forward.
-    func place(_ candidate: SnapCandidate, in area: CGRect, hugging edge: SnapAction) {
+    /// Puts the picked window in `target`, against the edge `hugging` names, inside `screenArea`,
+    /// and brings it forward.
+    func place(_ candidate: SnapCandidate, in target: CGRect, hugging edge: SnapAction, within screenArea: CGRect) {
         queue.async {
             let app = AXElement.application(candidate.pid)
             guard let window = app.windows?.first(where: { $0.windowID == candidate.windowID }) else {
                 logger.info("Snap Assist: the picked window is gone.")
                 return
             }
-            Self.move(window, of: app, to: area, action: edge, area: area)
+            guard window.attribute(Self.fullScreenAttribute) as? Bool != true else { return }
+            Self.move(window, of: app, to: target, action: edge, area: screenArea)
             window.perform(kAXRaiseAction)
             window.set(kAXMainAttribute, to: kCFBooleanTrue)
             app.set(kAXFrontmostAttribute, to: kCFBooleanTrue)

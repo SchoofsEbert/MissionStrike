@@ -22,6 +22,9 @@ struct TapState: Equatable {
     var swallowedMouseUps = SwallowedMouseUps()
     /// When the last Mission Control click was taken on, for the debounce.
     var lastProcessedClick: Double = -.infinity
+    /// A key Snap Assist swallowed: its repeats while still held are swallowed too, so they
+    /// don't land in the window the picker just closed onto.
+    var swallowedKeyRepeats: Int64?
 }
 
 /// What the event tap does with an event.
@@ -83,8 +86,8 @@ protocol TapEnvironment {
     var isCheatSheetPinned: Bool { get }
     /// Whether Settings is recording a shortcut, which then needs the key itself.
     var isRecordingShortcut: Bool { get }
-    /// Whether the Snap Assist picker is up: keys and clicks go to it first.
-    var isSnapAssistActive: Bool { get }
+    /// Whether the Snap Assist picker is up or on its way: keys and clicks go to it first.
+    var snapAssistPhase: SnapAssistPhase { get }
     /// The picker's card at a point (AppKit space).
     func snapAssistCard(at point: CGPoint) -> Int?
     /// Whether a point (AppKit space) lies on the picker.
@@ -107,7 +110,7 @@ enum TapRouter {
         case .flagsChanged:
             return .modifiersChanged(event.flags)
         case .keyDown:
-            return key(event, settings: settings, environment: environment)
+            return key(event, state: &state, settings: settings, environment: environment)
         default:
             break
         }
@@ -117,7 +120,7 @@ enum TapRouter {
         }
         state.swallowedMouseUps.forgetLostRelease(beforePress: event.type)
 
-        if environment.isSnapAssistActive {
+        if environment.snapAssistPhase != .idle {
             return snapAssistClick(event, state: &state, environment: environment)
         }
 
@@ -185,12 +188,16 @@ enum TapRouter {
     }
 
     /// The picker is drawn on a click-through canvas: a click on a card picks it, one elsewhere
-    /// on the picker does nothing, and one outside closes it and goes its way.
+    /// on the picker does nothing, and one outside closes it and goes its way. A click before
+    /// the picker is up, or in a Mission Control opened over it, closes it.
     private static func snapAssistClick(
         _ event: TapEvent,
         state: inout TapState,
         environment: some TapEnvironment
     ) -> TapDecision {
+        guard environment.snapAssistPhase == .showing, !environment.isMissionControlActive() else {
+            return .snapAssist(.dismiss)
+        }
         if event.type == .leftMouseDown, let index = environment.snapAssistCard(at: event.pointer) {
             state.swallowedMouseUps.swallowRelease(of: event.type)
             return .snapAssist(.pick(index))
@@ -205,9 +212,14 @@ enum TapRouter {
     /// Plain keys go to the overlays first; anything they don't take, to the ⌘ shortcuts.
     private static func key(
         _ event: TapEvent,
+        state: inout TapState,
         settings: Settings,
         environment: some TapEnvironment
     ) -> TapDecision {
+        if let held = state.swallowedKeyRepeats {
+            if event.isAutorepeat, event.keyCode == held { return .swallow }
+            state.swallowedKeyRepeats = nil
+        }
         // The menu never has the keyboard (MissionStrike isn't the active app), so Esc would
         // close Mission Control and leave the menu stranded on the desktop.
         if environment.isContextMenuOpen,
@@ -220,11 +232,17 @@ enum TapRouter {
             return decision
         }
         // Another snap shortcut replaces the picker; number keys pick, Esc closes it, and any
-        // other key closes it and goes its way.
-        if environment.isSnapAssistActive {
-            let input = event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl])
-                ? SnapAssistInput(keyCode: event.keyCode)
-                : .dismiss
+        // other key closes it and goes its way, as does any key before it's up or in a Mission
+        // Control opened over it.
+        if environment.snapAssistPhase != .idle {
+            guard environment.snapAssistPhase == .showing, !environment.isMissionControlActive(),
+                  event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]) else {
+                return .snapAssist(.dismiss)
+            }
+            let input = SnapAssistInput(keyCode: event.keyCode)
+            if input != .dismiss {
+                state.swallowedKeyRepeats = event.keyCode
+            }
             return .snapAssist(input)
         }
         if event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]),

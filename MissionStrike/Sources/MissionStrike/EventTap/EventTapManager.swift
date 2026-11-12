@@ -111,6 +111,7 @@ class EventTapManager {
             pointer.deallocate()
             self.tapPortPointer = nil
         }
+        SnapAssist.shared.dismiss()
         logger.info("Event tap stopped.")
         NotificationCenter.default.post(name: .eventTapStateChanged, object: nil)
     }
@@ -118,6 +119,8 @@ class EventTapManager {
 
 /// Media and special keys, including the Mission Control key (`NX_SYSDEFINED`).
 private let systemDefinedEventType: UInt32 = 14
+/// `NX_SUBTYPE_AUX_MOUSE_BUTTONS`: a system-defined event sent with each mouse button press.
+private let mouseButtonsChangedSubtype: Int16 = 7
 /// Trackpad swipes that drive Mission Control and Spaces (private `kCGSEventDockControl`).
 private let dockGestureEventType: UInt32 = 30
 
@@ -169,7 +172,11 @@ extension EventTapManager {
         if type.rawValue == systemDefinedEventType || type.rawValue == dockGestureEventType {
             MissionControlSession.reset()
             HoverBadgeController.shared.dismissFlash()
-            SnapAssist.shared.dismiss()
+            // Every click also sends one of these ("mouse buttons changed"); the click itself
+            // decides what happens to the picker.
+            if SnapAssist.shared.phase != .idle, NSEvent(cgEvent: event)?.subtype.rawValue != mouseButtonsChangedSubtype {
+                SnapAssist.shared.dismiss()
+            }
             MissionControlOverlays.missionControlMayOpen()
             return false
         }
@@ -349,8 +356,8 @@ private struct LiveTapEnvironment: TapEnvironment {
         ShortcutRecorder.isRecording && NSApp.isActive
     }
 
-    var isSnapAssistActive: Bool {
-        SnapAssist.shared.isActive
+    var snapAssistPhase: SnapAssistPhase {
+        SnapAssist.shared.phase
     }
 
     func snapAssistCard(at point: CGPoint) -> Int? {

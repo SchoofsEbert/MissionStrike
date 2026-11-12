@@ -1,11 +1,19 @@
 import AppKit
 import SwiftUI
 
+/// What the event tap needs to know about Snap Assist.
+enum SnapAssistPhase: Sendable {
+    case idle
+    /// A snap is on its way and may bring a picker: input meanwhile cancels it.
+    case pending
+    case showing
+}
+
 /// After a window snaps to a side, offers the other windows for the rest of the screen, like
 /// Windows' Snap Assist: press a number or click one to place it, anything else closes it.
 ///
 /// The cards are drawn on a click-through canvas; the event tap routes keys and clicks here
-/// while `isActive`, from cached frames, without asking any app.
+/// from `phase` and cached frames, without asking any app.
 @MainActor
 final class SnapAssist {
     static let shared = SnapAssist()
@@ -14,75 +22,107 @@ final class SnapAssist {
     private struct Session {
         let action: SnapAction
         /// Where the picked window goes, in AX space.
-        let area: CGRect
+        let target: CGRect
+        /// The whole visible area of that screen, in AX space, which the picked window stays in.
+        let screenArea: CGRect
         let screen: CGRect
         var candidates: [SnapCandidate]
+        let icons: [pid_t: NSImage]
         /// Canvas coordinates of `screen`.
         let panel: CGRect
-        let cards: [CGRect]
+        var cards: [CGRect]
         var hovered: Int?
     }
 
     private let canvas = OverlayCanvas()
     private var session: Session?
+    private var isPending = false
     /// Bumped by every snap and every dismissal, so a picker that arrives late doesn't show.
     private var generation = 0
+    /// Installed with the first snap and kept: they also cancel a picker still on its way.
     private var observers: [NSObjectProtocol] = []
     private var mouseMonitor: Any?
 
     /// Read by the event tap.
-    var isActive: Bool { session != nil }
+    var phase: SnapAssistPhase {
+        session != nil ? .showing : isPending ? .pending : .idle
+    }
 
-    /// A snap is on its way; returns its token for `show`.
+    /// A snap is on its way; returns its token for `show`. A picker already up stays until the
+    /// new one replaces it, so cycling doesn't flicker, but no longer picks.
     func snapStarted() -> Int {
+        installObservers()
         generation += 1
+        isPending = true
         return generation
     }
 
-    /// Shows the picker over `area` (AX space), unless something happened since the snap.
-    func show(action: SnapAction, area: CGRect, candidates: [SnapCandidate], generation: Int) {
+    /// Shows the picker over `target` (AX space), unless something happened since the snap.
+    func show(action: SnapAction, target: CGRect?, screenArea: CGRect, candidates: [SnapCandidate], generation: Int) {
         guard generation == self.generation else { return }
-        guard !candidates.isEmpty,
-              let screen = NSScreen.screens.first(where: { $0.frame.intersects(ScreenCoordinates.yFlipped(area)) }) else {
+        isPending = false
+        guard let target, !candidates.isEmpty,
+              let screen = NSScreen.screens.first(where: { $0.frame.intersects(ScreenCoordinates.yFlipped(target)) }) else {
             dismiss()
             return
         }
-        let panel = OverlayCanvas.local(ScreenCoordinates.yFlipped(area), in: screen.frame)
+        let panel = OverlayCanvas.local(ScreenCoordinates.yFlipped(target), in: screen.frame)
+        var icons: [pid_t: NSImage] = [:]
+        for pid in Set(candidates.map(\.pid)) {
+            icons[pid] = NSRunningApplication(processIdentifier: pid)?.icon
+        }
         session = Session(
             action: action,
-            area: area,
+            target: target,
+            screenArea: screenArea,
             screen: screen.frame,
             candidates: candidates,
+            icons: icons,
             panel: panel,
             cards: SnapAssistModel.cardFrames(count: candidates.count, in: panel),
             hovered: nil
         )
-        startObserving()
+        startTrackingPointer()
         render(on: screen)
-        WindowSnapper.shared.loadTitles(for: candidates, generation: generation)
+        WindowSnapper.shared.loadDetails(for: candidates, generation: generation)
     }
 
-    /// Titles arrived from Accessibility.
-    func titlesLoaded(_ titles: [CGWindowID: String], generation: Int) {
+    /// Accessibility answered: titles, and which windows can't be placed after all (sheets,
+    /// panels and full-screen windows on another display), which leave the picker.
+    func detailsLoaded(_ details: SnapCandidateDetails, generation: Int) {
         guard generation == self.generation, var session else { return }
-        for index in session.candidates.indices {
-            session.candidates[index].title = titles[session.candidates[index].windowID]
+        session.candidates = session.candidates.compactMap { candidate in
+            guard details.answered.contains(candidate.pid) else { return candidate }
+            guard let title = details.titles[candidate.windowID] else { return nil }
+            var candidate = candidate
+            candidate.title = title.isEmpty ? nil : title
+            return candidate
         }
+        guard !session.candidates.isEmpty else {
+            dismiss()
+            return
+        }
+        session.cards = SnapAssistModel.cardFrames(count: session.candidates.count, in: session.panel)
         self.session = session
         render()
     }
 
     func handle(_ input: SnapAssistInput) {
-        guard let session else { return }
+        guard let session else {
+            dismiss()
+            return
+        }
         switch input {
         case .pick(let index):
-            guard session.candidates.indices.contains(index) else { return }
+            // A newer snap is on its way: this picker's area is about to change.
+            guard !isPending, session.candidates.indices.contains(index) else { return }
             let candidate = session.candidates[index]
             dismiss()
             WindowSnapper.shared.place(
                 candidate,
-                in: session.area,
-                hugging: SnapAssistModel.opposite(of: session.action)
+                in: session.target,
+                hugging: SnapAssistModel.opposite(of: session.action),
+                within: session.screenArea
             )
         case .cancel, .dismiss:
             dismiss()
@@ -91,10 +131,11 @@ final class SnapAssist {
 
     func dismiss() {
         generation += 1
+        isPending = false
         guard session != nil else { return }
         session = nil
         canvas.hide()
-        stopObserving()
+        stopTrackingPointer()
     }
 
     // MARK: - Hit-testing for the event tap
@@ -122,6 +163,7 @@ final class SnapAssist {
               let screen = screen ?? NSScreen.screens.first(where: { $0.frame == session.screen }) else { return }
         let view = SnapAssistView(
             candidates: session.candidates,
+            icons: session.icons,
             panel: session.panel,
             cards: session.cards,
             hovered: session.hovered
@@ -131,23 +173,32 @@ final class SnapAssist {
 
     // MARK: - Closing on its own
 
-    private func startObserving() {
+    private func installObservers() {
         guard observers.isEmpty else { return }
-        let workspace = NSWorkspace.shared.notificationCenter
-        observers = [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification].map { name in
-            workspace.addObserver(forName: name, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { SnapAssist.shared.dismiss() }
+        let dismiss: @Sendable (Notification) -> Void = { _ in
+            MainActor.assumeIsolated {
+                if SnapAssist.shared.phase != .idle { SnapAssist.shared.dismiss() }
             }
         }
-        // Only while the picker shows: the cards light up under the pointer.
+        let workspace = NSWorkspace.shared.notificationCenter
+        observers = [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification].map {
+            workspace.addObserver(forName: $0, object: nil, queue: .main, using: dismiss)
+        }
+        // The session's coordinates are for the screens as they were.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main, using: dismiss
+        ))
+    }
+
+    /// Only while the picker shows: the cards light up under the pointer.
+    private func startTrackingPointer() {
+        guard mouseMonitor == nil else { return }
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in
             MainActor.assumeIsolated { SnapAssist.shared.pointerMoved() }
         }
     }
 
-    private func stopObserving() {
-        observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
-        observers = []
+    private func stopTrackingPointer() {
         if let mouseMonitor {
             NSEvent.removeMonitor(mouseMonitor)
             self.mouseMonitor = nil
@@ -167,6 +218,7 @@ final class SnapAssist {
 /// The picker: a dimmed panel over the free part of the screen, with a card per window.
 struct SnapAssistView: View {
     let candidates: [SnapCandidate]
+    let icons: [pid_t: NSImage]
     let panel: CGRect
     let cards: [CGRect]
     let hovered: Int?
@@ -180,7 +232,12 @@ struct SnapAssistView: View {
                 .placed(in: panel, alignment: .center)
 
             ForEach(Array(zip(candidates.indices, cards)), id: \.0) { index, frame in
-                SnapCardView(candidate: candidates[index], number: index + 1, isHovered: hovered == index)
+                SnapCardView(
+                    candidate: candidates[index],
+                    icon: icons[candidates[index].pid],
+                    number: index + 1,
+                    isHovered: hovered == index
+                )
                     .placed(in: frame, alignment: .center)
             }
         }
@@ -190,6 +247,7 @@ struct SnapAssistView: View {
 /// One window: its number like a keycap, the app's icon and name, and the title once known.
 struct SnapCardView: View {
     let candidate: SnapCandidate
+    let icon: NSImage?
     let number: Int
     let isHovered: Bool
 
@@ -206,7 +264,7 @@ struct SnapCardView: View {
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Spacer()
             }
-            Image(nsImage: icon)
+            Image(nsImage: icon ?? NSWorkspace.shared.icon(for: .application))
                 .resizable()
                 .frame(width: 40, height: 40)
             VStack(spacing: 1) {
@@ -224,9 +282,5 @@ struct SnapCardView: View {
         .background(Self.shape.fill(.regularMaterial))
         .overlay(Self.shape.strokeBorder(isHovered ? Color.accentColor : .white.opacity(0.2), lineWidth: isHovered ? 3 : 0.5))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
-    }
-
-    private var icon: NSImage {
-        NSRunningApplication(processIdentifier: candidate.pid)?.icon ?? NSWorkspace.shared.icon(for: .application)
     }
 }

@@ -20,20 +20,28 @@ struct SnapLayoutTests {
         #expect(SnapLayout.frame(for: .maximize, step: 0, in: area) == area)
     }
 
-    @Test("The complement fills the rest of the area exactly")
-    func complements() {
-        for action in SnapAction.allCases where action != .maximize && !action.isDisplayMove {
+    @Test("The rest beside a snapped window fills the area exactly")
+    func rests() {
+        for action in [SnapAction.left, .right, .top, .bottom] {
             for step in 0..<SnapLayout.stepCount(for: action) {
                 let snapped = SnapLayout.frame(for: action, step: step, in: area)
-                guard let rest = SnapLayout.complement(of: action, step: step, in: area) else {
-                    Issue.record("No complement for \(action) step \(step)")
+                guard let rest = SnapLayout.rest(beside: snapped, of: action, in: area) else {
+                    Issue.record("No rest for \(action) step \(step)")
                     continue
                 }
                 #expect(snapped.width * snapped.height + rest.width * rest.height == area.width * area.height)
                 #expect(snapped.union(rest) == area)
             }
         }
-        #expect(SnapLayout.complement(of: .maximize, step: 0, in: area) == nil)
+        #expect(SnapLayout.rest(beside: area, of: .maximize, in: area) == nil)
+    }
+
+    @Test("The rest starts where the snapped window ends, and too little rest offers nothing")
+    func restFromTakenFrame() {
+        let wide = CGRect(x: 0, y: 25, width: 900, height: 875)
+        #expect(SnapLayout.rest(beside: wide, of: .left, in: area) == CGRect(x: 900, y: 25, width: 540, height: 875))
+        let tooWide = CGRect(x: 0, y: 25, width: 1300, height: 875)
+        #expect(SnapLayout.rest(beside: tooWide, of: .left, in: area) == nil)
     }
 
     @Test("A repeated press on the same window moves to the next step, wrapping around")
@@ -204,22 +212,33 @@ struct SnapAssistTests {
         ]
     }
 
-    @Test("Offers app windows front to back, without the snapped one, our own, system windows or helpers")
+    @Test("Offers regular apps' windows front to back, without the snapped one, our own, system windows or helpers")
     func candidates() {
         let list = [
             window(1), window(2, pid: 11, owner: "Safari"), window(3, owner: "Dock"),
             window(4, layer: 25), window(5, size: CGSize(width: 30, height: 30)), window(6, alpha: 0),
             window(7, pid: 99, owner: "MissionStrike"), window(8, pid: 12, owner: "Mail")
         ]
-        let offered = SnapAssistModel.candidates(in: list, excluding: 1, ownPID: 99)
-        #expect(offered.map(\.windowID) == [2, 8])
+        let snapped = SnapAssistModel.Snapped(windowID: 1, pid: 10, frame: .zero)
+        let offered = SnapAssistModel.candidates(in: list, excluding: snapped, ownPID: 99, isRegularApp: { $0 != 12 })
+        #expect(offered.map(\.windowID) == [2])
         #expect(offered.first?.appName == "Safari")
     }
 
     @Test("At most nine windows, one per number key")
     func nineAtMost() {
         let list = (1...12).map { window(CGWindowID($0)) }
-        #expect(SnapAssistModel.candidates(in: list, excluding: nil, ownPID: 99).count == 9)
+        let snapped = SnapAssistModel.Snapped(windowID: nil, pid: 1, frame: .zero)
+        #expect(SnapAssistModel.candidates(in: list, excluding: snapped, ownPID: 99, isRegularApp: { _ in true }).count == 9)
+    }
+
+    @Test("Without its window ID, the snapped window is recognised by its app and frame")
+    func snappedWithoutID() {
+        let list = [window(1), window(2, size: CGSize(width: 300, height: 300))]
+        let frame = CGRect(origin: .zero, size: CGSize(width: 600, height: 400))
+        let snapped = SnapAssistModel.Snapped(windowID: nil, pid: 10, frame: frame)
+        let offered = SnapAssistModel.candidates(in: list, excluding: snapped, ownPID: 99, isRegularApp: { _ in true })
+        #expect(offered.map(\.windowID) == [2])
     }
 
     @Test("Cards sit inside the area without overlapping, in a grid that fits")

@@ -57,16 +57,30 @@ enum SnapLayout {
         }
     }
 
-    /// The rest of the area next to a snapped frame, for another window; nil when nothing's left.
-    static func complement(of action: SnapAction, step: Int, in area: CGRect) -> CGRect? {
-        let snapped = frame(for: action, step: step, in: area)
-        return switch action {
-        case .left: CGRect(x: snapped.maxX, y: area.minY, width: area.maxX - snapped.maxX, height: area.height)
-        case .right: CGRect(x: area.minX, y: area.minY, width: snapped.minX - area.minX, height: area.height)
-        case .top: CGRect(x: area.minX, y: snapped.maxY, width: area.width, height: area.maxY - snapped.maxY)
-        case .bottom: CGRect(x: area.minX, y: area.minY, width: area.width, height: snapped.minY - area.minY)
-        case .maximize, .nextDisplay, .previousDisplay: nil
+    /// The smallest free part worth offering a window for.
+    static let minimumRest: CGFloat = 200
+
+    /// The part of the area beside a snapped window, from the frame it took, for another window;
+    /// nil when it filled the screen or left too little.
+    static func rest(beside taken: CGRect, of action: SnapAction, in area: CGRect) -> CGRect? {
+        let rect: CGRect
+        switch action {
+        case .left:
+            let edge = min(max(taken.maxX, area.minX), area.maxX)
+            rect = CGRect(x: edge, y: area.minY, width: area.maxX - edge, height: area.height)
+        case .right:
+            let edge = max(min(taken.minX, area.maxX), area.minX)
+            rect = CGRect(x: area.minX, y: area.minY, width: edge - area.minX, height: area.height)
+        case .top:
+            let edge = min(max(taken.maxY, area.minY), area.maxY)
+            rect = CGRect(x: area.minX, y: edge, width: area.width, height: area.maxY - edge)
+        case .bottom:
+            let edge = max(min(taken.minY, area.maxY), area.minY)
+            rect = CGRect(x: area.minX, y: area.minY, width: area.width, height: edge - area.minY)
+        case .maximize, .nextDisplay, .previousDisplay:
+            return nil
         }
+        return rect.width >= minimumRest && rect.height >= minimumRest ? rect : nil
     }
 
     /// Which step a press goes to. The last snap counts when it was this action on this window
