@@ -80,15 +80,12 @@ enum SnapAssistModel {
 
     static let cardSize = CGSize(width: 220, height: 132)
     static let spacing: CGFloat = 16
-    /// Room above the cards for the prompt.
-    static let headerHeight: CGFloat = 44
 
     /// The cards' frames, a centred grid within `area` (any coordinate space with y down, as the
     /// canvas lays out). Cards shrink to fit a narrow or short area.
     static func cardFrames(count: Int, in area: CGRect) -> [CGRect] {
         guard count > 0 else { return [] }
-        let usable = area.insetBy(dx: spacing * 2, dy: spacing * 2)
-        let grid = CGRect(x: usable.minX, y: usable.minY + headerHeight, width: usable.width, height: usable.height - headerHeight)
+        let grid = area.insetBy(dx: spacing * 2, dy: spacing * 2)
         guard grid.width > 0, grid.height > 0 else { return [] }
         let fitting = Int((grid.width + spacing) / (cardSize.width + spacing))
         let columns = max(1, min(count, fitting))

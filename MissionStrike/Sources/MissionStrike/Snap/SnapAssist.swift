@@ -179,26 +179,11 @@ struct SnapAssistView: View {
                 .padding(8)
                 .placed(in: panel, alignment: .center)
 
-            VStack(spacing: 2) {
-                Text("Choose a window for this side")
-                    .font(.system(size: 15, weight: .semibold))
-                Text(candidates.count == 1 ? "Press 1 or click it · Esc to close" : "Press 1–\(candidates.count) or click one · Esc to close")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .placed(in: header, alignment: .bottom)
-
             ForEach(Array(zip(candidates.indices, cards)), id: \.0) { index, frame in
                 SnapCardView(candidate: candidates[index], number: index + 1, isHovered: hovered == index)
                     .placed(in: frame, alignment: .center)
             }
         }
-    }
-
-    /// Just above the cards, which sit in the middle of the panel.
-    private var header: CGRect {
-        let top = cards.first?.minY ?? panel.midY
-        return CGRect(x: panel.minX, y: top - SnapAssistModel.headerHeight - 4, width: panel.width, height: SnapAssistModel.headerHeight)
     }
 }
 
