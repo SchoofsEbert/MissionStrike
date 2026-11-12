@@ -174,7 +174,8 @@ extension EventTapManager {
             HoverBadgeController.shared.dismissFlash()
             // Every click also sends one of these ("mouse buttons changed"); the click itself
             // decides what happens to the picker.
-            if SnapAssist.shared.phase != .idle, NSEvent(cgEvent: event)?.subtype.rawValue != mouseButtonsChangedSubtype {
+            if SnapAssist.shared.phase != .idle,
+               type.rawValue != systemDefinedEventType || NSEvent(cgEvent: event)?.subtype.rawValue != mouseButtonsChangedSubtype {
                 SnapAssist.shared.dismiss()
             }
             MissionControlOverlays.missionControlMayOpen()
@@ -184,6 +185,14 @@ extension EventTapManager {
         // keep the badge until the panel has it.
         if type == .leftMouseDown, ConfirmationBadges.shared.contains(NSEvent.mouseLocation) {
             return false
+        }
+
+        // A Mission Control opened over the picker (a hot corner sends nothing) closes it, and
+        // the press is Mission Control's as usual. Only asked while a picker is up.
+        if SnapAssist.shared.phase != .idle,
+           [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type),
+           MissionControlSession.isActive() {
+            SnapAssist.shared.dismiss()
         }
 
         let tapEvent = TapEvent(type, event)

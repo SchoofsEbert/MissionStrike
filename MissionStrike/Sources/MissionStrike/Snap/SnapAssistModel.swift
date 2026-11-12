@@ -89,7 +89,8 @@ enum SnapAssistModel {
             regular[pid] = isRegular
             guard isRegular else { continue }
             result.append(SnapCandidate(windowID: id, pid: pid, appName: owner, size: bounds.size))
-            if result.count == maxCandidates { break }
+            // Some may turn out not to be placeable; the picker keeps the first nine of the rest.
+            if result.count == maxCandidates * 2 { break }
         }
         return result
     }
@@ -151,7 +152,8 @@ enum SnapAssistModel {
     static func thumbnailFrame(for windowSize: CGSize, in cell: CGSize) -> CGRect {
         let room = CGSize(width: cell.width, height: max(0, cell.height - labelHeight))
         guard windowSize.width > 0, windowSize.height > 0, room.height > 0 else { return CGRect(origin: .zero, size: room) }
-        let scale = min(room.width / windowSize.width, room.height / windowSize.height)
+        // Never larger than the window itself: a small palette would only blur.
+        let scale = min(1, room.width / windowSize.width, room.height / windowSize.height)
         let size = CGSize(width: (windowSize.width * scale).rounded(), height: (windowSize.height * scale).rounded())
         let origin = CGPoint(x: ((room.width - size.width) / 2).rounded(), y: ((room.height - size.height) / 2).rounded())
         return CGRect(origin: origin, size: size)

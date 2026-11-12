@@ -120,21 +120,34 @@ final class WindowSnapper: @unchecked Sendable {
         }
     }
 
-    /// Asks each app for its windows: titles, and which can be placed. On a queue of its own so
-    /// a slow app can't hold up placing the window picked meanwhile.
+    /// Asks each app for its windows: titles, and which can be placed. All apps at once, so a
+    /// slow one only delays its own windows, on a queue of its own so it can't hold up placing
+    /// the window picked meanwhile.
     func loadDetails(for candidates: [SnapCandidate], generation: Int) {
         titleQueue.async {
-            var details = SnapCandidateDetails()
             let wanted = Set(candidates.map(\.windowID))
-            for pid in Set(candidates.map(\.pid)) {
-                guard let windows = AXElement.application(pid).windows else { continue }
-                details.answered.insert(pid)
+            let pids = Array(Set(candidates.map(\.pid)))
+            let results = UnsafeMutableBufferPointer<[CGWindowID: String]?>.allocate(capacity: pids.count)
+            results.initialize(repeating: nil)
+            defer { results.deallocate() }
+            // Each iteration writes only its own slot.
+            nonisolated(unsafe) let slots = results
+            DispatchQueue.concurrentPerform(iterations: pids.count) { index in
+                guard let windows = AXElement.application(pids[index]).windows else { return }
+                var titles: [CGWindowID: String] = [:]
                 for window in windows {
                     guard let id = window.windowID, wanted.contains(id) else { continue }
                     let values = window.attributes([kAXTitleAttribute, Self.fullScreenAttribute])
                     guard values[Self.fullScreenAttribute] as? Bool != true else { continue }
-                    details.titles[id] = values[kAXTitleAttribute] as? String ?? ""
+                    titles[id] = values[kAXTitleAttribute] as? String ?? ""
                 }
+                slots[index] = titles
+            }
+            var details = SnapCandidateDetails()
+            for (pid, titles) in zip(pids, results) {
+                guard let titles else { continue }
+                details.answered.insert(pid)
+                details.titles.merge(titles) { first, _ in first }
             }
             Task { @MainActor in
                 SnapAssist.shared.detailsLoaded(details, generation: generation)

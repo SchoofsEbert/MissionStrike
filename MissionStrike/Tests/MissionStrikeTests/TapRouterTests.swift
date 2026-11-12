@@ -432,17 +432,19 @@ struct TapRouterSnapAssistTests {
         #expect(decide(TapEvent(type: .keyDown, keyCode: Int64(kVK_ANSI_2), isAutorepeat: true)) == .pass)
     }
 
-    @Test("Before the picker is up, or over Mission Control, input closes it and goes its way")
-    mutating func pendingOrMissionControl() {
+    @Test("Before the picker is up, input closes it and goes its way")
+    mutating func pending() {
         environment.snapAssistPhase = .pending
         #expect(decide(key(kVK_ANSI_1)) == .snapAssist(.dismiss))
         #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 850, y: 150))) == .snapAssist(.dismiss))
         #expect(decide(TapEvent(type: .leftMouseUp)) == .pass)
+    }
 
-        environment.snapAssistPhase = .showing
-        environment.missionControlActive = true
-        #expect(decide(key(kVK_ANSI_1)) == .snapAssist(.dismiss))
-        #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 850, y: 150))) == .snapAssist(.dismiss))
+    @Test("While the picker shows, keys and clicks never ask whether Mission Control is open")
+    mutating func showingIsCheap() {
+        _ = decide(key(kVK_ANSI_1))
+        _ = decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 850, y: 150)))
+        #expect(environment.missionControlChecks == 0)
     }
 
     @Test("A click outside the picker closes it and goes its way")

@@ -225,11 +225,11 @@ struct SnapAssistTests {
         #expect(offered.first?.appName == "Safari")
     }
 
-    @Test("At most nine windows, one per number key")
+    @Test("At most eighteen windows, so nine are left once Accessibility weeds some out")
     func nineAtMost() {
-        let list = (1...12).map { window(CGWindowID($0)) }
+        let list = (1...24).map { window(CGWindowID($0)) }
         let snapped = SnapAssistModel.Snapped(windowID: nil, pid: 1, frame: .zero)
-        #expect(SnapAssistModel.candidates(in: list, excluding: snapped, ownPID: 99, isRegularApp: { _ in true }).count == 9)
+        #expect(SnapAssistModel.candidates(in: list, excluding: snapped, ownPID: 99, isRegularApp: { _ in true }).count == 18)
     }
 
     @Test("Without its window ID, the snapped window is recognised by its app and frame")
@@ -270,6 +270,8 @@ struct SnapAssistTests {
         let tall = SnapAssistModel.thumbnailFrame(for: CGSize(width: 500, height: 1000), in: cell)
         #expect(tall.height == 300)
         #expect(tall.midX == 200)
+        let small = SnapAssistModel.thumbnailFrame(for: CGSize(width: 200, height: 100), in: cell)
+        #expect(small.size == CGSize(width: 200, height: 100))
     }
 
     @Test("The picked window goes against the edge across from the snapped one")

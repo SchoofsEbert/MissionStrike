@@ -189,13 +189,13 @@ enum TapRouter {
 
     /// The picker is drawn on a click-through canvas: a click on a card picks it, one elsewhere
     /// on the picker does nothing, and one outside closes it and goes its way. A click before
-    /// the picker is up, or in a Mission Control opened over it, closes it.
+    /// the picker is up closes it.
     private static func snapAssistClick(
         _ event: TapEvent,
         state: inout TapState,
         environment: some TapEnvironment
     ) -> TapDecision {
-        guard environment.snapAssistPhase == .showing, !environment.isMissionControlActive() else {
+        guard environment.snapAssistPhase == .showing else {
             return .snapAssist(.dismiss)
         }
         if event.type == .leftMouseDown, let index = environment.snapAssistCard(at: event.pointer) {
@@ -232,10 +232,9 @@ enum TapRouter {
             return decision
         }
         // Another snap shortcut replaces the picker; number keys pick, Esc closes it, and any
-        // other key closes it and goes its way, as does any key before it's up or in a Mission
-        // Control opened over it.
+        // other key closes it and goes its way, as does any key before it's up.
         if environment.snapAssistPhase != .idle {
-            guard environment.snapAssistPhase == .showing, !environment.isMissionControlActive(),
+            guard environment.snapAssistPhase == .showing,
                   event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]) else {
                 return .snapAssist(.dismiss)
             }

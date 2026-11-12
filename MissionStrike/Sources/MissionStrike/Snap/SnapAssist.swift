@@ -31,22 +31,30 @@ final class SnapAssist {
         var previews: [CGWindowID: CGImage] = [:]
         /// Canvas coordinates of `screen`.
         let panel: CGRect
-        var cards: [CGRect]
+        var cards: [CGRect] = []
         var hovered: Int?
+        /// On screen. Until then the numbers can still change, so input cancels the picker.
+        var isRevealed = false
     }
+
+    /// How long the picker waits for Accessibility to say which windows can be placed before it
+    /// shows them all; after it shows, the numbers never change.
+    private static let detailsWait: Duration = .milliseconds(120)
 
     private let canvas = OverlayCanvas()
     private var session: Session?
     private var isPending = false
     /// Bumped by every snap and every dismissal, so a picker that arrives late doesn't show.
     private var generation = 0
+    private var previewTask: Task<Void, Never>?
     /// Installed with the first snap and kept: they also cancel a picker still on its way.
     private var observers: [NSObjectProtocol] = []
     private var mouseMonitor: Any?
 
     /// Read by the event tap.
     var phase: SnapAssistPhase {
-        session != nil ? .showing : isPending ? .pending : .idle
+        if session?.isRevealed == true { return .showing }
+        return isPending || session != nil ? .pending : .idle
     }
 
     /// A snap is on its way; returns its token for `show`. A picker already up stays until the
@@ -55,10 +63,13 @@ final class SnapAssist {
         installObservers()
         generation += 1
         isPending = true
+        previewTask?.cancel()
         return generation
     }
 
-    /// Shows the picker over `target` (AX space), unless something happened since the snap.
+    /// Prepares the picker over `target` (AX space), unless something happened since the snap.
+    /// It shows once Accessibility has weeded out windows that can't be placed, or after
+    /// `detailsWait`, whichever comes first.
     func show(action: SnapAction, target: CGRect?, screenArea: CGRect, candidates: [SnapCandidate], generation: Int) {
         guard generation == self.generation else { return }
         isPending = false
@@ -67,9 +78,11 @@ final class SnapAssist {
             dismiss()
             return
         }
-        let panel = OverlayCanvas.local(ScreenCoordinates.yFlipped(target), in: screen.frame)
-        var icons: [pid_t: NSImage] = [:]
-        for pid in Set(candidates.map(\.pid)) {
+        // Cycling to the next step keeps what the last picker already knew.
+        let previous = session
+        let known = Dictionary(previous?.candidates.map { ($0.windowID, $0.title) } ?? [], uniquingKeysWith: { first, _ in first })
+        var icons = previous?.icons ?? [:]
+        for pid in Set(candidates.map(\.pid)) where icons[pid] == nil {
             icons[pid] = NSRunningApplication(processIdentifier: pid)?.icon
         }
         session = Session(
@@ -77,40 +90,69 @@ final class SnapAssist {
             target: target,
             screenArea: screenArea,
             screen: screen.frame,
-            candidates: candidates,
+            candidates: candidates.map { candidate in
+                var candidate = candidate
+                candidate.title = known[candidate.windowID].flatMap { $0 }
+                return candidate
+            },
             icons: icons,
-            panel: panel,
-            cards: SnapAssistModel.cardFrames(count: candidates.count, in: panel),
-            hovered: nil
+            previews: previous?.previews ?? [:],
+            panel: OverlayCanvas.local(ScreenCoordinates.yFlipped(target), in: screen.frame)
         )
-        startTrackingPointer()
-        render(on: screen)
         WindowSnapper.shared.loadDetails(for: candidates, generation: generation)
+        // A picker already up is replaced at once, without waiting again.
+        if previous?.isRevealed == true {
+            reveal(generation: generation)
+        } else {
+            Task { @MainActor in
+                try? await Task.sleep(for: Self.detailsWait)
+                self.reveal(generation: generation)
+            }
+        }
         if SettingsStore.shared.current.showSnapPreviews {
             let windowIDs = candidates.map(\.windowID)
-            Task.detached(priority: .userInitiated) {
+            previewTask = Task.detached(priority: .userInitiated) {
                 guard SnapPreviews.isAllowed else { return }
                 let previews = await SnapPreviews.capture(windowIDs)
+                guard !Task.isCancelled else { return }
                 await SnapAssist.shared.previewsLoaded(previews, generation: generation)
             }
         }
     }
 
-    /// The pictures arrived; they fade in over the icons.
-    func previewsLoaded(_ previews: [CGWindowID: CGImage], generation: Int) {
-        guard generation == self.generation, var session, !previews.isEmpty else { return }
-        session.previews = previews
+    /// Lays out the cards, at most one per number key, and shows them.
+    private func reveal(generation: Int) {
+        guard generation == self.generation, var session, !session.isRevealed else { return }
+        session.candidates = Array(session.candidates.prefix(SnapAssistModel.maxCandidates))
+        session.cards = SnapAssistModel.cardFrames(count: session.candidates.count, in: session.panel)
+        session.isRevealed = true
         self.session = session
+        let hovered = card(at: NSEvent.mouseLocation)
+        self.session?.hovered = hovered
+        startTrackingPointer()
         render()
     }
 
-    /// Accessibility answered: titles, and which windows can't be placed after all (sheets,
-    /// panels and full-screen windows on another display), which leave the picker.
+    /// The pictures arrived; they fade in over the icons.
+    func previewsLoaded(_ previews: [CGWindowID: CGImage], generation: Int) {
+        guard generation == self.generation, var session, !previews.isEmpty else { return }
+        session.previews.merge(previews) { _, new in new }
+        self.session = session
+        if session.isRevealed {
+            render()
+        }
+    }
+
+    /// Accessibility answered: titles, and, before the picker shows, which windows can't be
+    /// placed after all (sheets, panels and full-screen windows on another display). Once it
+    /// shows, those stay: a pick on one does nothing, which beats renumbering under the user.
     func detailsLoaded(_ details: SnapCandidateDetails, generation: Int) {
         guard generation == self.generation, var session else { return }
         session.candidates = session.candidates.compactMap { candidate in
             guard details.answered.contains(candidate.pid) else { return candidate }
-            guard let title = details.titles[candidate.windowID] else { return nil }
+            guard let title = details.titles[candidate.windowID] else {
+                return session.isRevealed ? candidate : nil
+            }
             var candidate = candidate
             candidate.title = title.isEmpty ? nil : title
             return candidate
@@ -119,13 +161,16 @@ final class SnapAssist {
             dismiss()
             return
         }
-        session.cards = SnapAssistModel.cardFrames(count: session.candidates.count, in: session.panel)
         self.session = session
-        render()
+        if session.isRevealed {
+            render()
+        } else {
+            reveal(generation: generation)
+        }
     }
 
     func handle(_ input: SnapAssistInput) {
-        guard let session else {
+        guard let session, session.isRevealed else {
             dismiss()
             return
         }
@@ -149,9 +194,12 @@ final class SnapAssist {
     func dismiss() {
         generation += 1
         isPending = false
+        previewTask?.cancel()
+        previewTask = nil
         guard session != nil else { return }
         session = nil
-        canvas.hide()
+        // Pictures of other apps' windows don't stay in memory once the picker is gone.
+        canvas.hide(releasingContent: true)
         stopTrackingPointer()
     }
 
@@ -176,7 +224,7 @@ final class SnapAssist {
     // MARK: - Drawing
 
     private func render(on screen: NSScreen? = nil) {
-        guard let session,
+        guard let session, session.isRevealed,
               let screen = screen ?? NSScreen.screens.first(where: { $0.frame == session.screen }) else { return }
         let view = SnapAssistView(
             candidates: session.candidates,
@@ -230,144 +278,5 @@ final class SnapAssist {
         session.hovered = hovered
         self.session = session
         render()
-    }
-}
-
-/// The picker: the free part of the screen outlined like macOS's own tiling preview, with the
-/// windows laid out in it like App Exposé.
-struct SnapAssistView: View {
-    let candidates: [SnapCandidate]
-    let icons: [pid_t: NSImage]
-    let previews: [CGWindowID: CGImage]
-    let panel: CGRect
-    let cards: [CGRect]
-    let hovered: Int?
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            SnapAreaOutline()
-                .placed(in: panel.insetBy(dx: 6, dy: 6), alignment: .center)
-
-            ForEach(Array(zip(candidates.indices, cards)), id: \.0) { index, cell in
-                let candidate = candidates[index]
-                SnapThumbnailView(
-                    candidate: candidate,
-                    icon: icons[candidate.pid],
-                    preview: previews[candidate.windowID],
-                    number: index + 1,
-                    isHovered: hovered == index,
-                    cell: cell.size
-                )
-                .placed(in: cell, alignment: .topLeading)
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: previews.count)
-    }
-}
-
-/// Like the outline macOS draws where a dragged window will tile: glass on macOS 26 and later.
-private struct SnapAreaOutline: View {
-    private static let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-
-    var body: some View {
-        if #available(macOS 26, *) {
-            Color.clear
-                .glassEffect(.clear, in: Self.shape)
-                .overlay(Self.shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
-        } else {
-            Self.shape
-                .fill(.ultraThinMaterial)
-                .overlay(Self.shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
-        }
-    }
-}
-
-/// One window: its picture (or its app's icon), a number to type, and its title below, with
-/// Mission Control's blue ring under the pointer.
-struct SnapThumbnailView: View {
-    let candidate: SnapCandidate
-    let icon: NSImage?
-    let preview: CGImage?
-    let number: Int
-    let isHovered: Bool
-    let cell: CGSize
-
-    private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-
-    var body: some View {
-        let thumbnail = SnapAssistModel.thumbnailFrame(for: candidate.size, in: cell)
-        ZStack(alignment: .topLeading) {
-            picture
-                .frame(width: thumbnail.width, height: thumbnail.height)
-                .clipShape(Self.shape)
-                .overlay {
-                    if isHovered {
-                        Self.shape.inset(by: -4).strokeBorder(Color.accentColor, lineWidth: 3)
-                    }
-                }
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
-                .overlay(alignment: .topLeading) {
-                    NumberBadge(number: number)
-                        .offset(x: -9, y: -9)
-                }
-                .offset(x: thumbnail.minX, y: thumbnail.minY)
-
-            label
-                .frame(width: cell.width)
-                .offset(y: thumbnail.maxY + 8)
-        }
-        .frame(width: cell.width, height: cell.height, alignment: .topLeading)
-    }
-
-    @ViewBuilder
-    private var picture: some View {
-        if let preview {
-            Image(decorative: preview, scale: 2)
-                .resizable()
-                .transition(.opacity)
-        } else {
-            ZStack {
-                Self.shape.fill(.regularMaterial)
-                Image(nsImage: icon ?? NSWorkspace.shared.icon(for: .application))
-                    .resizable()
-                    .frame(width: 64, height: 64)
-            }
-        }
-    }
-
-    private var label: some View {
-        HStack(spacing: 5) {
-            if preview != nil, let icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 16, height: 16)
-            }
-            Text(candidate.title ?? candidate.appName)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .background(.regularMaterial, in: Capsule())
-        .frame(maxWidth: cell.width - 8)
-    }
-}
-
-/// The number to type, on glass like the system's own small controls.
-private struct NumberBadge: View {
-    let number: Int
-
-    var body: some View {
-        let text = Text("\(number)")
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .frame(width: 26, height: 26)
-        if #available(macOS 26, *) {
-            text.glassEffect(.regular, in: Circle())
-        } else {
-            text
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
-        }
     }
 }
