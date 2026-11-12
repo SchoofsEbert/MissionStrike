@@ -327,7 +327,8 @@ struct TapRouterSnapTests {
     @Test("A snap shortcut is swallowed and snaps")
     mutating func snaps() {
         #expect(decide(key(kVK_LeftArrow)) == .snap(.left))
-        #expect(decide(key(kVK_Return)) == .snap(.maximize))
+        #expect(decide(key(kVK_UpArrow)) == .snap(.maximize))
+        #expect(decide(key(kVK_DownArrow)) == .pass)
     }
 
     @Test("Other keys never ask whether Mission Control is open")

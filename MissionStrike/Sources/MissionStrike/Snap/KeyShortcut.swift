@@ -99,13 +99,12 @@ struct SnapShortcuts: Equatable, Sendable {
         return actions[KeyShortcut(keyCode: keyCode, flags: flags)]
     }
 
-    /// Like Rectangle's: ⌃⌥ and an arrow for the sides, ⌃⌥↩ to fill the screen, ⇧ to change screens.
+    /// ⌃⌥← and ⌃⌥→ for the sides, ⌃⌥↑ to fill the screen, ⇧ to change screens. Top and bottom
+    /// have none until the user records one.
     static let defaults: [SnapAction: KeyShortcut] = [
         .left: KeyShortcut(keyCode: Int64(kVK_LeftArrow), flags: [.maskControl, .maskAlternate]),
         .right: KeyShortcut(keyCode: Int64(kVK_RightArrow), flags: [.maskControl, .maskAlternate]),
-        .top: KeyShortcut(keyCode: Int64(kVK_UpArrow), flags: [.maskControl, .maskAlternate]),
-        .bottom: KeyShortcut(keyCode: Int64(kVK_DownArrow), flags: [.maskControl, .maskAlternate]),
-        .maximize: KeyShortcut(keyCode: Int64(kVK_Return), flags: [.maskControl, .maskAlternate]),
+        .maximize: KeyShortcut(keyCode: Int64(kVK_UpArrow), flags: [.maskControl, .maskAlternate]),
         .nextDisplay: KeyShortcut(keyCode: Int64(kVK_RightArrow), flags: [.maskControl, .maskAlternate, .maskShift]),
         .previousDisplay: KeyShortcut(keyCode: Int64(kVK_LeftArrow), flags: [.maskControl, .maskAlternate, .maskShift])
     ]
