@@ -23,6 +23,16 @@ Mission Control shows every window you have open, but it only lets you look at t
 
 Hold ⌥ to see which window a click will hit, and how many windows each app has here. Keep holding for a cheat sheet. If an app asks to save before closing, MissionStrike shows that on the window instead of failing without a word.
 
+### Snapping windows
+
+Turn on **Snap with Shortcuts** in Settings → Windows to place the window in front from the keyboard:
+
+- **⌃⌥←** and **⌃⌥→** snap it to a side. Press again for a third, then two-thirds.
+- **⌃⌥↑** fills the screen, **⌃⌥↓** puts the window back where it was.
+- **⇧⌃⌥←** and **⇧⌃⌥→** move it to the previous or next display.
+
+After a snap to a side, the rest of the screen shows your other windows, like Mission Control. Press a window's number, or pick one with the arrows and Return, or click it, and it fills the rest. Any other key closes the picker. Turn on **Show Window Previews** to see each window instead of its app's icon; that needs Screen Recording access, and macOS shows its recording dot briefly each time.
+
 ## Install
 
 ```bash
@@ -60,7 +70,7 @@ MissionStrike checks for updates once a day, or whenever you ask from the menu b
 
 </details>
 
-Every gesture can be switched off in Settings, where you can also change the modifier key, middle-click Dock icons to quit apps, switch tabs with a three-finger swipe, or add a poof when a window closes.
+Every gesture can be switched off in Settings, where you can also change the modifier key, change the snap shortcuts, middle-click Dock icons to quit apps, switch tabs with a three-finger swipe, or add a poof when a window closes.
 
 ## Building from source
 
