@@ -7,6 +7,8 @@ enum SnapAction: String, CaseIterable, Sendable {
     case top
     case bottom
     case maximize
+    case nextDisplay
+    case previousDisplay
 
     var title: String {
         switch self {
@@ -15,7 +17,14 @@ enum SnapAction: String, CaseIterable, Sendable {
         case .top: "Top"
         case .bottom: "Bottom"
         case .maximize: "Fill Screen"
+        case .nextDisplay: "Next Display"
+        case .previousDisplay: "Previous Display"
         }
+    }
+
+    /// Moves the window to another screen instead of placing it on its own.
+    var isDisplayMove: Bool {
+        self == .nextDisplay || self == .previousDisplay
     }
 }
 
@@ -29,7 +38,10 @@ enum SnapLayout {
     static let tolerance: CGFloat = 2
 
     static func stepCount(for action: SnapAction) -> Int {
-        action == .maximize ? 1 : fractions.count
+        switch action {
+        case .left, .right, .top, .bottom: fractions.count
+        case .maximize, .nextDisplay, .previousDisplay: 1
+        }
     }
 
     static func frame(for action: SnapAction, step: Int, in area: CGRect) -> CGRect {
@@ -41,7 +53,7 @@ enum SnapLayout {
         case .right: CGRect(x: area.maxX - width, y: area.minY, width: width, height: area.height)
         case .top: CGRect(x: area.minX, y: area.minY, width: area.width, height: height)
         case .bottom: CGRect(x: area.minX, y: area.maxY - height, width: area.width, height: height)
-        case .maximize: area
+        case .maximize, .nextDisplay, .previousDisplay: area
         }
     }
 
@@ -53,7 +65,7 @@ enum SnapLayout {
         case .right: CGRect(x: area.minX, y: area.minY, width: snapped.minX - area.minX, height: area.height)
         case .top: CGRect(x: area.minX, y: snapped.maxY, width: area.width, height: area.maxY - snapped.maxY)
         case .bottom: CGRect(x: area.minX, y: area.minY, width: area.width, height: snapped.minY - area.minY)
-        case .maximize: nil
+        case .maximize, .nextDisplay, .previousDisplay: nil
         }
     }
 
@@ -76,6 +88,26 @@ enum SnapLayout {
             return (step + 1) % count
         }
         return 0
+    }
+
+    /// The frame on the next screen to the right (or left), wrapping around, at the same place
+    /// relative to its area: a snapped window stays snapped the same way. Nil with one screen.
+    static func frame(movingToDisplay action: SnapAction, from windowFrame: CGRect, in areas: [CGRect]) -> CGRect? {
+        guard areas.count > 1, let source = area(for: windowFrame, in: areas) else { return nil }
+        let ordered = areas.sorted { ($0.minX, $0.minY) < ($1.minX, $1.minY) }
+        guard let index = ordered.firstIndex(of: source) else { return nil }
+        let offset = action == .previousDisplay ? ordered.count - 1 : 1
+        let target = ordered[(index + offset) % ordered.count]
+        let scaleX = target.width / source.width
+        let scaleY = target.height / source.height
+        let frame = CGRect(
+            x: target.minX + (windowFrame.minX - source.minX) * scaleX,
+            y: target.minY + (windowFrame.minY - source.minY) * scaleY,
+            width: windowFrame.width * scaleX,
+            height: windowFrame.height * scaleY
+        ).integral
+        // A window partly off its screen stays whole on the new one.
+        return frame.intersection(target).isNull ? target : frame.intersection(target)
     }
 
     /// The screen area a window snaps within: the one it overlaps most, else the first.

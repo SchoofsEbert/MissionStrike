@@ -22,7 +22,7 @@ struct SnapLayoutTests {
 
     @Test("The complement fills the rest of the area exactly")
     func complements() {
-        for action in SnapAction.allCases where action != .maximize {
+        for action in SnapAction.allCases where action != .maximize && !action.isDisplayMove {
             for step in 0..<SnapLayout.stepCount(for: action) {
                 let snapped = SnapLayout.frame(for: action, step: step, in: area)
                 guard let rest = SnapLayout.complement(of: action, step: step, in: area) else {
@@ -72,6 +72,28 @@ struct SnapLayoutTests {
         let offScreen = CGRect(x: -5000, y: 0, width: 100, height: 100)
         #expect(SnapLayout.area(for: offScreen, in: [builtIn, external]) == builtIn)
         #expect(SnapLayout.area(for: window, in: []) == nil)
+    }
+}
+
+@Suite("Moving Between Displays")
+struct SnapDisplayTests {
+    private let builtIn = CGRect(x: 0, y: 25, width: 1440, height: 875)
+    private let external = CGRect(x: 1440, y: 0, width: 2560, height: 1400)
+
+    @Test("A snapped window stays snapped the same way on the next screen")
+    func keepsPlace() {
+        let leftHalf = SnapLayout.frame(for: .left, step: 0, in: builtIn)
+        #expect(SnapLayout.frame(movingToDisplay: .nextDisplay, from: leftHalf, in: [builtIn, external])
+            == SnapLayout.frame(for: .left, step: 0, in: external))
+    }
+
+    @Test("Next and previous wrap around the screens from left to right")
+    func wraps() {
+        let window = CGRect(x: 1600, y: 100, width: 800, height: 600)
+        let screens = [external, builtIn]
+        #expect(SnapLayout.frame(movingToDisplay: .nextDisplay, from: window, in: screens).map(builtIn.contains) == true)
+        #expect(SnapLayout.frame(movingToDisplay: .previousDisplay, from: window, in: screens).map(builtIn.contains) == true)
+        #expect(SnapLayout.frame(movingToDisplay: .nextDisplay, from: window, in: [external]) == nil)
     }
 }
 

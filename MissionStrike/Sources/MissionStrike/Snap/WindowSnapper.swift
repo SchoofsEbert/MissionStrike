@@ -49,6 +49,12 @@ final class WindowSnapper: @unchecked Sendable {
               let area = SnapLayout.area(for: current, in: areas) else {
             return
         }
+        if action.isDisplayMove {
+            guard let target = SnapLayout.frame(movingToDisplay: action, from: current, in: areas) else { return }
+            _ = Self.move(window, of: app, to: target)
+            lastSnap = nil
+            return
+        }
         let windowID = window.windowID
         let step = SnapLayout.nextStep(for: action, windowFrame: current, area: area, last: lastSnap, windowID: windowID)
         let target = SnapLayout.frame(for: action, step: step, in: area)

@@ -26,6 +26,8 @@ enum SettingKey: String, CaseIterable, Sendable {
     case snapTopShortcut
     case snapBottomShortcut
     case snapMaximizeShortcut
+    case snapNextDisplayShortcut
+    case snapPreviousDisplayShortcut
 
     /// The value used until the user changes the setting.
     var defaultValue: any Sendable {
@@ -33,7 +35,8 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .leftClickModifier: TriggerModifier.option.rawValue
         case .tabSwipeAppScope: TabSwipeAppScope.allApps.rawValue
         case .tabSwipeApps: [String]()
-        case .snapLeftShortcut, .snapRightShortcut, .snapTopShortcut, .snapBottomShortcut, .snapMaximizeShortcut:
+        case .snapLeftShortcut, .snapRightShortcut, .snapTopShortcut, .snapBottomShortcut, .snapMaximizeShortcut,
+             .snapNextDisplayShortcut, .snapPreviousDisplayShortcut:
             snapAction.flatMap { SnapShortcuts.defaults[$0]?.storage } ?? ""
         case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe, .enableWindowSnapping: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
@@ -73,6 +76,8 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .snapTopShortcut: "snapTop"
         case .snapBottomShortcut: "snapBottom"
         case .snapMaximizeShortcut: "snapMaximize"
+        case .snapNextDisplayShortcut: "snapNextDisplay"
+        case .snapPreviousDisplayShortcut: "snapPreviousDisplay"
         }
     }
 
@@ -84,6 +89,8 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .snapTopShortcut: .top
         case .snapBottomShortcut: .bottom
         case .snapMaximizeShortcut: .maximize
+        case .snapNextDisplayShortcut: .nextDisplay
+        case .snapPreviousDisplayShortcut: .previousDisplay
         default: nil
         }
     }
@@ -95,6 +102,8 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .top: .snapTopShortcut
         case .bottom: .snapBottomShortcut
         case .maximize: .snapMaximizeShortcut
+        case .nextDisplay: .snapNextDisplayShortcut
+        case .previousDisplay: .snapPreviousDisplayShortcut
         }
     }
 
