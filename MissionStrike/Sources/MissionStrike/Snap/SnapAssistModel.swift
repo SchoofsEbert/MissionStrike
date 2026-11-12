@@ -119,7 +119,7 @@ enum SnapAssistModel {
         case .right: .left
         case .top: .bottom
         case .bottom: .top
-        case .maximize, .nextDisplay, .previousDisplay: action
+        case .maximize, .restore, .nextDisplay, .previousDisplay: action
         }
     }
 

@@ -188,7 +188,7 @@ struct KeyShortcutTests {
         defaults.set(true, forKey: SettingKey.enableWindowSnapping.rawValue)
         #expect(Settings(defaults).snapShortcuts == SnapShortcuts(SnapShortcuts.defaults))
 
-        #expect(Settings(defaults).snapShortcuts.action(keyCode: Int64(kVK_DownArrow), flags: [.maskControl, .maskAlternate]) == nil)
+        #expect(Settings(defaults).snapShortcuts.action(keyCode: Int64(kVK_DownArrow), flags: [.maskControl, .maskAlternate]) == .restore)
 
         let down = KeyShortcut(keyCode: Int64(kVK_DownArrow), flags: [.maskControl, .maskAlternate])
         defaults.set(down.storage, forKey: SettingKey.snapBottomShortcut.rawValue)

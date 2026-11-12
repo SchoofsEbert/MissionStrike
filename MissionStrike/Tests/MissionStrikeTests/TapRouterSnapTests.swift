@@ -27,7 +27,7 @@ struct TapRouterSnapTests {
     mutating func snaps() {
         #expect(decide(key(kVK_LeftArrow)) == .snap(.left))
         #expect(decide(key(kVK_UpArrow)) == .snap(.maximize))
-        #expect(decide(key(kVK_DownArrow)) == .pass)
+        #expect(decide(key(kVK_DownArrow)) == .snap(.restore))
     }
 
     @Test("Other keys never ask whether Mission Control is open")

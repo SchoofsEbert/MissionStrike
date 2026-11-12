@@ -7,6 +7,7 @@ enum SnapAction: String, CaseIterable, Sendable {
     case top
     case bottom
     case maximize
+    case restore
     case nextDisplay
     case previousDisplay
 
@@ -17,6 +18,7 @@ enum SnapAction: String, CaseIterable, Sendable {
         case .top: "Top"
         case .bottom: "Bottom"
         case .maximize: "Fill Screen"
+        case .restore: "Restore"
         case .nextDisplay: "Next Display"
         case .previousDisplay: "Previous Display"
         }
@@ -40,7 +42,7 @@ enum SnapLayout {
     static func stepCount(for action: SnapAction) -> Int {
         switch action {
         case .left, .right, .top, .bottom: fractions.count
-        case .maximize, .nextDisplay, .previousDisplay: 1
+        case .maximize, .restore, .nextDisplay, .previousDisplay: 1
         }
     }
 
@@ -53,7 +55,7 @@ enum SnapLayout {
         case .right: CGRect(x: area.maxX - width, y: area.minY, width: width, height: area.height)
         case .top: CGRect(x: area.minX, y: area.minY, width: area.width, height: height)
         case .bottom: CGRect(x: area.minX, y: area.maxY - height, width: area.width, height: height)
-        case .maximize, .nextDisplay, .previousDisplay: area
+        case .maximize, .restore, .nextDisplay, .previousDisplay: area
         }
     }
 
@@ -77,7 +79,7 @@ enum SnapLayout {
         case .bottom:
             let edge = max(min(taken.minY, area.maxY), area.minY)
             rect = CGRect(x: area.minX, y: area.minY, width: area.width, height: edge - area.minY)
-        case .maximize, .nextDisplay, .previousDisplay:
+        case .maximize, .restore, .nextDisplay, .previousDisplay:
             return nil
         }
         return rect.width >= minimumRest && rect.height >= minimumRest ? rect : nil
@@ -128,7 +130,7 @@ enum SnapLayout {
         switch action {
         case .right: origin.x = max(area.minX, area.maxX - taken.width)
         case .bottom: origin.y = max(area.minY, area.maxY - taken.height)
-        case .left, .top, .maximize, .nextDisplay, .previousDisplay: break
+        case .left, .top, .maximize, .restore, .nextDisplay, .previousDisplay: break
         }
         return CGRect(origin: origin, size: taken.size)
     }
