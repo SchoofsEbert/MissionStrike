@@ -275,6 +275,19 @@ struct SnapAssistTests {
         #expect(small.size == CGSize(width: 200, height: 100))
     }
 
+    @Test("Arrows move the ring to the nearest card that way, starting at the first")
+    func navigation() {
+        // Two columns, three rows, the fifth card centred below.
+        let cards = SnapAssistModel.cardFrames(count: 5, in: CGRect(x: 720, y: 0, width: 720, height: 900))
+        #expect(SnapAssistModel.card(from: nil, moving: .down, in: cards) == 0)
+        #expect(SnapAssistModel.card(from: 0, moving: .right, in: cards) == 1)
+        #expect(SnapAssistModel.card(from: 1, moving: .down, in: cards) == 3)
+        #expect(SnapAssistModel.card(from: 3, moving: .down, in: cards) == 4)
+        #expect(SnapAssistModel.card(from: 1, moving: .right, in: cards) == 1)
+        #expect(SnapAssistModel.card(from: 0, moving: .up, in: cards) == 0)
+        #expect(SnapAssistModel.card(from: nil, moving: .left, in: []) == nil)
+    }
+
     @Test("The picked window goes against the edge across from the snapped one")
     func opposite() {
         #expect(SnapAssistModel.opposite(of: .left) == .right)
@@ -284,21 +297,21 @@ struct SnapAssistTests {
 
 @Suite("Snap Backdrop")
 struct SnapBackdropTests {
-    /// A 400×200 picture, red on the left half and blue on the right, saved with `frames` copies.
-    private func wallpaper(frames: Int = 1) throws -> URL {
+    /// A picture, red on the left half and blue on the right, saved with `frames` copies.
+    private func wallpaper(frames: Int = 1, width: Int = 400, height: Int = 200, orientation: Int = 1) throws -> URL {
         let context = try #require(CGContext(
-            data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ))
         context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
-        context.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
         context.setFillColor(red: 0, green: 0, blue: 1, alpha: 1)
-        context.fill(CGRect(x: 200, y: 0, width: 200, height: 200))
+        context.fill(CGRect(x: width / 2, y: 0, width: width / 2, height: height))
         let image = try #require(context.makeImage())
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).tiff")
         let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.tiff" as CFString, frames, nil))
         for _ in 0..<frames {
-            CGImageDestinationAddImage(destination, image, nil)
+            CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
         }
         #expect(CGImageDestinationFinalize(destination))
         return url
@@ -336,6 +349,30 @@ struct SnapBackdropTests {
         #expect(try color(of: left, at: CGPoint(x: 20, y: 50)).red > 200)
         let right = try #require(SnapBackdrop.decode(request(url, region: CGRect(x: 60, y: 0, width: 40, height: 100))))
         #expect(try color(of: right, at: CGPoint(x: 20, y: 50)).blue > 200)
+    }
+
+    @Test("A wallpaper smaller than the screen is enlarged to fill it, not offset")
+    func enlargesSmallWallpaper() throws {
+        // 40×20 on a 100×100 screen: shown 200×100, so the screen sees its middle half.
+        let url = try wallpaper(width: 40, height: 20)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let whole = try #require(SnapBackdrop.decode(request(url, region: CGRect(x: 0, y: 0, width: 100, height: 100))))
+        #expect(whole.width == 100 && whole.height == 100)
+        #expect(try color(of: whole, at: CGPoint(x: 10, y: 50)).red > 200)
+        #expect(try color(of: whole, at: CGPoint(x: 90, y: 50)).blue > 200)
+    }
+
+    @Test("A photo stored on its side is turned upright before it's cut")
+    func uprightsRotatedPhoto() throws {
+        // Stored 200×400, red left and blue right, marked as turned a quarter (orientation 6).
+        let url = try wallpaper(width: 200, height: 400, orientation: 6)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let image = try #require(SnapBackdrop.decode(request(url, region: CGRect(x: 0, y: 0, width: 100, height: 100))))
+        #expect(image.width == 100 && image.height == 100)
+        // Upright, the halves run top and bottom: the screen shows the middle, both colours.
+        let top = try color(of: image, at: CGPoint(x: 50, y: 10))
+        let bottom = try color(of: image, at: CGPoint(x: 50, y: 90))
+        #expect((top.red > 200) != (bottom.red > 200))
     }
 
     @Test("Dynamic wallpapers and other placements aren't drawn from the file")

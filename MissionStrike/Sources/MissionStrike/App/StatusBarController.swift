@@ -12,21 +12,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let grantAccessItem = NSMenuItem(title: "Grant Access…", action: nil, keyEquivalent: "")
-    private let screenRecordingItem = NSMenuItem(title: "Allow Screen Recording…", action: nil, keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
     private enum State {
         case active
         case paused
         case needsAccessibility
-        /// Running, but window previews are on without Screen Recording.
-        case needsScreenRecording
     }
 
     private var state: State {
         if EventTapManager.shared.isPaused { return .paused }
-        guard EventTapManager.shared.isRunning && AXIsProcessTrusted() else { return .needsAccessibility }
-        return ScreenRecordingPermission.shared.isMissing ? .needsScreenRecording : .active
+        return EventTapManager.shared.isRunning && AXIsProcessTrusted() ? .active : .needsAccessibility
     }
 
     func setVisible(_ visible: Bool, delegate: AppDelegate) {
@@ -49,11 +45,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         // Template images: macOS tints them for light/dark menu bars. Paused shows the
         // dimmed look macOS uses for inactive items; missing permission adds a warning badge.
-        switch state {
-        case .needsAccessibility: button.image = Self.accessibilityWarningImage
-        case .needsScreenRecording: button.image = Self.screenRecordingWarningImage
-        case .active, .paused: button.image = Self.burstImage
-        }
+        button.image = state == .needsAccessibility ? Self.warningImage : Self.burstImage
         button.appearsDisabled = state == .paused
 
         switch state {
@@ -66,12 +58,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .needsAccessibility:
             statusLine.title = "Accessibility access is off"
             button.toolTip = "MissionStrike: Accessibility access is off"
-        case .needsScreenRecording:
-            statusLine.title = "Screen Recording is off for window previews"
-            button.toolTip = "MissionStrike: Screen Recording is off for window previews"
         }
         grantAccessItem.isHidden = state != .needsAccessibility
-        screenRecordingItem.isHidden = state != .needsScreenRecording
         pauseItem.title = state == .paused ? "Resume MissionStrike" : "Pause MissionStrike"
         pauseItem.isHidden = state == .needsAccessibility
     }
@@ -92,13 +80,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return image
     }()
 
-    private static let accessibilityWarningImage = warningImage(describedAs: "MissionStrike: Accessibility access is off")
-    private static let screenRecordingWarningImage = warningImage(
-        describedAs: "MissionStrike: Screen Recording is off for window previews"
-    )
-
     /// The burst with an exclamation badge in the lower right, cut out of the burst.
-    private static func warningImage(describedAs description: String) -> NSImage {
+    private static let warningImage: NSImage = {
         let badgeSymbol = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 8, weight: .bold))
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
@@ -113,9 +96,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = description
+        image.accessibilityDescription = "MissionStrike: Accessibility access is off"
         return image
-    }
+    }()
 
     /// Star polygon centred in `rect`; radii are fractions of half the width, and
     /// `jitter` scales successive tips to make the burst irregular like the app icon.
@@ -156,10 +139,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         grantAccessItem.action = #selector(grantAccess)
         menu.addItem(grantAccessItem)
 
-        screenRecordingItem.target = self
-        screenRecordingItem.action = #selector(allowScreenRecording)
-        menu.addItem(screenRecordingItem)
-
         pauseItem.target = self
         pauseItem.action = #selector(togglePause)
         menu.addItem(pauseItem)
@@ -194,9 +173,5 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func grantAccess() {
         AccessibilityPermission.request()
-    }
-
-    @objc private func allowScreenRecording() {
-        ScreenRecordingPermission.shared.openPrivacySettings()
     }
 }

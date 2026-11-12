@@ -231,16 +231,21 @@ enum TapRouter {
            let decision = snap(snapAction, event, environment: environment) {
             return decision
         }
-        // Another snap shortcut replaces the picker; number keys pick, Esc closes it, and any
-        // other key closes it and goes its way, as does any key before it's up.
-        if environment.snapAssistPhase != .idle {
-            guard environment.snapAssistPhase == .showing,
-                  event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]) else {
-                return .snapAssist(.dismiss)
-            }
-            let input = SnapAssistInput(keyCode: event.keyCode)
-            if input != .dismiss {
+        // Another snap shortcut replaces the picker. Numbers pick, arrows and Return choose, Esc
+        // closes it, and any other key closes it and goes its way. Before a picker shows, a
+        // number waits for it and Esc cancels it; other keys cancel it and go their way.
+        let phase = environment.snapAssistPhase
+        if phase != .idle {
+            let input = event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl])
+                ? SnapAssistInput(keyCode: event.keyCode)
+                : .dismiss
+            guard phase == .showing || input.waitsForPicker else { return .snapAssist(.dismiss) }
+            switch input {
+            case .pick, .cancel, .confirm:
                 state.swallowedKeyRepeats = event.keyCode
+            case .move, .dismiss:
+                // A held arrow keeps moving the ring.
+                break
             }
             return .snapAssist(input)
         }

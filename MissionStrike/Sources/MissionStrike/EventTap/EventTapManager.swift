@@ -278,7 +278,7 @@ extension EventTapManager {
             WindowSnapper.shared.snap(action)
 
         case .snapAssist(let input):
-            SnapAssist.shared.handle(input)
+            SnapAssist.shared.handle(input, replay: event.type == .keyDown ? event.copy() : nil)
         }
     }
     // swiftlint:enable cyclomatic_complexity

@@ -120,28 +120,38 @@ final class WindowSnapper: @unchecked Sendable {
         }
     }
 
-    /// Asks each app for its windows: titles, and which can be placed. All apps at once, so a
-    /// slow one only delays its own windows, on a queue of its own so it can't hold up placing
-    /// the window picked meanwhile.
+    /// Asks each app for its windows: titles, and which can be placed. All apps at once, on a
+    /// queue of its own so a slow app can't hold up placing the window picked meanwhile; the
+    /// answer comes when the slowest app has answered or timed out.
     func loadDetails(for candidates: [SnapCandidate], generation: Int) {
         titleQueue.async {
             let wanted = Set(candidates.map(\.windowID))
             let pids = Array(Set(candidates.map(\.pid)))
             let results = UnsafeMutableBufferPointer<[CGWindowID: String]?>.allocate(capacity: pids.count)
             results.initialize(repeating: nil)
-            defer { results.deallocate() }
+            defer {
+                results.deinitialize()
+                results.deallocate()
+            }
             // Each iteration writes only its own slot.
             nonisolated(unsafe) let slots = results
             DispatchQueue.concurrentPerform(iterations: pids.count) { index in
                 guard let windows = AXElement.application(pids[index]).windows else { return }
                 var titles: [CGWindowID: String] = [:]
+                var resolvedAny = false
                 for window in windows {
-                    guard let id = window.windowID, wanted.contains(id) else { continue }
+                    // Private API: if it stops working, the app counts as not answering and its
+                    // windows stay offered, instead of all being dropped.
+                    guard let id = window.windowID else { continue }
+                    resolvedAny = true
+                    guard wanted.contains(id) else { continue }
                     let values = window.attributes([kAXTitleAttribute, Self.fullScreenAttribute])
                     guard values[Self.fullScreenAttribute] as? Bool != true else { continue }
                     titles[id] = values[kAXTitleAttribute] as? String ?? ""
                 }
-                slots[index] = titles
+                if resolvedAny || windows.isEmpty {
+                    slots[index] = titles
+                }
             }
             var details = SnapCandidateDetails()
             for (pid, titles) in zip(pids, results) {

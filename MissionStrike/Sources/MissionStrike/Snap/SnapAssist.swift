@@ -4,13 +4,16 @@ import SwiftUI
 /// What the event tap needs to know about Snap Assist.
 enum SnapAssistPhase: Sendable {
     case idle
-    /// A snap is on its way and may bring a picker: input meanwhile cancels it.
+    /// A picker is on its way and none shows yet: numbers and Esc wait for it, anything else
+    /// cancels it.
     case pending
+    /// A picker is on screen (maybe about to be replaced by the next cycling step).
     case showing
 }
 
 /// After a window snaps to a side, offers the other windows for the rest of the screen, like
-/// Windows' Snap Assist: press a number or click one to place it, anything else closes it.
+/// Windows' Snap Assist: press a number, or move with the arrows and press Return, or click one
+/// to place it; anything else closes it.
 ///
 /// The cards are drawn on a click-through canvas; the event tap routes keys and clicks here
 /// from `phase` and cached frames, without asking any app.
@@ -35,9 +38,8 @@ final class SnapAssist {
         /// Canvas coordinates of `screen`.
         let panel: CGRect
         var cards: [CGRect] = []
-        var hovered: Int?
-        /// On screen. Until then the numbers can still change, so input cancels the picker.
-        var isRevealed = false
+        /// Under the pointer or chosen with the arrows: one ring for both.
+        var selected: Int?
     }
 
     /// The wallpaper the windows are drawn on, like Mission Control's.
@@ -48,13 +50,19 @@ final class SnapAssist {
         case unavailable
     }
 
-    /// How long the picker waits for Accessibility to say which windows can be placed, and for
+    /// How long a picker waits for Accessibility to say which windows can be placed, and for
     /// the wallpaper, before it shows anyway; after it shows, the numbers never change.
     private static let detailsWait: Duration = .milliseconds(120)
 
     private let canvas = OverlayCanvas()
-    private var session: Session?
+    /// On screen.
+    private var visible: Session?
+    /// Being prepared; replaces `visible` once ready.
+    private var upcoming: Session?
+    /// A snap is on its way and hasn't handed over its windows yet.
     private var isPending = false
+    /// A pick typed before its picker showed, with the key to give back if none comes.
+    private var queuedPick: (index: Int, replay: CGEvent?)?
     /// Bumped by every snap and every dismissal, so a picker that arrives late doesn't show.
     private var generation = 0
     private var previewTask: Task<Void, Never>?
@@ -64,39 +72,40 @@ final class SnapAssist {
 
     /// Read by the event tap.
     var phase: SnapAssistPhase {
-        if session?.isRevealed == true { return .showing }
-        return isPending || session != nil ? .pending : .idle
+        if visible != nil { return .showing }
+        return isPending || upcoming != nil ? .pending : .idle
     }
 
     /// A snap is on its way; returns its token for `show`. A picker already up stays until the
-    /// new one replaces it, so cycling doesn't flicker, but no longer picks.
+    /// next one replaces it, so cycling doesn't flicker.
     func snapStarted() -> Int {
         installObservers()
         generation += 1
         isPending = true
+        upcoming = nil
         previewTask?.cancel()
         return generation
     }
 
     /// Prepares the picker over `target` (AX space), unless something happened since the snap.
-    /// It shows once Accessibility has weeded out windows that can't be placed, or after
-    /// `detailsWait`, whichever comes first.
+    /// It shows once Accessibility has weeded out windows that can't be placed and the wallpaper
+    /// is in, or after `detailsWait`, whichever comes first.
     func show(action: SnapAction, target: CGRect?, screenArea: CGRect, candidates: [SnapCandidate], generation: Int) {
         guard generation == self.generation else { return }
         isPending = false
         guard let target, !candidates.isEmpty,
               let screen = NSScreen.screens.first(where: { $0.frame.intersects(ScreenCoordinates.yFlipped(target)) }) else {
-            dismiss()
+            dismiss(givingBackKeys: true)
             return
         }
         // Cycling to the next step keeps what the last picker already knew.
-        let previous = session
+        let previous = visible
         let known = Dictionary(previous?.candidates.map { ($0.windowID, $0.title) } ?? [], uniquingKeysWith: { first, _ in first })
         var icons = previous?.icons ?? [:]
         for pid in Set(candidates.map(\.pid)) where icons[pid] == nil {
             icons[pid] = NSRunningApplication(processIdentifier: pid)?.icon
         }
-        session = Session(
+        upcoming = Session(
             action: action,
             target: target,
             screenArea: screenArea,
@@ -111,13 +120,13 @@ final class SnapAssist {
             panel: OverlayCanvas.local(ScreenCoordinates.yFlipped(target), in: screen.frame)
         )
         WindowSnapper.shared.loadDetails(for: candidates, generation: generation)
-        // While cycling, the last picker stays on screen until this one is ready.
         Task { @MainActor in
             try? await Task.sleep(for: Self.detailsWait)
             self.reveal(generation: generation)
         }
         loadPictures(
-            of: candidates.map(\.windowID),
+            // Only those likely to be shown: one per number key.
+            of: candidates.prefix(SnapAssistModel.maxCandidates).map(\.windowID),
             backdrop: SnapBackdrop.request(region: target, on: screen),
             generation: generation
         )
@@ -145,29 +154,41 @@ final class SnapAssist {
         }
     }
 
-    /// Lays out the cards, at most one per number key, and shows them.
+    /// Lays out the cards, at most one per number key, and puts them on screen in place of the
+    /// last picker; then acts on a number typed while waiting.
     private func reveal(generation: Int) {
-        guard generation == self.generation, var session, !session.isRevealed else { return }
+        guard generation == self.generation, var session = upcoming else { return }
         session.candidates = Array(session.candidates.prefix(SnapAssistModel.maxCandidates))
         session.cards = SnapAssistModel.cardFrames(count: session.candidates.count, in: session.panel)
-        session.isRevealed = true
-        self.session = session
-        let hovered = card(at: NSEvent.mouseLocation)
-        self.session?.hovered = hovered
+        upcoming = nil
+        visible = session
+        let pointed = card(at: NSEvent.mouseLocation)
+        visible?.selected = pointed
         startTrackingPointer()
         render()
+        if let queued = queuedPick {
+            queuedPick = nil
+            handle(.pick(queued.index))
+        }
     }
 
     /// The pictures arrived; previews fade in over the icons.
     func picturesLoaded(_ previews: [CGWindowID: CGImage], backdrop: CGImage?, generation: Int) {
-        guard generation == self.generation, var session else { return }
-        session.previews.merge(previews) { _, new in new }
-        session.backdrop = backdrop.map(Backdrop.image) ?? .unavailable
-        self.session = session
-        if session.isRevealed {
+        guard generation == self.generation else { return }
+        let backdrop = backdrop.map(Backdrop.image) ?? .unavailable
+        if var session = upcoming {
+            session.previews.merge(previews) { _, new in new }
+            session.backdrop = backdrop
+            upcoming = session
+            if session.hasDetails {
+                reveal(generation: generation)
+            }
+        } else if var session = visible {
+            // Shown before its pictures came.
+            session.previews.merge(previews) { _, new in new }
+            session.backdrop = backdrop
+            visible = session
             render()
-        } else if session.hasDetails {
-            reveal(generation: generation)
         }
     }
 
@@ -175,40 +196,63 @@ final class SnapAssist {
     /// placed after all (sheets, panels and full-screen windows on another display). Once it
     /// shows, those stay: a pick on one does nothing, which beats renumbering under the user.
     func detailsLoaded(_ details: SnapCandidateDetails, generation: Int) {
-        guard generation == self.generation, var session else { return }
-        session.candidates = session.candidates.compactMap { candidate in
-            guard details.answered.contains(candidate.pid) else { return candidate }
-            guard let title = details.titles[candidate.windowID] else {
-                return session.isRevealed ? candidate : nil
+        guard generation == self.generation else { return }
+        if var session = upcoming {
+            session.candidates = Self.applying(details, to: session.candidates, keepingUnplaceable: false)
+            guard !session.candidates.isEmpty else {
+                dismiss(givingBackKeys: true)
+                return
             }
+            session.hasDetails = true
+            upcoming = session
+            if case .loading = session.backdrop {
+                // The wallpaper is still on its way; the wait shows the picker if it's slow.
+            } else {
+                reveal(generation: generation)
+            }
+        } else if var session = visible {
+            session.candidates = Self.applying(details, to: session.candidates, keepingUnplaceable: true)
+            visible = session
+            render()
+        }
+    }
+
+    private static func applying(
+        _ details: SnapCandidateDetails,
+        to candidates: [SnapCandidate],
+        keepingUnplaceable: Bool
+    ) -> [SnapCandidate] {
+        candidates.compactMap { candidate in
+            guard details.answered.contains(candidate.pid) else { return candidate }
+            guard let title = details.titles[candidate.windowID] else { return keepingUnplaceable ? candidate : nil }
             var candidate = candidate
             candidate.title = title.isEmpty ? nil : title
             return candidate
         }
-        guard !session.candidates.isEmpty else {
-            dismiss()
-            return
-        }
-        session.hasDetails = true
-        self.session = session
-        if session.isRevealed {
-            render()
-        } else if case .loading = session.backdrop {
-            // The wallpaper is still on its way; the wait reveals the picker if it's slow.
-        } else {
-            reveal(generation: generation)
-        }
     }
 
-    func handle(_ input: SnapAssistInput) {
-        guard let session, session.isRevealed else {
+    /// A key or click for the picker. `replay` is the key itself, given back to the app in front
+    /// if it was a number typed before the picker came and none does.
+    func handle(_ input: SnapAssistInput, replay: CGEvent? = nil) {
+        // Between pickers, or before the first: a number waits for the next one.
+        if upcoming != nil || isPending {
+            switch input {
+            case .pick(let index):
+                queuedPick = (index, visible == nil ? replay : nil)
+            case .cancel, .dismiss:
+                dismiss()
+            case .move, .confirm:
+                break
+            }
+            return
+        }
+        guard var session = visible else {
             dismiss()
             return
         }
         switch input {
         case .pick(let index):
-            // A newer snap is on its way: this picker's area is about to change.
-            guard !isPending, session.candidates.indices.contains(index) else { return }
+            guard session.candidates.indices.contains(index) else { return }
             let candidate = session.candidates[index]
             dismiss()
             WindowSnapper.shared.place(
@@ -217,34 +261,54 @@ final class SnapAssist {
                 hugging: SnapAssistModel.opposite(of: session.action),
                 within: session.screenArea
             )
+        case .move(let direction):
+            session.selected = SnapAssistModel.card(from: session.selected, moving: direction, in: session.cards)
+            visible = session
+            render()
+        case .confirm:
+            if let selected = session.selected {
+                handle(.pick(selected))
+            }
         case .cancel, .dismiss:
             dismiss()
         }
     }
 
-    func dismiss() {
+    /// Closes the picker and any on its way. The windows go a moment later, outside the event
+    /// tap's callback, and with them the pictures of other apps' windows.
+    func dismiss(givingBackKeys: Bool = false) {
         generation += 1
         isPending = false
         previewTask?.cancel()
         previewTask = nil
-        guard session != nil else { return }
-        session = nil
-        // Pictures of other apps' windows don't stay in memory once the picker is gone.
-        canvas.hide(releasingContent: true)
+        upcoming = nil
+        if givingBackKeys, let replay = queuedPick?.replay {
+            replay.setIntegerValueField(.eventSourceUserData, value: replayedEventMarker)
+            replay.post(tap: .cgSessionEventTap)
+        }
+        queuedPick = nil
+        guard visible != nil else { return }
+        visible = nil
         stopTrackingPointer()
+        DispatchQueue.main.async { [canvas] in
+            canvas.tearDown()
+        }
     }
+}
 
-    // MARK: - Hit-testing for the event tap
+// MARK: - Hit-testing for the event tap
+
+extension SnapAssist {
 
     /// The card under a point in AppKit screen space.
     func card(at point: CGPoint) -> Int? {
-        guard let session else { return nil }
+        guard let session = visible else { return nil }
         let local = Self.local(point, in: session.screen)
         return session.cards.firstIndex { $0.contains(local) }
     }
 
     func contains(_ point: CGPoint) -> Bool {
-        guard let session else { return false }
+        guard let session = visible else { return false }
         return session.panel.contains(Self.local(point, in: session.screen))
     }
 
@@ -254,9 +318,9 @@ final class SnapAssist {
 
     // MARK: - Drawing
 
-    private func render(on screen: NSScreen? = nil) {
-        guard let session, session.isRevealed,
-              let screen = screen ?? NSScreen.screens.first(where: { $0.frame == session.screen }) else { return }
+    private func render() {
+        guard let session = visible,
+              let screen = NSScreen.screens.first(where: { $0.frame == session.screen }) else { return }
         let view = SnapAssistView(
             candidates: session.candidates,
             icons: session.icons,
@@ -264,7 +328,7 @@ final class SnapAssist {
             backdrop: session.backdrop,
             panel: session.panel,
             cards: session.cards,
-            hovered: session.hovered
+            selected: session.selected
         )
         canvas.show(on: [screen]) { _ in view }
     }
@@ -303,12 +367,12 @@ final class SnapAssist {
         }
     }
 
+    /// Only a card the pointer moves onto takes the ring: moving off one keeps the ring where the
+    /// arrows may want it.
     private func pointerMoved() {
-        guard var session else { return }
-        let hovered = card(at: NSEvent.mouseLocation)
-        guard hovered != session.hovered else { return }
-        session.hovered = hovered
-        self.session = session
+        guard var session = visible, let pointed = card(at: NSEvent.mouseLocation), pointed != session.selected else { return }
+        session.selected = pointed
+        visible = session
         render()
     }
 }

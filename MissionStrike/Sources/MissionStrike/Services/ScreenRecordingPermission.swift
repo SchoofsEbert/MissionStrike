@@ -1,13 +1,13 @@
 import AppKit
 import Observation
 
-/// Whether window previews are on but Screen Recording isn't allowed, for the menu bar's warning
-/// and Settings.
+/// Whether window previews are on but Screen Recording isn't allowed, for Settings to say so.
+/// Previews are optional, so this is a note there, not a warning in the menu bar.
 ///
-/// macOS sends no notification for this permission, unlike Accessibility, so it's checked when
-/// it may have changed: at launch, when a setting changes, when MissionStrike comes forward,
-/// whenever the picker wants previews, and every few seconds while the warning shows. A new
-/// grant often only counts after a relaunch, which macOS offers itself.
+/// macOS sends no notification for this permission, unlike Accessibility, so while previews are
+/// on it's checked when it may have changed: when they're turned on, when MissionStrike comes
+/// forward (back from System Settings), and whenever the picker wants previews. A new grant often
+/// only counts after a relaunch, which macOS offers itself.
 @MainActor
 @Observable
 final class ScreenRecordingPermission {
@@ -16,6 +16,7 @@ final class ScreenRecordingPermission {
 
     /// Nil until the first check.
     private(set) var isAllowed: Bool?
+    private var wanted = false
 
     /// Previews are on, and macOS won't let MissionStrike take them.
     var isMissing: Bool {
@@ -23,9 +24,6 @@ final class ScreenRecordingPermission {
     }
 
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
-    @ObservationIgnored private var poll: Task<Void, Never>?
-    private var wanted = false
-    private static let pollInterval: Duration = .seconds(5)
 
     private static func previewsWanted(_ defaults: UserDefaults = .standard) -> Bool {
         defaults.bool(.enableWindowSnapping) && defaults.bool(.enableSnapAssist) && defaults.bool(.showSnapPreviews)
@@ -49,8 +47,10 @@ final class ScreenRecordingPermission {
         check()
     }
 
-    /// Checks off the main thread: each check takes several milliseconds.
+    /// Checks off the main thread, each check taking several milliseconds, and only while
+    /// previews are on.
     func check() {
+        guard wanted else { return }
         Task {
             report(await Task.detached { SnapPreviews.isAllowed }.value)
         }
@@ -58,12 +58,9 @@ final class ScreenRecordingPermission {
 
     /// What a check elsewhere (the picker's) found.
     func report(_ allowed: Bool) {
-        let changed = allowed != isAllowed
-        isAllowed = allowed
-        if changed {
-            StatusBarController.shared.refresh()
+        if allowed != isAllowed {
+            isAllowed = allowed
         }
-        updatePolling()
     }
 
     /// Asks macOS, which shows its prompt only the first time; after that, it's changed in
@@ -80,31 +77,9 @@ final class ScreenRecordingPermission {
 
     /// Defaults change for many reasons; only turning previews on or off matters here.
     private func settingsChanged() {
-        // Read from UserDefaults: SettingsStore may not have reloaded yet when this runs.
         let wanted = Self.previewsWanted()
         guard wanted != self.wanted else { return }
         self.wanted = wanted
-        StatusBarController.shared.refresh()
-        if wanted {
-            check()
-        } else {
-            updatePolling()
-        }
-    }
-
-    private func updatePolling() {
-        let shouldPoll = wanted && isAllowed == false
-        if shouldPoll, poll == nil {
-            poll = Task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: Self.pollInterval)
-                    guard !Task.isCancelled else { return }
-                    check()
-                }
-            }
-        } else if !shouldPoll, let poll {
-            poll.cancel()
-            self.poll = nil
-        }
+        check()
     }
 }

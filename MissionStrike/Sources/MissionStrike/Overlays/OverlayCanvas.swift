@@ -44,16 +44,21 @@ final class OverlayCanvas {
     }
 
     /// Hides at once; the panels are kept for the next time. Cheap when nothing shows, as on
-    /// every key press that dismisses the overlays. With `releasingContent`, the views go too.
-    func hide(releasingContent: Bool = false) {
+    /// every key press that dismisses the overlays.
+    func hide() {
         for entry in entries where entry.panel.isVisible {
             entry.panel.orderOut(nil)
         }
-        if releasingContent {
-            for entry in entries {
-                entry.host.rootView = AnyView(EmptyView())
-            }
+    }
+
+    /// Hides and lets the panels go, with everything they drew: emptying a hidden panel's view
+    /// doesn't free what it last drew until it shows again.
+    func tearDown() {
+        for entry in entries {
+            entry.panel.orderOut(nil)
+            entry.panel.contentView = nil
         }
+        entries = []
     }
 
     private func makeEntry(for screen: CGRect) -> Entry {

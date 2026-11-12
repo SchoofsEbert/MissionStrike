@@ -10,7 +10,7 @@ struct SnapAssistView: View {
     let backdrop: SnapAssist.Backdrop
     let panel: CGRect
     let cards: [CGRect]
-    let hovered: Int?
+    let selected: Int?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -36,7 +36,7 @@ struct SnapAssistView: View {
                     icon: icons[candidate.pid],
                     preview: previews[candidate.windowID],
                     number: index + 1,
-                    isHovered: hovered == index,
+                    isSelected: selected == index,
                     cell: cell.size
                 )
                 .placed(in: cell, alignment: .topLeading)
@@ -64,14 +64,14 @@ private struct SnapAreaOutline: View {
     }
 }
 
-/// One window: its picture (or its app's icon), a number to type, and its title below, with
-/// Mission Control's blue ring under the pointer.
+/// One window: its picture (or its app's icon) and a number to type, with Mission Control's blue
+/// ring and title when selected. Without a picture the title always shows: it's all there is.
 struct SnapThumbnailView: View {
     let candidate: SnapCandidate
     let icon: NSImage?
     let preview: CGImage?
     let number: Int
-    let isHovered: Bool
+    let isSelected: Bool
     let cell: CGSize
 
     private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -83,7 +83,7 @@ struct SnapThumbnailView: View {
                 .frame(width: thumbnail.width, height: thumbnail.height)
                 .clipShape(Self.shape)
                 .overlay {
-                    if isHovered {
+                    if isSelected {
                         Self.shape.inset(by: -4).strokeBorder(Color.accentColor, lineWidth: 3)
                     }
                 }
@@ -94,9 +94,11 @@ struct SnapThumbnailView: View {
                 }
                 .offset(x: thumbnail.minX, y: thumbnail.minY)
 
-            label
-                .frame(width: cell.width)
-                .offset(y: thumbnail.maxY + 8)
+            if preview == nil || isSelected {
+                label
+                    .frame(width: cell.width)
+                    .offset(y: thumbnail.maxY + 8)
+            }
         }
         .frame(width: cell.width, height: cell.height, alignment: .topLeading)
     }

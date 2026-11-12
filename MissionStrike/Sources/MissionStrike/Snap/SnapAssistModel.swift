@@ -24,17 +24,34 @@ struct SnapCandidateDetails: Sendable {
 enum SnapAssistInput: Equatable, Sendable {
     /// Swallowed; the window at this index fills the rest.
     case pick(Int)
+    /// Swallowed; the ring moves to the next card that way.
+    case move(HintDirection)
+    /// Swallowed; Return picks the card with the ring.
+    case confirm
     /// Swallowed; Esc closes the picker.
     case cancel
     /// Passes; anything else closes the picker and goes its way.
     case dismiss
 
-    /// The number keys, by key code so they work on every layout (AZERTY types & for 1).
+    /// The number keys by key code, so they work on every layout (AZERTY types & for 1).
     init(keyCode: Int64) {
-        if let index = Self.numberKeys[Int(keyCode)] {
-            self = .pick(index)
-        } else {
-            self = keyCode == kVK_Escape ? .cancel : .dismiss
+        switch Int(keyCode) {
+        case kVK_Escape: self = .cancel
+        case kVK_Return, kVK_ANSI_KeypadEnter: self = .confirm
+        case kVK_LeftArrow: self = .move(.left)
+        case kVK_RightArrow: self = .move(.right)
+        case kVK_UpArrow: self = .move(.up)
+        case kVK_DownArrow: self = .move(.down)
+        default: self = Self.numberKeys[Int(keyCode)].map(Self.pick) ?? .dismiss
+        }
+    }
+
+    /// Whether it means something before the picker shows: a number waits for it, Esc cancels
+    /// it. Arrows and Return there are someone typing on, and close it.
+    var waitsForPicker: Bool {
+        switch self {
+        case .pick, .cancel: true
+        case .move, .confirm, .dismiss: false
         }
     }
 
@@ -157,5 +174,29 @@ enum SnapAssistModel {
         let size = CGSize(width: (windowSize.width * scale).rounded(), height: (windowSize.height * scale).rounded())
         let origin = CGPoint(x: ((room.width - size.width) / 2).rounded(), y: ((room.height - size.height) / 2).rounded())
         return CGRect(origin: origin, size: size)
+    }
+
+    /// The card the ring moves to from `current` with an arrow: the nearest one whose centre lies
+    /// that way, favouring cards in line. With no ring yet, the first card.
+    static func card(from current: Int?, moving direction: HintDirection, in cards: [CGRect]) -> Int? {
+        guard let current, cards.indices.contains(current) else { return cards.isEmpty ? nil : 0 }
+        let origin = CGPoint(x: cards[current].midX, y: cards[current].midY)
+        var best: (index: Int, score: CGFloat)?
+        for (index, card) in cards.enumerated() where index != current {
+            let dx = card.midX - origin.x
+            let dy = card.midY - origin.y
+            let (along, across): (CGFloat, CGFloat) = switch direction {
+            case .left: (-dx, dy)
+            case .right: (dx, dy)
+            case .up: (-dy, dx)
+            case .down: (dy, dx)
+            }
+            guard along > 1 else { continue }
+            let score = along + abs(across) * 2
+            if best == nil || score < best!.score { // swiftlint:disable:this force_unwrapping
+                best = (index, score)
+            }
+        }
+        return best?.index ?? current
     }
 }
