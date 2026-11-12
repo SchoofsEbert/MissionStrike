@@ -10,15 +10,7 @@ struct WindowsSettingsPane: View {
     private var enableSnapAssist = SettingKey.enableSnapAssist.defaultBool
     @AppStorage(SettingKey.showSnapPreviews.rawValue)
     private var showSnapPreviews = SettingKey.showSnapPreviews.defaultBool
-    /// Asked off the main thread: each check takes several milliseconds. Nil until known.
-    @State private var canCapture: Bool?
-
-    private static let screenRecordingSettings = URL(
-        string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture"
-    )! // swiftlint:disable:this force_unwrapping
-
-    /// Back from System Settings: Screen Recording may have been turned on.
-    private let appBecameActive = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+    private let screenRecording = ScreenRecordingPermission.shared
 
     var body: some View {
         Form {
@@ -37,10 +29,10 @@ struct WindowsSettingsPane: View {
                     Text("Show a picture of each window instead of its app's icon. Needs Screen Recording access.")
                 }
                 .disabled(!enableWindowSnapping || !enableSnapAssist)
-                if showSnapPreviews, canCapture == false {
+                if screenRecording.isMissing {
                     LabeledContent {
                         Button("Open Privacy Settings") {
-                            NSWorkspace.shared.open(Self.screenRecordingSettings)
+                            screenRecording.openPrivacySettings()
                         }
                     } label: {
                         Label(
@@ -72,26 +64,11 @@ struct WindowsSettingsPane: View {
             .disabled(!enableWindowSnapping)
         }
         .formStyle(.grouped)
-        .task { await checkCapture() }
         .onChange(of: showSnapPreviews) {
-            Task { await checkCapture(requesting: showSnapPreviews) }
+            if showSnapPreviews, screenRecording.isAllowed != true {
+                screenRecording.request()
+            }
         }
-        .onReceive(appBecameActive) { _ in
-            Task { await checkCapture() }
-        }
-    }
-}
-
-extension WindowsSettingsPane {
-    /// Whether previews can be taken, and with `requesting`, asks for access if not. macOS asks
-    /// once; after that it only changes in System Settings.
-    @MainActor
-    private func checkCapture(requesting: Bool = false) async {
-        canCapture = await Task.detached {
-            if SnapPreviews.isAllowed { return true }
-            if requesting { CGRequestScreenCaptureAccess() }
-            return false
-        }.value
     }
 }
 

@@ -112,7 +112,9 @@ final class SnapAssist {
         if SettingsStore.shared.current.showSnapPreviews {
             let windowIDs = candidates.map(\.windowID)
             previewTask = Task.detached(priority: .userInitiated) {
-                guard SnapPreviews.isAllowed else { return }
+                let allowed = SnapPreviews.isAllowed
+                await ScreenRecordingPermission.shared.report(allowed)
+                guard allowed else { return }
                 let previews = await SnapPreviews.capture(windowIDs)
                 guard !Task.isCancelled else { return }
                 await SnapAssist.shared.previewsLoaded(previews, generation: generation)
