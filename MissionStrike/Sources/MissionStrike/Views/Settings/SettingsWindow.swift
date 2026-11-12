@@ -5,6 +5,7 @@ import SwiftUI
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case missionControl
+    case windows
     case feedback
     case dock
     case trackpad
@@ -15,6 +16,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .missionControl: "Mission Control"
+        case .windows: "Windows"
         case .feedback: "Feedback"
         case .dock: "Dock"
         case .trackpad: "Trackpad"
@@ -25,6 +27,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape.fill"
         case .missionControl: "rectangle.3.group.fill"
+        case .windows: "rectangle.split.2x1.fill"
         case .feedback: "sparkles"
         case .dock: "dock.rectangle"
         case .trackpad: "hand.draw.fill"
@@ -36,6 +39,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: .gray
         case .missionControl: .blue
+        case .windows: .indigo
         case .feedback: .pink
         case .dock: Color(white: 0.15)
         case .trackpad: .orange
@@ -47,6 +51,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: GeneralSettingsPane()
         case .missionControl: MissionControlSettingsPane()
+        case .windows: WindowsSettingsPane()
         case .feedback: FeedbackSettingsPane()
         case .dock: DockSettingsPane()
         case .trackpad: TrackpadSettingsPane()

@@ -198,6 +198,7 @@ extension EventTapManager {
         return decision.swallows
     }
 
+    // swiftlint:disable cyclomatic_complexity
     /// Starts what a decision asks for. Anything that hit-tests is deferred until after the
     /// callback, so the event isn't held up by a slow app.
     private func carryOut(_ decision: TapDecision, for tapEvent: TapEvent, _ event: CGEvent) {
@@ -255,8 +256,12 @@ extension EventTapManager {
 
         case .closeCheatSheet:
             CheatSheet.shared.dismiss()
+
+        case .snap(let action):
+            WindowSnapper.shared.snap(action)
         }
     }
+    // swiftlint:enable cyclomatic_complexity
 
     /// Watchdog: macOS disables the tap if the callback takes too long.
     /// Re-enable it immediately to recover without requiring a relaunch.
@@ -332,5 +337,9 @@ private struct LiveTapEnvironment: TapEnvironment {
 
     var isCheatSheetPinned: Bool {
         CheatSheet.shared.isPinned
+    }
+
+    var isRecordingShortcut: Bool {
+        ShortcutRecorder.isRecording
     }
 }

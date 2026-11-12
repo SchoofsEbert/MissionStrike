@@ -52,12 +52,14 @@ enum TapDecision: Equatable {
     case toggleCheatSheet
     /// Swallowed; Esc closes the cheat sheet opened with `?` and leaves Mission Control open.
     case closeCheatSheet
+    /// Swallowed; once the callback returns, snap the window in front.
+    case snap(SnapAction)
 
     var swallows: Bool {
         switch self {
         case .pass, .modifiersChanged, .passAndProbeDock: false
         case .swallow, .missionControlClick, .dockClick, .openMenu, .closeMenu, .shortcut, .startKeyboardHints,
-             .keyboardHint, .toggleCheatSheet, .closeCheatSheet: true
+             .keyboardHint, .toggleCheatSheet, .closeCheatSheet, .snap: true
         }
     }
 }
@@ -77,6 +79,8 @@ protocol TapEnvironment {
     var isKeyboardHintsActive: Bool { get }
     /// Whether the cheat sheet was opened with `?`, so Esc closes it.
     var isCheatSheetPinned: Bool { get }
+    /// Whether Settings is recording a shortcut, which then needs the key itself.
+    var isRecordingShortcut: Bool { get }
 }
 
 /// Decides what the event tap does with each event. Pure apart from `state`, so it can be
@@ -179,6 +183,10 @@ enum TapRouter {
            HintKey(keyCode: event.keyCode, characters: event.characters) == .cancel {
             return .closeMenu(reopen: false)
         }
+        if let action = settings.snapShortcuts.action(keyCode: event.keyCode, flags: event.flags),
+           !environment.isRecordingShortcut {
+            return snap(action, event, environment: environment)
+        }
         if event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]),
            let decision = overlayKey(event, settings: settings, environment: environment) {
             return decision
@@ -211,6 +219,13 @@ enum TapRouter {
         }
         // Asked last, so typing outside Mission Control only pays for the check on these keys.
         return environment.isMissionControlActive() ? decision : nil
+    }
+
+    /// A snap shortcut, anywhere but in Mission Control, where there's no window in front to
+    /// snap. A held shortcut is swallowed without snapping again and again.
+    private static func snap(_ action: SnapAction, _ event: TapEvent, environment: some TapEnvironment) -> TapDecision {
+        guard !environment.isMissionControlActive() else { return .pass }
+        return event.isAutorepeat ? .swallow : .snap(action)
     }
 
     /// ⌘W / ⌘M / ⌘H / ⌘Q while Mission Control is open. Whether a thumbnail takes the key is

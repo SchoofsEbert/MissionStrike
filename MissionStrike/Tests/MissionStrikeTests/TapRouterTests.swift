@@ -13,6 +13,7 @@ private final class FakeTapEnvironment: TapEnvironment {
     var onDock = false
     var isKeyboardHintsActive = false
     var isCheatSheetPinned = false
+    var isRecordingShortcut = false
     private(set) var missionControlChecks = 0
 
     func isMissionControlActive() -> Bool {
@@ -300,5 +301,59 @@ struct TapRouterTests {
         let decision = decide(TapEvent(type: .flagsChanged, flags: .maskAlternate))
         #expect(decision == .modifiersChanged(.maskAlternate))
         #expect(!decision.swallows)
+    }
+}
+
+@MainActor
+@Suite("Tap Router: Snapping")
+struct TapRouterSnapTests {
+    private var state = TapState()
+    private var settings = Settings.defaults
+    private let environment = FakeTapEnvironment()
+
+    init() {
+        settings.snapShortcuts = SnapShortcuts(SnapShortcuts.defaults)
+        environment.missionControlActive = false
+    }
+
+    private mutating func decide(_ event: TapEvent) -> TapDecision {
+        TapRouter.decide(event, state: &state, settings: settings, environment: environment, debounceInterval: 0.3)
+    }
+
+    private func key(_ keyCode: Int, _ flags: CGEventFlags = [.maskControl, .maskAlternate], isAutorepeat: Bool = false) -> TapEvent {
+        TapEvent(type: .keyDown, flags: flags, keyCode: Int64(keyCode), isAutorepeat: isAutorepeat)
+    }
+
+    @Test("A snap shortcut is swallowed and snaps")
+    mutating func snaps() {
+        #expect(decide(key(kVK_LeftArrow)) == .snap(.left))
+        #expect(decide(key(kVK_Return)) == .snap(.maximize))
+    }
+
+    @Test("Other keys never ask whether Mission Control is open")
+    mutating func otherKeysAreCheap() {
+        #expect(decide(key(kVK_LeftArrow, [.maskControl])) == .pass)
+        #expect(decide(key(kVK_ANSI_A)) == .pass)
+        #expect(environment.missionControlChecks == 0)
+    }
+
+    @Test("A held shortcut snaps once")
+    mutating func autorepeat() {
+        #expect(decide(key(kVK_LeftArrow, isAutorepeat: true)) == .swallow)
+    }
+
+    @Test("In Mission Control, or while Settings records a shortcut, the key goes its way")
+    mutating func passesThrough() {
+        environment.missionControlActive = true
+        #expect(decide(key(kVK_LeftArrow)) == .pass)
+        environment.missionControlActive = false
+        environment.isRecordingShortcut = true
+        #expect(decide(key(kVK_LeftArrow)) == .pass)
+    }
+
+    @Test("With snapping off, the shortcuts are ordinary keys")
+    mutating func off() {
+        settings.snapShortcuts = SnapShortcuts()
+        #expect(decide(key(kVK_LeftArrow)) == .pass)
     }
 }

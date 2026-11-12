@@ -20,6 +20,12 @@ enum SettingKey: String, CaseIterable, Sendable {
     case tabSwipeHaptics
     case tabSwipeAppScope
     case tabSwipeApps
+    case enableWindowSnapping
+    case snapLeftShortcut
+    case snapRightShortcut
+    case snapTopShortcut
+    case snapBottomShortcut
+    case snapMaximizeShortcut
 
     /// The value used until the user changes the setting.
     var defaultValue: any Sendable {
@@ -27,7 +33,9 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .leftClickModifier: TriggerModifier.option.rawValue
         case .tabSwipeAppScope: TabSwipeAppScope.allApps.rawValue
         case .tabSwipeApps: [String]()
-        case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe: false
+        case .snapLeftShortcut, .snapRightShortcut, .snapTopShortcut, .snapBottomShortcut, .snapMaximizeShortcut:
+            snapAction.flatMap { SnapShortcuts.defaults[$0]?.storage } ?? ""
+        case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe, .enableWindowSnapping: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
              .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
              .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics: true
@@ -59,6 +67,34 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .tabSwipeHaptics: "tabSwipeHaptics"
         case .tabSwipeAppScope: "tabSwipeScope"
         case .tabSwipeApps: "tabSwipeApps"
+        case .enableWindowSnapping: "snapping"
+        case .snapLeftShortcut: "snapLeft"
+        case .snapRightShortcut: "snapRight"
+        case .snapTopShortcut: "snapTop"
+        case .snapBottomShortcut: "snapBottom"
+        case .snapMaximizeShortcut: "snapMaximize"
+        }
+    }
+
+    /// The snap action whose shortcut this setting holds.
+    var snapAction: SnapAction? {
+        switch self {
+        case .snapLeftShortcut: .left
+        case .snapRightShortcut: .right
+        case .snapTopShortcut: .top
+        case .snapBottomShortcut: .bottom
+        case .snapMaximizeShortcut: .maximize
+        default: nil
+        }
+    }
+
+    static func snapShortcut(for action: SnapAction) -> SettingKey {
+        switch action {
+        case .left: .snapLeftShortcut
+        case .right: .snapRightShortcut
+        case .top: .snapTopShortcut
+        case .bottom: .snapBottomShortcut
+        case .maximize: .snapMaximizeShortcut
         }
     }
 
@@ -101,6 +137,8 @@ struct Settings: Equatable, Sendable {
     var enableTabSwipe: Bool
     var tabSwipeHaptics: Bool
     var tabSwipeApps: TabSwipeApps
+    /// Empty while snapping is off.
+    var snapShortcuts: SnapShortcuts
 }
 
 extension Settings {
@@ -122,7 +160,8 @@ extension Settings {
         showFirstRunHint: SettingKey.showFirstRunHint.defaultBool,
         enableTabSwipe: SettingKey.enableTabSwipe.defaultBool,
         tabSwipeHaptics: SettingKey.tabSwipeHaptics.defaultBool,
-        tabSwipeApps: TabSwipeApps(scope: .allApps, bundleIDs: [])
+        tabSwipeApps: TabSwipeApps(scope: .allApps, bundleIDs: []),
+        snapShortcuts: SnapShortcuts()
     )
 
     init(_ defaults: UserDefaults) {
@@ -146,6 +185,11 @@ extension Settings {
             scope: TabSwipeAppScope(rawValue: defaults.string(.tabSwipeAppScope)) ?? .allApps,
             bundleIDs: Set(defaults.strings(.tabSwipeApps))
         )
+        snapShortcuts = defaults.bool(.enableWindowSnapping)
+            ? SnapShortcuts(SnapAction.allCases.reduce(into: [:]) { shortcuts, action in
+                shortcuts[action] = KeyShortcut(storage: defaults.string(SettingKey.snapShortcut(for: action)))
+            })
+            : SnapShortcuts()
     }
 }
 

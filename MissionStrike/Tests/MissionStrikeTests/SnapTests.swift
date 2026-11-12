@@ -1,0 +1,129 @@
+@testable import MissionStrike
+import Carbon.HIToolbox
+import CoreGraphics
+import Foundation
+import Testing
+
+@Suite("Snap Layout")
+struct SnapLayoutTests {
+    /// A 1440×875 visible area below a 25-point menu bar.
+    private let area = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+    @Test("Each side steps through half, a third and two-thirds")
+    func sideFrames() {
+        #expect(SnapLayout.frame(for: .left, step: 0, in: area) == CGRect(x: 0, y: 25, width: 720, height: 875))
+        #expect(SnapLayout.frame(for: .left, step: 1, in: area) == CGRect(x: 0, y: 25, width: 480, height: 875))
+        #expect(SnapLayout.frame(for: .left, step: 2, in: area) == CGRect(x: 0, y: 25, width: 960, height: 875))
+        #expect(SnapLayout.frame(for: .right, step: 1, in: area) == CGRect(x: 960, y: 25, width: 480, height: 875))
+        #expect(SnapLayout.frame(for: .top, step: 0, in: area) == CGRect(x: 0, y: 25, width: 1440, height: 438))
+        #expect(SnapLayout.frame(for: .bottom, step: 0, in: area) == CGRect(x: 0, y: 462, width: 1440, height: 438))
+        #expect(SnapLayout.frame(for: .maximize, step: 0, in: area) == area)
+    }
+
+    @Test("The complement fills the rest of the area exactly")
+    func complements() {
+        for action in SnapAction.allCases where action != .maximize {
+            for step in 0..<SnapLayout.stepCount(for: action) {
+                let snapped = SnapLayout.frame(for: action, step: step, in: area)
+                guard let rest = SnapLayout.complement(of: action, step: step, in: area) else {
+                    Issue.record("No complement for \(action) step \(step)")
+                    continue
+                }
+                #expect(snapped.width * snapped.height + rest.width * rest.height == area.width * area.height)
+                #expect(snapped.union(rest) == area)
+            }
+        }
+        #expect(SnapLayout.complement(of: .maximize, step: 0, in: area) == nil)
+    }
+
+    @Test("A repeated press on the same window moves to the next step, wrapping around")
+    func cycling() {
+        let taken = CGRect(x: 0, y: 25, width: 714, height: 870)
+        let last = SnapRecord(action: .left, step: 0, windowID: 7, frame: taken)
+        #expect(SnapLayout.nextStep(for: .left, windowFrame: taken, area: area, last: last, windowID: 7) == 1)
+
+        let lastStep = SnapRecord(action: .left, step: 2, windowID: 7, frame: taken)
+        #expect(SnapLayout.nextStep(for: .left, windowFrame: taken, area: area, last: lastStep, windowID: 7) == 0)
+    }
+
+    @Test("Another window, another action or a moved window starts over")
+    func startingOver() {
+        let taken = CGRect(x: 0, y: 25, width: 714, height: 870)
+        let last = SnapRecord(action: .left, step: 0, windowID: 7, frame: taken)
+        #expect(SnapLayout.nextStep(for: .left, windowFrame: taken, area: area, last: last, windowID: 8) == 0)
+        #expect(SnapLayout.nextStep(for: .right, windowFrame: taken, area: area, last: last, windowID: 7) == 0)
+        let moved = taken.offsetBy(dx: 40, dy: 0)
+        #expect(SnapLayout.nextStep(for: .left, windowFrame: moved, area: area, last: last, windowID: 7) == 0)
+    }
+
+    @Test("A window another tool already snapped moves on from where it is")
+    func snappedElsewhere() {
+        let half = SnapLayout.frame(for: .left, step: 0, in: area)
+        #expect(SnapLayout.nextStep(for: .left, windowFrame: half, area: area, last: nil, windowID: 1) == 1)
+        #expect(SnapLayout.nextStep(for: .maximize, windowFrame: area, area: area, last: nil, windowID: 1) == 0)
+    }
+
+    @Test("A window snaps on the screen it overlaps most")
+    func screenChoice() {
+        let builtIn = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        let external = CGRect(x: 1440, y: 0, width: 2560, height: 1415)
+        let window = CGRect(x: 1300, y: 100, width: 800, height: 600)
+        #expect(SnapLayout.area(for: window, in: [builtIn, external]) == external)
+        let offScreen = CGRect(x: -5000, y: 0, width: 100, height: 100)
+        #expect(SnapLayout.area(for: offScreen, in: [builtIn, external]) == builtIn)
+        #expect(SnapLayout.area(for: window, in: []) == nil)
+    }
+}
+
+@Suite("Key Shortcuts")
+struct KeyShortcutTests {
+    @Test("A shortcut survives storage, without flags that aren't modifiers")
+    func storage() {
+        let shortcut = KeyShortcut(keyCode: Int64(kVK_LeftArrow), flags: [.maskControl, .maskAlternate, .maskSecondaryFn, .maskNumericPad])
+        #expect(shortcut.flags == [.maskControl, .maskAlternate])
+        #expect(KeyShortcut(storage: shortcut.storage) == shortcut)
+        #expect(KeyShortcut(storage: "") == nil)
+        #expect(KeyShortcut(storage: "left") == nil)
+    }
+
+    @Test("Shortcuts need ⌘, ⌥ or ⌃, except on function keys")
+    func allowed() {
+        #expect(KeyShortcut(keyCode: Int64(kVK_LeftArrow), flags: [.maskControl]).isAllowed)
+        #expect(!KeyShortcut(keyCode: Int64(kVK_ANSI_A), flags: []).isAllowed)
+        #expect(!KeyShortcut(keyCode: Int64(kVK_ANSI_A), flags: [.maskShift]).isAllowed)
+        #expect(KeyShortcut(keyCode: Int64(kVK_F5), flags: []).isAllowed)
+    }
+
+    @Test("Shortcuts read like menus show them")
+    func display() {
+        #expect(KeyShortcut(keyCode: Int64(kVK_LeftArrow), flags: [.maskAlternate, .maskControl]).displayString == "⌃⌥←")
+        #expect(KeyShortcut(keyCode: Int64(kVK_Return), flags: [.maskCommand, .maskShift]).displayString == "⇧⌘↩")
+        #expect(KeyShortcut(keyCode: Int64(kVK_F2), flags: []).displayString == "F2")
+    }
+
+    @Test("Keys are looked up with their modifiers, ignoring the rest of the flags")
+    func lookup() {
+        let shortcuts = SnapShortcuts(SnapShortcuts.defaults)
+        let arrowFlags: CGEventFlags = [.maskControl, .maskAlternate, .maskSecondaryFn, .maskNumericPad]
+        #expect(shortcuts.action(keyCode: Int64(kVK_LeftArrow), flags: arrowFlags) == .left)
+        #expect(shortcuts.action(keyCode: Int64(kVK_LeftArrow), flags: [.maskControl]) == nil)
+        #expect(shortcuts.action(keyCode: Int64(kVK_ANSI_A), flags: [.maskControl, .maskAlternate]) == nil)
+    }
+
+    @Test("Snapping is off by default, and its shortcuts load once it's on")
+    func settings() throws {
+        let name = "MissionStrikeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        SettingKey.registerDefaults(in: defaults)
+        #expect(Settings(defaults).snapShortcuts.isEmpty)
+
+        defaults.set(true, forKey: SettingKey.enableWindowSnapping.rawValue)
+        #expect(Settings(defaults).snapShortcuts == SnapShortcuts(SnapShortcuts.defaults))
+
+        defaults.set("", forKey: SettingKey.snapTopShortcut.rawValue)
+        let snapshot = Settings(defaults).snapShortcuts
+        #expect(snapshot.action(keyCode: Int64(kVK_UpArrow), flags: [.maskControl, .maskAlternate]) == nil)
+        #expect(snapshot.action(keyCode: Int64(kVK_DownArrow), flags: [.maskControl, .maskAlternate]) == .bottom)
+    }
+}

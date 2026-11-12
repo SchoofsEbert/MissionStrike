@@ -110,11 +110,15 @@ struct AXElement: AccessibilityElement, @unchecked Sendable {
     var url: URL? { (attribute(kAXURLAttribute) as? URL)?.standardizedFileURL }
 
     var frame: CGRect? {
-        let values = attributes([kAXPositionAttribute, kAXSizeAttribute])
+        Self.frame(from: attributes([kAXPositionAttribute, kAXSizeAttribute]))
+    }
+
+    /// The frame from batched reads that included position and size.
+    static func frame(from values: [String: CFTypeRef]) -> CGRect? {
         var origin = CGPoint.zero
         var size = CGSize.zero
-        guard let position = Self.cast(values[kAXPositionAttribute], AXValueGetTypeID(), as: AXValue.self),
-              let extent = Self.cast(values[kAXSizeAttribute], AXValueGetTypeID(), as: AXValue.self),
+        guard let position = cast(values[kAXPositionAttribute], AXValueGetTypeID(), as: AXValue.self),
+              let extent = cast(values[kAXSizeAttribute], AXValueGetTypeID(), as: AXValue.self),
               AXValueGetValue(position, .cgPoint, &origin),
               AXValueGetValue(extent, .cgSize, &size) else {
             return nil
@@ -175,6 +179,20 @@ struct AXElement: AccessibilityElement, @unchecked Sendable {
     @discardableResult
     func set(_ attribute: String, to value: CFTypeRef) -> AXError {
         AXUIElementSetAttributeValue(ref, attribute as CFString, value)
+    }
+
+    @discardableResult
+    func setPosition(_ point: CGPoint) -> AXError {
+        var point = point
+        guard let value = AXValueCreate(.cgPoint, &point) else { return .failure }
+        return set(kAXPositionAttribute, to: value)
+    }
+
+    @discardableResult
+    func setSize(_ size: CGSize) -> AXError {
+        var size = size
+        guard let value = AXValueCreate(.cgSize, &size) else { return .failure }
+        return set(kAXSizeAttribute, to: value)
     }
 
     // MARK: - CF casts
