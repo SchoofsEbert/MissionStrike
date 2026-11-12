@@ -14,6 +14,9 @@ private final class FakeTapEnvironment: TapEnvironment {
     var isKeyboardHintsActive = false
     var isCheatSheetPinned = false
     var isRecordingShortcut = false
+    var isSnapAssistActive = false
+    var snapAssistCards: [CGRect] = []
+    var snapAssistFrame: CGRect = .null
     private(set) var missionControlChecks = 0
 
     func isMissionControlActive() -> Bool {
@@ -31,6 +34,14 @@ private final class FakeTapEnvironment: TapEnvironment {
 
     func isOnDock(_ event: TapEvent) -> Bool {
         onDock
+    }
+
+    func snapAssistCard(at point: CGPoint) -> Int? {
+        snapAssistCards.firstIndex { $0.contains(point) }
+    }
+
+    func snapAssistContains(_ point: CGPoint) -> Bool {
+        snapAssistFrame.contains(point)
     }
 }
 
@@ -363,5 +374,58 @@ struct TapRouterSnapTests {
     mutating func off() {
         settings.snapShortcuts = SnapShortcuts()
         #expect(decide(key(kVK_LeftArrow)) == .pass)
+    }
+}
+
+@MainActor
+@Suite("Tap Router: Snap Assist")
+struct TapRouterSnapAssistTests {
+    private var state = TapState()
+    private var settings = Settings.defaults
+    private let environment = FakeTapEnvironment()
+
+    init() {
+        settings.snapShortcuts = SnapShortcuts(SnapShortcuts.defaults)
+        environment.missionControlActive = false
+        environment.isSnapAssistActive = true
+        environment.snapAssistFrame = CGRect(x: 720, y: 0, width: 720, height: 900)
+        environment.snapAssistCards = [CGRect(x: 800, y: 100, width: 200, height: 120)]
+    }
+
+    private mutating func decide(_ event: TapEvent) -> TapDecision {
+        TapRouter.decide(event, state: &state, settings: settings, environment: environment, debounceInterval: 0.3)
+    }
+
+    private func key(_ keyCode: Int, _ flags: CGEventFlags = []) -> TapEvent {
+        TapEvent(type: .keyDown, flags: flags, keyCode: Int64(keyCode))
+    }
+
+    @Test("Number keys pick by key code, Esc closes, and other keys close and pass")
+    mutating func keys() {
+        #expect(decide(key(kVK_ANSI_1)) == .snapAssist(.pick(0)))
+        #expect(decide(key(kVK_ANSI_Keypad9)) == .snapAssist(.pick(8)))
+        #expect(decide(key(kVK_Escape)) == .snapAssist(.cancel))
+        #expect(decide(key(kVK_ANSI_A)) == .snapAssist(.dismiss))
+        #expect(!TapDecision.snapAssist(.dismiss).swallows)
+        #expect(decide(key(kVK_ANSI_1, .maskCommand)) == .snapAssist(.dismiss))
+    }
+
+    @Test("Another snap shortcut snaps again instead of closing the picker")
+    mutating func snapAgain() {
+        #expect(decide(key(kVK_LeftArrow, [.maskControl, .maskAlternate])) == .snap(.left))
+    }
+
+    @Test("A click on a card picks it and swallows its release; elsewhere on the picker it's swallowed")
+    mutating func clicksOnPicker() {
+        #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 850, y: 150))) == .snapAssist(.pick(0)))
+        #expect(decide(TapEvent(type: .leftMouseUp)) == .swallow)
+        #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 1200, y: 800))) == .swallow)
+        #expect(decide(TapEvent(type: .leftMouseUp)) == .swallow)
+    }
+
+    @Test("A click outside the picker closes it and goes its way")
+    mutating func clickOutside() {
+        #expect(decide(TapEvent(type: .leftMouseDown, pointer: CGPoint(x: 100, y: 100))) == .snapAssist(.dismiss))
+        #expect(decide(TapEvent(type: .leftMouseUp)) == .pass)
     }
 }

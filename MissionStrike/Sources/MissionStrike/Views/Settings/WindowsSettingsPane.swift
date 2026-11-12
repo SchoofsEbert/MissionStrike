@@ -6,6 +6,8 @@ import SwiftUI
 struct WindowsSettingsPane: View {
     @AppStorage(SettingKey.enableWindowSnapping.rawValue)
     private var enableWindowSnapping = SettingKey.enableWindowSnapping.defaultBool
+    @AppStorage(SettingKey.enableSnapAssist.rawValue)
+    private var enableSnapAssist = SettingKey.enableSnapAssist.defaultBool
 
     var body: some View {
         Form {
@@ -14,6 +16,11 @@ struct WindowsSettingsPane: View {
                     Text("Snap with Shortcuts")
                     Text("Move the window in front to a side of the screen, or let it fill the screen.")
                 }
+                Toggle(isOn: $enableSnapAssist) {
+                    Text("Choose a Window for the Rest")
+                    Text("After a snap to a side, pick another window for the free part with its number or a click.")
+                }
+                .disabled(!enableWindowSnapping)
             } footer: {
                 Text("Press a side's shortcut again for a third, then two-thirds of the screen.")
                     .foregroundStyle(.secondary)

@@ -54,12 +54,14 @@ enum TapDecision: Equatable {
     case closeCheatSheet
     /// Swallowed; once the callback returns, snap the window in front.
     case snap(SnapAction)
+    /// A key or click for the Snap Assist picker; swallowed unless it only closes the picker.
+    case snapAssist(SnapAssistInput)
 
     var swallows: Bool {
         switch self {
-        case .pass, .modifiersChanged, .passAndProbeDock: false
+        case .pass, .modifiersChanged, .passAndProbeDock, .snapAssist(.dismiss): false
         case .swallow, .missionControlClick, .dockClick, .openMenu, .closeMenu, .shortcut, .startKeyboardHints,
-             .keyboardHint, .toggleCheatSheet, .closeCheatSheet, .snap: true
+             .keyboardHint, .toggleCheatSheet, .closeCheatSheet, .snap, .snapAssist: true
         }
     }
 }
@@ -81,12 +83,19 @@ protocol TapEnvironment {
     var isCheatSheetPinned: Bool { get }
     /// Whether Settings is recording a shortcut, which then needs the key itself.
     var isRecordingShortcut: Bool { get }
+    /// Whether the Snap Assist picker is up: keys and clicks go to it first.
+    var isSnapAssistActive: Bool { get }
+    /// The picker's card at a point (AppKit space).
+    func snapAssistCard(at point: CGPoint) -> Int?
+    /// Whether a point (AppKit space) lies on the picker.
+    func snapAssistContains(_ point: CGPoint) -> Bool
 }
 
 /// Decides what the event tap does with each event. Pure apart from `state`, so it can be
 /// tested without a tap, Mission Control or the Dock.
 @MainActor
 enum TapRouter {
+    // swiftlint:disable:next cyclomatic_complexity
     static func decide(
         _ event: TapEvent,
         state: inout TapState,
@@ -107,6 +116,10 @@ enum TapRouter {
             return state.swallowedMouseUps.consume(event.type) ? .swallow : .pass
         }
         state.swallowedMouseUps.forgetLostRelease(beforePress: event.type)
+
+        if environment.isSnapAssistActive {
+            return snapAssistClick(event, state: &state, environment: environment)
+        }
 
         // While the context menu is open: clicks on the menu work as usual, a right-click
         // elsewhere swaps the menu, and any other click only closes the menu so Mission
@@ -171,6 +184,24 @@ enum TapRouter {
         )
     }
 
+    /// The picker is drawn on a click-through canvas: a click on a card picks it, one elsewhere
+    /// on the picker does nothing, and one outside closes it and goes its way.
+    private static func snapAssistClick(
+        _ event: TapEvent,
+        state: inout TapState,
+        environment: some TapEnvironment
+    ) -> TapDecision {
+        if event.type == .leftMouseDown, let index = environment.snapAssistCard(at: event.pointer) {
+            state.swallowedMouseUps.swallowRelease(of: event.type)
+            return .snapAssist(.pick(index))
+        }
+        if environment.snapAssistContains(event.pointer) {
+            state.swallowedMouseUps.swallowRelease(of: event.type)
+            return .swallow
+        }
+        return .snapAssist(.dismiss)
+    }
+
     /// Plain keys go to the overlays first; anything they don't take, to the ⌘ shortcuts.
     private static func key(
         _ event: TapEvent,
@@ -183,10 +214,18 @@ enum TapRouter {
            HintKey(keyCode: event.keyCode, characters: event.characters) == .cancel {
             return .closeMenu(reopen: false)
         }
-        if let action = settings.snapShortcuts.action(keyCode: event.keyCode, flags: event.flags),
-           !environment.isRecordingShortcut,
-           let decision = snap(action, event, environment: environment) {
+        let snapAction = settings.snapShortcuts.action(keyCode: event.keyCode, flags: event.flags)
+        if let snapAction, !environment.isRecordingShortcut,
+           let decision = snap(snapAction, event, environment: environment) {
             return decision
+        }
+        // Another snap shortcut replaces the picker; number keys pick, Esc closes it, and any
+        // other key closes it and goes its way.
+        if environment.isSnapAssistActive {
+            let input = event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl])
+                ? SnapAssistInput(keyCode: event.keyCode)
+                : .dismiss
+            return .snapAssist(input)
         }
         if event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]),
            let decision = overlayKey(event, settings: settings, environment: environment) {

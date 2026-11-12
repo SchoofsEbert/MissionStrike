@@ -169,6 +169,7 @@ extension EventTapManager {
         if type.rawValue == systemDefinedEventType || type.rawValue == dockGestureEventType {
             MissionControlSession.reset()
             HoverBadgeController.shared.dismissFlash()
+            SnapAssist.shared.dismiss()
             MissionControlOverlays.missionControlMayOpen()
             return false
         }
@@ -259,6 +260,9 @@ extension EventTapManager {
 
         case .snap(let action):
             WindowSnapper.shared.snap(action)
+
+        case .snapAssist(let input):
+            SnapAssist.shared.handle(input)
         }
     }
     // swiftlint:enable cyclomatic_complexity
@@ -343,5 +347,17 @@ private struct LiveTapEnvironment: TapEnvironment {
         // Recording ends when MissionStrike stops being active; this guards against a recorder
         // that missed it.
         ShortcutRecorder.isRecording && NSApp.isActive
+    }
+
+    var isSnapAssistActive: Bool {
+        SnapAssist.shared.isActive
+    }
+
+    func snapAssistCard(at point: CGPoint) -> Int? {
+        SnapAssist.shared.card(at: point)
+    }
+
+    func snapAssistContains(_ point: CGPoint) -> Bool {
+        SnapAssist.shared.contains(point)
     }
 }

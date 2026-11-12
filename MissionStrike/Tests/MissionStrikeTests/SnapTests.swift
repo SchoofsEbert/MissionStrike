@@ -189,3 +189,62 @@ struct KeyShortcutTests {
         #expect(snapshot.action(keyCode: Int64(kVK_DownArrow), flags: [.maskControl, .maskAlternate]) == .bottom)
     }
 }
+
+@Suite("Snap Assist")
+struct SnapAssistTests {
+    private func window(_ id: CGWindowID, pid: pid_t = 10, owner: String = "Notes", layer: Int = 0,
+                        size: CGSize = CGSize(width: 600, height: 400), alpha: Double = 1) -> [String: Any] {
+        [
+            kCGWindowNumber as String: id,
+            kCGWindowOwnerPID as String: pid,
+            kCGWindowOwnerName as String: owner,
+            kCGWindowLayer as String: layer,
+            kCGWindowAlpha as String: alpha,
+            kCGWindowBounds as String: CGRect(origin: .zero, size: size).dictionaryRepresentation as NSDictionary
+        ]
+    }
+
+    @Test("Offers app windows front to back, without the snapped one, our own, system windows or helpers")
+    func candidates() {
+        let list = [
+            window(1), window(2, pid: 11, owner: "Safari"), window(3, owner: "Dock"),
+            window(4, layer: 25), window(5, size: CGSize(width: 30, height: 30)), window(6, alpha: 0),
+            window(7, pid: 99, owner: "MissionStrike"), window(8, pid: 12, owner: "Mail")
+        ]
+        let offered = SnapAssistModel.candidates(in: list, excluding: 1, ownPID: 99)
+        #expect(offered.map(\.windowID) == [2, 8])
+        #expect(offered.first?.appName == "Safari")
+    }
+
+    @Test("At most nine windows, one per number key")
+    func nineAtMost() {
+        let list = (1...12).map { window(CGWindowID($0)) }
+        #expect(SnapAssistModel.candidates(in: list, excluding: nil, ownPID: 99).count == 9)
+    }
+
+    @Test("Cards sit inside the area without overlapping, in a grid that fits")
+    func cards() {
+        let area = CGRect(x: 720, y: 0, width: 720, height: 900)
+        let frames = SnapAssistModel.cardFrames(count: 5, in: area)
+        #expect(frames.count == 5)
+        for (index, frame) in frames.enumerated() {
+            #expect(area.contains(frame))
+            for other in frames[(index + 1)...] {
+                #expect(!frame.intersects(other))
+            }
+        }
+        // Two columns of 220-point cards fit in a half of a 1440-point screen.
+        #expect(Set(frames.map(\.minX)).count == 2)
+        #expect(Set(frames.map(\.minY)).count == 3)
+
+        let narrow = CGRect(x: 0, y: 0, width: 300, height: 900)
+        #expect(SnapAssistModel.cardFrames(count: 3, in: narrow).allSatisfy { narrow.contains($0) })
+        #expect(SnapAssistModel.cardFrames(count: 0, in: area).isEmpty)
+    }
+
+    @Test("The picked window goes against the edge across from the snapped one")
+    func opposite() {
+        #expect(SnapAssistModel.opposite(of: .left) == .right)
+        #expect(SnapAssistModel.opposite(of: .bottom) == .top)
+    }
+}

@@ -21,6 +21,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case tabSwipeAppScope
     case tabSwipeApps
     case enableWindowSnapping
+    case enableSnapAssist
     case snapLeftShortcut
     case snapRightShortcut
     case snapTopShortcut
@@ -41,7 +42,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe, .enableWindowSnapping: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
              .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
-             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics: true
+             .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics, .enableSnapAssist: true
         }
     }
 
@@ -71,6 +72,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .tabSwipeAppScope: "tabSwipeScope"
         case .tabSwipeApps: "tabSwipeApps"
         case .enableWindowSnapping: "snapping"
+        case .enableSnapAssist: "snapAssist"
         case .snapLeftShortcut: "snapLeft"
         case .snapRightShortcut: "snapRight"
         case .snapTopShortcut: "snapTop"
@@ -148,6 +150,7 @@ struct Settings: Equatable, Sendable {
     var tabSwipeApps: TabSwipeApps
     /// Empty while snapping is off.
     var snapShortcuts: SnapShortcuts
+    var enableSnapAssist: Bool
 }
 
 extension Settings {
@@ -170,7 +173,8 @@ extension Settings {
         enableTabSwipe: SettingKey.enableTabSwipe.defaultBool,
         tabSwipeHaptics: SettingKey.tabSwipeHaptics.defaultBool,
         tabSwipeApps: TabSwipeApps(scope: .allApps, bundleIDs: []),
-        snapShortcuts: SnapShortcuts()
+        snapShortcuts: SnapShortcuts(),
+        enableSnapAssist: SettingKey.enableSnapAssist.defaultBool
     )
 
     init(_ defaults: UserDefaults) {
@@ -199,6 +203,7 @@ extension Settings {
                 shortcuts[action] = KeyShortcut(storage: defaults.string(SettingKey.snapShortcut(for: action)))
             })
             : SnapShortcuts()
+        enableSnapAssist = defaults.bool(.enableSnapAssist)
     }
 }
 

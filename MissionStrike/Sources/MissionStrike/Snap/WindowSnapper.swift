@@ -13,6 +13,7 @@ final class WindowSnapper: @unchecked Sendable {
     private init() {}
 
     private let queue = DispatchQueue(label: "io.github.schoofsebert.missionstrike.snap", qos: .userInteractive)
+    private let titleQueue = DispatchQueue(label: "io.github.schoofsebert.missionstrike.snap-titles", qos: .userInitiated)
     /// The last snap of each window, so cycling survives switching windows. Only touched on `queue`.
     private var lastSnaps: [CGWindowID: SnapRecord] = [:]
     private static let maxRecords = 64
@@ -22,14 +23,16 @@ final class WindowSnapper: @unchecked Sendable {
     func snap(_ action: SnapAction) {
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
         let areas = Self.visibleAreas()
+        let assist = SettingsStore.shared.current.enableSnapAssist ? SnapAssist.shared.snapStarted() : nil
         // Accessibility calls on our own windows run AppKit on the calling thread, which must
         // be the main one; AppKit can place them directly.
         if pid == ProcessInfo.processInfo.processIdentifier {
+            SnapAssist.shared.dismiss()
             Self.snapOwnWindow(action, areas: areas)
             return
         }
         queue.async {
-            self.snap(action, pid: pid, areas: areas)
+            self.snap(action, pid: pid, areas: areas, assist: assist)
         }
     }
 
@@ -49,9 +52,19 @@ final class WindowSnapper: @unchecked Sendable {
         window.setFrame(ScreenCoordinates.yFlipped(plan.frame, mainDisplayHeight: height), display: true)
     }
 
-    private func snap(_ action: SnapAction, pid: pid_t, areas: [CGRect]) {
+    /// - Parameter assist: The Snap Assist token, or nil when it's off.
+    private func snap(_ action: SnapAction, pid: pid_t, areas: [CGRect], assist: Int?) {
         let signpost = performanceSignposter.beginInterval("Snap")
-        defer { performanceSignposter.endInterval("Snap", signpost) }
+        var offered = false
+        defer {
+            performanceSignposter.endInterval("Snap", signpost)
+            // A snap that went nowhere still closes the picker an earlier one left up.
+            if let assist, !offered {
+                Task { @MainActor in
+                    SnapAssist.shared.show(action: action, area: .zero, candidates: [], generation: assist)
+                }
+            }
+        }
 
         let app = AXElement.application(pid)
         guard let window = app.element(kAXFocusedWindowAttribute) else {
@@ -70,6 +83,10 @@ final class WindowSnapper: @unchecked Sendable {
             return
         }
         let taken = Self.move(window, of: app, to: plan.frame, action: action, area: plan.area) ?? plan.frame
+        if let assist {
+            offered = true
+            offerTheRest(action: action, step: plan.step, area: plan.area, snapped: windowID, generation: assist)
+        }
         guard let windowID else { return }
         if lastSnaps.count >= Self.maxRecords {
             lastSnaps.removeAll()
@@ -79,9 +96,59 @@ final class WindowSnapper: @unchecked Sendable {
             : SnapRecord(action: action, step: plan.step, windowID: windowID, frame: taken)
     }
 
+    // MARK: - Snap Assist
+
+    /// Hands Snap Assist the windows that could fill the rest, or tells it there's no rest.
+    private func offerTheRest(action: SnapAction, step: Int, area: CGRect, snapped: CGWindowID?, generation: Int) {
+        let rest = SnapLayout.complement(of: action, step: step, in: area)
+        let candidates = rest == nil ? [] : SnapAssistModel.candidates(
+            in: CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [],
+            excluding: snapped,
+            ownPID: ProcessInfo.processInfo.processIdentifier
+        )
+        Task { @MainActor in
+            SnapAssist.shared.show(action: action, area: rest ?? .zero, candidates: candidates, generation: generation)
+        }
+    }
+
+    /// Asks each app for its windows' titles, on a queue of its own so a slow app can't hold up
+    /// placing the window picked meanwhile.
+    func loadTitles(for candidates: [SnapCandidate], generation: Int) {
+        titleQueue.async {
+            var titles: [CGWindowID: String] = [:]
+            let wanted = Set(candidates.map(\.windowID))
+            for pid in Set(candidates.map(\.pid)) {
+                for window in AXElement.application(pid).windows ?? [] {
+                    guard let id = window.windowID, wanted.contains(id), let title = window.title, !title.isEmpty else { continue }
+                    titles[id] = title
+                }
+            }
+            Task { @MainActor in
+                SnapAssist.shared.titlesLoaded(titles, generation: generation)
+            }
+        }
+    }
+
+    /// Puts the picked window in `area`, against the edge `hugging` names, and brings it forward.
+    func place(_ candidate: SnapCandidate, in area: CGRect, hugging edge: SnapAction) {
+        queue.async {
+            let app = AXElement.application(candidate.pid)
+            guard let window = app.windows?.first(where: { $0.windowID == candidate.windowID }) else {
+                logger.info("Snap Assist: the picked window is gone.")
+                return
+            }
+            Self.move(window, of: app, to: area, action: edge, area: area)
+            window.perform(kAXRaiseAction)
+            window.set(kAXMainAttribute, to: kCFBooleanTrue)
+            app.set(kAXFrontmostAttribute, to: kCFBooleanTrue)
+            self.lastSnaps[candidate.windowID] = nil
+        }
+    }
+
     /// Sets the frame and returns the one the window took. Shrinks before moving, so the window
     /// isn't pushed back by a screen edge; sizes again when it couldn't grow where it was, and
     /// moves again when the size it took leaves it off the edge its action hugs.
+    @discardableResult
     static func move(_ window: AXElement, of app: AXElement, to frame: CGRect, action: SnapAction, area: CGRect) -> CGRect? {
         // Chrome and Electron apps turn this on when they see an assistive app; while it's on,
         // they animate every change, and a move and a resize fight each other.
