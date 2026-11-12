@@ -79,6 +79,10 @@ struct ShortcutRecorder: View {
             }
         }
         .onDisappear(perform: stop)
+        // Closing Settings doesn't make the view disappear, and leaving for another app should
+        // give the shortcuts back.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in stop() }
     }
 
     private var label: String {

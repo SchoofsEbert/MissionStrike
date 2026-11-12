@@ -340,6 +340,8 @@ private struct LiveTapEnvironment: TapEnvironment {
     }
 
     var isRecordingShortcut: Bool {
-        ShortcutRecorder.isRecording
+        // Recording ends when MissionStrike stops being active; this guards against a recorder
+        // that missed it.
+        ShortcutRecorder.isRecording && NSApp.isActive
     }
 }

@@ -90,6 +90,35 @@ enum SnapLayout {
         return 0
     }
 
+    /// Where a press puts a window at `windowFrame`: the frame, and the step and area it came
+    /// from. Nil when it has nowhere to go, such as a display move with one screen.
+    static func plan(
+        _ action: SnapAction,
+        windowFrame: CGRect,
+        areas: [CGRect],
+        last: SnapRecord?,
+        windowID: CGWindowID?
+    ) -> (frame: CGRect, step: Int, area: CGRect)? {
+        guard let area = area(for: windowFrame, in: areas) else { return nil }
+        if action.isDisplayMove {
+            return frame(movingToDisplay: action, from: windowFrame, in: areas).map { ($0, 0, area) }
+        }
+        let step = nextStep(for: action, windowFrame: windowFrame, area: area, last: last, windowID: windowID)
+        return (frame(for: action, step: step, in: area), step, area)
+    }
+
+    /// A window that took another size than asked, put back against the edge its action hugs,
+    /// so a right or bottom snap neither leaves a gap nor runs off the screen.
+    static func anchored(_ taken: CGRect, for action: SnapAction, target: CGRect, in area: CGRect) -> CGRect {
+        var origin = target.origin
+        switch action {
+        case .right: origin.x = max(area.minX, area.maxX - taken.width)
+        case .bottom: origin.y = max(area.minY, area.maxY - taken.height)
+        case .left, .top, .maximize, .nextDisplay, .previousDisplay: break
+        }
+        return CGRect(origin: origin, size: taken.size)
+    }
+
     /// The frame on the next screen to the right (or left), wrapping around, at the same place
     /// relative to its area: a snapped window stays snapped the same way. Nil with one screen.
     static func frame(movingToDisplay action: SnapAction, from windowFrame: CGRect, in areas: [CGRect]) -> CGRect? {

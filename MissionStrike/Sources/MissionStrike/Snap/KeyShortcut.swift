@@ -86,8 +86,11 @@ struct KeyShortcut: Hashable, Sendable {
 struct SnapShortcuts: Equatable, Sendable {
     private var actions: [KeyShortcut: SnapAction] = [:]
 
+    /// Leaves out shortcuts that would take a key from typing, as a hand-edited default could;
+    /// of two actions with the same shortcut, the first in `SnapAction` order keeps it.
     init(_ shortcuts: [SnapAction: KeyShortcut] = [:]) {
-        for (action, shortcut) in shortcuts {
+        for action in SnapAction.allCases {
+            guard let shortcut = shortcuts[action], shortcut.isAllowed, actions[shortcut] == nil else { continue }
             actions[shortcut] = action
         }
     }

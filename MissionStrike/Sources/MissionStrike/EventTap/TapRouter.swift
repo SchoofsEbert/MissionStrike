@@ -184,8 +184,9 @@ enum TapRouter {
             return .closeMenu(reopen: false)
         }
         if let action = settings.snapShortcuts.action(keyCode: event.keyCode, flags: event.flags),
-           !environment.isRecordingShortcut {
-            return snap(action, event, environment: environment)
+           !environment.isRecordingShortcut,
+           let decision = snap(action, event, environment: environment) {
+            return decision
         }
         if event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl]),
            let decision = overlayKey(event, settings: settings, environment: environment) {
@@ -222,9 +223,10 @@ enum TapRouter {
     }
 
     /// A snap shortcut, anywhere but in Mission Control, where there's no window in front to
-    /// snap. A held shortcut is swallowed without snapping again and again.
-    private static func snap(_ action: SnapAction, _ event: TapEvent, environment: some TapEnvironment) -> TapDecision {
-        guard !environment.isMissionControlActive() else { return .pass }
+    /// snap and the key may mean something else. A held shortcut is swallowed without snapping
+    /// again and again.
+    private static func snap(_ action: SnapAction, _ event: TapEvent, environment: some TapEnvironment) -> TapDecision? {
+        guard !environment.isMissionControlActive() else { return nil }
         return event.isAutorepeat ? .swallow : .snap(action)
     }
 

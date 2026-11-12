@@ -352,6 +352,13 @@ struct TapRouterSnapTests {
         #expect(decide(key(kVK_LeftArrow)) == .pass)
     }
 
+    @Test("In Mission Control, a snap shortcut that is also ⌘W keeps its Mission Control meaning")
+    mutating func missionControlMeaning() {
+        settings.snapShortcuts = SnapShortcuts([.left: KeyShortcut(keyCode: Int64(kVK_ANSI_W), flags: .maskCommand)])
+        environment.missionControlActive = true
+        #expect(decide(key(kVK_ANSI_W, .maskCommand)) == .shortcut(.closeWindow, isRepeat: false))
+    }
+
     @Test("With snapping off, the shortcuts are ordinary keys")
     mutating func off() {
         settings.snapShortcuts = SnapShortcuts()

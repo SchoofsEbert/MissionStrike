@@ -63,6 +63,33 @@ struct SnapLayoutTests {
         #expect(SnapLayout.nextStep(for: .maximize, windowFrame: area, area: area, last: nil, windowID: 1) == 0)
     }
 
+    @Test("A window that won't take the asked size still hugs the right and bottom edges")
+    func anchoring() {
+        let fixed = CGRect(x: 720, y: 25, width: 500, height: 875)
+        let rightHalf = SnapLayout.frame(for: .right, step: 0, in: area)
+        #expect(SnapLayout.anchored(fixed, for: .right, target: rightHalf, in: area) == CGRect(x: 940, y: 25, width: 500, height: 875))
+
+        let tooWide = CGRect(x: 960, y: 25, width: 1600, height: 875)
+        #expect(SnapLayout.anchored(tooWide, for: .right, target: rightHalf, in: area).minX == area.minX)
+
+        let rounded = CGRect(x: 0, y: 462, width: 1440, height: 430)
+        let bottomHalf = SnapLayout.frame(for: .bottom, step: 0, in: area)
+        #expect(SnapLayout.anchored(rounded, for: .bottom, target: bottomHalf, in: area).maxY == area.maxY)
+
+        let leftHalf = SnapLayout.frame(for: .left, step: 0, in: area)
+        #expect(SnapLayout.anchored(fixed, for: .left, target: leftHalf, in: area).origin == leftHalf.origin)
+    }
+
+    @Test("A plan picks the window's screen and step, and has nowhere to go for a display move on one screen")
+    func plans() {
+        let window = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let plan = SnapLayout.plan(.left, windowFrame: window, areas: [area], last: nil, windowID: 1)
+        #expect(plan?.frame == SnapLayout.frame(for: .left, step: 0, in: area))
+        #expect(plan?.area == area)
+        #expect(SnapLayout.plan(.nextDisplay, windowFrame: window, areas: [area], last: nil, windowID: 1) == nil)
+        #expect(SnapLayout.plan(.left, windowFrame: window, areas: [], last: nil, windowID: 1) == nil)
+    }
+
     @Test("A window snaps on the screen it overlaps most")
     func screenChoice() {
         let builtIn = CGRect(x: 0, y: 25, width: 1440, height: 875)
@@ -130,6 +157,15 @@ struct KeyShortcutTests {
         #expect(shortcuts.action(keyCode: Int64(kVK_LeftArrow), flags: arrowFlags) == .left)
         #expect(shortcuts.action(keyCode: Int64(kVK_LeftArrow), flags: [.maskControl]) == nil)
         #expect(shortcuts.action(keyCode: Int64(kVK_ANSI_A), flags: [.maskControl, .maskAlternate]) == nil)
+    }
+
+    @Test("Shortcuts that would take a key from typing are dropped, and a shared one goes to the first action")
+    func invalidAndShared() {
+        let plainA = KeyShortcut(keyCode: Int64(kVK_ANSI_A), flags: [])
+        let shared = KeyShortcut(keyCode: Int64(kVK_ANSI_K), flags: [.maskCommand, .maskAlternate])
+        let shortcuts = SnapShortcuts([.left: plainA, .right: shared, .maximize: shared])
+        #expect(shortcuts.action(keyCode: Int64(kVK_ANSI_A), flags: []) == nil)
+        #expect(shortcuts.action(keyCode: Int64(kVK_ANSI_K), flags: [.maskCommand, .maskAlternate]) == .right)
     }
 
     @Test("Snapping is off by default, and its shortcuts load once it's on")
