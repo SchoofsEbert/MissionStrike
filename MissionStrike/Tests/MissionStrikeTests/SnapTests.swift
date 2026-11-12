@@ -252,13 +252,24 @@ struct SnapAssistTests {
                 #expect(!frame.intersects(other))
             }
         }
-        // Two columns of 220-point cards fit in a half of a 1440-point screen.
-        #expect(Set(frames.map(\.minX)).count == 2)
+        // Two columns make the largest cells in this half; the fifth window is centred below.
         #expect(Set(frames.map(\.minY)).count == 3)
+        #expect(frames[0].minY == frames[1].minY)
+        #expect(abs(frames[4].midX - area.midX) <= 1)
 
         let narrow = CGRect(x: 0, y: 0, width: 300, height: 900)
         #expect(SnapAssistModel.cardFrames(count: 3, in: narrow).allSatisfy { narrow.contains($0) })
         #expect(SnapAssistModel.cardFrames(count: 0, in: area).isEmpty)
+    }
+
+    @Test("A thumbnail keeps its window's shape, centred above the label")
+    func thumbnails() {
+        let cell = CGSize(width: 400, height: 330)
+        let wide = SnapAssistModel.thumbnailFrame(for: CGSize(width: 1600, height: 900), in: cell)
+        #expect(wide == CGRect(x: 0, y: 38, width: 400, height: 225))
+        let tall = SnapAssistModel.thumbnailFrame(for: CGSize(width: 500, height: 1000), in: cell)
+        #expect(tall.height == 300)
+        #expect(tall.midX == 200)
     }
 
     @Test("The picked window goes against the edge across from the snapped one")

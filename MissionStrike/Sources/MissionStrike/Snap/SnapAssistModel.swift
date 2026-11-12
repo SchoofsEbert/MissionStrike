@@ -6,6 +6,8 @@ struct SnapCandidate: Equatable, Sendable {
     let windowID: CGWindowID
     let pid: pid_t
     let appName: String
+    /// The window's size, for the shape of its thumbnail.
+    let size: CGSize
     /// Filled in once Accessibility has answered; window-list titles need Screen Recording.
     var title: String?
 }
@@ -86,7 +88,7 @@ enum SnapAssistModel {
             let isRegular = regular[pid] ?? isRegularApp(pid)
             regular[pid] = isRegular
             guard isRegular else { continue }
-            result.append(SnapCandidate(windowID: id, pid: pid, appName: owner))
+            result.append(SnapCandidate(windowID: id, pid: pid, appName: owner, size: bounds.size))
             if result.count == maxCandidates { break }
         }
         return result
@@ -103,30 +105,55 @@ enum SnapAssistModel {
         }
     }
 
-    static let cardSize = CGSize(width: 220, height: 132)
-    static let spacing: CGFloat = 16
+    /// The largest a window's cell gets, so one or two windows don't fill a whole half.
+    static let maxCellSize = CGSize(width: 420, height: 320)
+    static let spacing: CGFloat = 24
+    /// Below each thumbnail, for its title.
+    static let labelHeight: CGFloat = 30
 
-    /// The cards' frames, a centred grid within `area` (any coordinate space with y down, as the
-    /// canvas lays out). Cards shrink to fit a narrow or short area.
+    /// One cell per window, in a centred grid within `area` (any space with y down, as the
+    /// canvas lays out), with as many columns as make the cells largest, like App Exposé.
     static func cardFrames(count: Int, in area: CGRect) -> [CGRect] {
         guard count > 0 else { return [] }
-        let grid = area.insetBy(dx: spacing * 2, dy: spacing * 2)
+        let grid = area.insetBy(dx: spacing * 1.5, dy: spacing * 1.5)
         guard grid.width > 0, grid.height > 0 else { return [] }
-        let fitting = Int((grid.width + spacing) / (cardSize.width + spacing))
-        let columns = max(1, min(count, fitting))
+        func cell(columns: Int) -> CGSize {
+            let rows = (count + columns - 1) / columns
+            return CGSize(
+                width: min(maxCellSize.width, (grid.width - spacing * CGFloat(columns - 1)) / CGFloat(columns)),
+                height: min(maxCellSize.height, (grid.height - spacing * CGFloat(rows - 1)) / CGFloat(rows))
+            )
+        }
+        // Windows are mostly wider than tall: score a cell by the 4:3 thumbnail it holds.
+        let columns = (1...count).max { lhs, rhs in
+            let one = cell(columns: lhs), other = cell(columns: rhs)
+            return min(one.width, (one.height - labelHeight) * 4 / 3) < min(other.width, (other.height - labelHeight) * 4 / 3)
+        } ?? 1
+        let size = cell(columns: columns)
         let rows = (count + columns - 1) / columns
-        let width = min(cardSize.width, (grid.width - spacing * CGFloat(columns - 1)) / CGFloat(columns))
-        let height = min(cardSize.height, (grid.height - spacing * CGFloat(rows - 1)) / CGFloat(rows))
-        let totalWidth = width * CGFloat(columns) + spacing * CGFloat(columns - 1)
-        let totalHeight = height * CGFloat(rows) + spacing * CGFloat(rows - 1)
-        let origin = CGPoint(x: grid.midX - totalWidth / 2, y: grid.minY + max(0, (grid.height - totalHeight) / 2))
+        let totalHeight = size.height * CGFloat(rows) + spacing * CGFloat(rows - 1)
+        let top = grid.minY + max(0, (grid.height - totalHeight) / 2)
         return (0..<count).map { index in
-            CGRect(
-                x: origin.x + CGFloat(index % columns) * (width + spacing),
-                y: origin.y + CGFloat(index / columns) * (height + spacing),
-                width: width,
-                height: height
+            let row = index / columns
+            // The last row is centred on its own when it isn't full.
+            let inRow = row == rows - 1 ? count - row * columns : columns
+            let rowWidth = size.width * CGFloat(inRow) + spacing * CGFloat(inRow - 1)
+            return CGRect(
+                x: grid.midX - rowWidth / 2 + CGFloat(index % columns) * (size.width + spacing),
+                y: top + CGFloat(row) * (size.height + spacing),
+                width: size.width,
+                height: size.height
             ).integral
         }
+    }
+
+    /// The thumbnail inside a cell: the window's shape, as large as fits above the label.
+    static func thumbnailFrame(for windowSize: CGSize, in cell: CGSize) -> CGRect {
+        let room = CGSize(width: cell.width, height: max(0, cell.height - labelHeight))
+        guard windowSize.width > 0, windowSize.height > 0, room.height > 0 else { return CGRect(origin: .zero, size: room) }
+        let scale = min(room.width / windowSize.width, room.height / windowSize.height)
+        let size = CGSize(width: (windowSize.width * scale).rounded(), height: (windowSize.height * scale).rounded())
+        let origin = CGPoint(x: ((room.width - size.width) / 2).rounded(), y: ((room.height - size.height) / 2).rounded())
+        return CGRect(origin: origin, size: size)
     }
 }

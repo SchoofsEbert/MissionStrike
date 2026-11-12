@@ -28,6 +28,7 @@ final class SnapAssist {
         let screen: CGRect
         var candidates: [SnapCandidate]
         let icons: [pid_t: NSImage]
+        var previews: [CGWindowID: CGImage] = [:]
         /// Canvas coordinates of `screen`.
         let panel: CGRect
         var cards: [CGRect]
@@ -85,6 +86,22 @@ final class SnapAssist {
         startTrackingPointer()
         render(on: screen)
         WindowSnapper.shared.loadDetails(for: candidates, generation: generation)
+        if SettingsStore.shared.current.showSnapPreviews {
+            let windowIDs = candidates.map(\.windowID)
+            Task.detached(priority: .userInitiated) {
+                guard SnapPreviews.isAllowed else { return }
+                let previews = await SnapPreviews.capture(windowIDs)
+                await SnapAssist.shared.previewsLoaded(previews, generation: generation)
+            }
+        }
+    }
+
+    /// The pictures arrived; they fade in over the icons.
+    func previewsLoaded(_ previews: [CGWindowID: CGImage], generation: Int) {
+        guard generation == self.generation, var session, !previews.isEmpty else { return }
+        session.previews = previews
+        self.session = session
+        render()
     }
 
     /// Accessibility answered: titles, and which windows can't be placed after all (sheets,
@@ -164,6 +181,7 @@ final class SnapAssist {
         let view = SnapAssistView(
             candidates: session.candidates,
             icons: session.icons,
+            previews: session.previews,
             panel: session.panel,
             cards: session.cards,
             hovered: session.hovered
@@ -215,72 +233,141 @@ final class SnapAssist {
     }
 }
 
-/// The picker: a dimmed panel over the free part of the screen, with a card per window.
+/// The picker: the free part of the screen outlined like macOS's own tiling preview, with the
+/// windows laid out in it like App Exposé.
 struct SnapAssistView: View {
     let candidates: [SnapCandidate]
     let icons: [pid_t: NSImage]
+    let previews: [CGWindowID: CGImage]
     let panel: CGRect
     let cards: [CGRect]
     let hovered: Int?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.black.opacity(0.15)))
-                .padding(8)
-                .placed(in: panel, alignment: .center)
+            SnapAreaOutline()
+                .placed(in: panel.insetBy(dx: 6, dy: 6), alignment: .center)
 
-            ForEach(Array(zip(candidates.indices, cards)), id: \.0) { index, frame in
-                SnapCardView(
-                    candidate: candidates[index],
-                    icon: icons[candidates[index].pid],
+            ForEach(Array(zip(candidates.indices, cards)), id: \.0) { index, cell in
+                let candidate = candidates[index]
+                SnapThumbnailView(
+                    candidate: candidate,
+                    icon: icons[candidate.pid],
+                    preview: previews[candidate.windowID],
                     number: index + 1,
-                    isHovered: hovered == index
+                    isHovered: hovered == index,
+                    cell: cell.size
                 )
-                    .placed(in: frame, alignment: .center)
+                .placed(in: cell, alignment: .topLeading)
             }
+        }
+        .animation(.easeOut(duration: 0.15), value: previews.count)
+    }
+}
+
+/// Like the outline macOS draws where a dragged window will tile: glass on macOS 26 and later.
+private struct SnapAreaOutline: View {
+    private static let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            Color.clear
+                .glassEffect(.clear, in: Self.shape)
+                .overlay(Self.shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
+        } else {
+            Self.shape
+                .fill(.ultraThinMaterial)
+                .overlay(Self.shape.strokeBorder(.white.opacity(0.25), lineWidth: 1))
         }
     }
 }
 
-/// One window: its number like a keycap, the app's icon and name, and the title once known.
-struct SnapCardView: View {
+/// One window: its picture (or its app's icon), a number to type, and its title below, with
+/// Mission Control's blue ring under the pointer.
+struct SnapThumbnailView: View {
     let candidate: SnapCandidate
     let icon: NSImage?
+    let preview: CGImage?
     let number: Int
     let isHovered: Bool
+    let cell: CGSize
 
-    private static let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(alignment: .top) {
-                Text("\(number)")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .frame(minWidth: 14)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                Spacer()
-            }
-            Image(nsImage: icon ?? NSWorkspace.shared.icon(for: .application))
-                .resizable()
-                .frame(width: 40, height: 40)
-            VStack(spacing: 1) {
-                Text(candidate.appName)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(candidate.title ?? " ")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-            .truncationMode(.middle)
+        let thumbnail = SnapAssistModel.thumbnailFrame(for: candidate.size, in: cell)
+        ZStack(alignment: .topLeading) {
+            picture
+                .frame(width: thumbnail.width, height: thumbnail.height)
+                .clipShape(Self.shape)
+                .overlay {
+                    if isHovered {
+                        Self.shape.inset(by: -4).strokeBorder(Color.accentColor, lineWidth: 3)
+                    }
+                }
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+                .overlay(alignment: .topLeading) {
+                    NumberBadge(number: number)
+                        .offset(x: -9, y: -9)
+                }
+                .offset(x: thumbnail.minX, y: thumbnail.minY)
+
+            label
+                .frame(width: cell.width)
+                .offset(y: thumbnail.maxY + 8)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Self.shape.fill(.regularMaterial))
-        .overlay(Self.shape.strokeBorder(isHovered ? Color.accentColor : .white.opacity(0.2), lineWidth: isHovered ? 3 : 0.5))
-        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+        .frame(width: cell.width, height: cell.height, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var picture: some View {
+        if let preview {
+            Image(decorative: preview, scale: 2)
+                .resizable()
+                .transition(.opacity)
+        } else {
+            ZStack {
+                Self.shape.fill(.regularMaterial)
+                Image(nsImage: icon ?? NSWorkspace.shared.icon(for: .application))
+                    .resizable()
+                    .frame(width: 64, height: 64)
+            }
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: 5) {
+            if preview != nil, let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 16, height: 16)
+            }
+            Text(candidate.title ?? candidate.appName)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: Capsule())
+        .frame(maxWidth: cell.width - 8)
+    }
+}
+
+/// The number to type, on glass like the system's own small controls.
+private struct NumberBadge: View {
+    let number: Int
+
+    var body: some View {
+        let text = Text("\(number)")
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(width: 26, height: 26)
+        if #available(macOS 26, *) {
+            text.glassEffect(.regular, in: Circle())
+        } else {
+            text
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+        }
     }
 }

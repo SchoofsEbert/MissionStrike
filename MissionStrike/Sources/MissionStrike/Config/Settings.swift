@@ -22,6 +22,7 @@ enum SettingKey: String, CaseIterable, Sendable {
     case tabSwipeApps
     case enableWindowSnapping
     case enableSnapAssist
+    case showSnapPreviews
     case snapLeftShortcut
     case snapRightShortcut
     case snapTopShortcut
@@ -39,7 +40,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .snapLeftShortcut, .snapRightShortcut, .snapTopShortcut, .snapBottomShortcut, .snapMaximizeShortcut,
              .snapNextDisplayShortcut, .snapPreviousDisplayShortcut:
             snapAction.flatMap { SnapShortcuts.defaults[$0]?.storage } ?? ""
-        case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe, .enableWindowSnapping: false
+        case .enableDockMiddleClick, .poofOnClose, .enableTabSwipe, .enableWindowSnapping, .showSnapPreviews: false
         case .enableMiddleClick, .enableContextMenu, .enableKeyboardShortcuts, .showHoverBadge,
              .enableSpaceClosing, .hapticFeedback, .showMenuBarIcon, .showWindowCounts,
              .enableKeyboardHints, .showCheatSheet, .showFirstRunHint, .tabSwipeHaptics, .enableSnapAssist: true
@@ -73,6 +74,7 @@ enum SettingKey: String, CaseIterable, Sendable {
         case .tabSwipeApps: "tabSwipeApps"
         case .enableWindowSnapping: "snapping"
         case .enableSnapAssist: "snapAssist"
+        case .showSnapPreviews: "snapPreviews"
         case .snapLeftShortcut: "snapLeft"
         case .snapRightShortcut: "snapRight"
         case .snapTopShortcut: "snapTop"
@@ -151,6 +153,7 @@ struct Settings: Equatable, Sendable {
     /// Empty while snapping is off.
     var snapShortcuts: SnapShortcuts
     var enableSnapAssist: Bool
+    var showSnapPreviews: Bool
 }
 
 extension Settings {
@@ -174,7 +177,8 @@ extension Settings {
         tabSwipeHaptics: SettingKey.tabSwipeHaptics.defaultBool,
         tabSwipeApps: TabSwipeApps(scope: .allApps, bundleIDs: []),
         snapShortcuts: SnapShortcuts(),
-        enableSnapAssist: SettingKey.enableSnapAssist.defaultBool
+        enableSnapAssist: SettingKey.enableSnapAssist.defaultBool,
+        showSnapPreviews: SettingKey.showSnapPreviews.defaultBool
     )
 
     init(_ defaults: UserDefaults) {
@@ -204,6 +208,7 @@ extension Settings {
             })
             : SnapShortcuts()
         enableSnapAssist = defaults.bool(.enableSnapAssist)
+        showSnapPreviews = defaults.bool(.showSnapPreviews)
     }
 }
 

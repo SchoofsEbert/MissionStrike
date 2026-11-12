@@ -8,6 +8,16 @@ struct WindowsSettingsPane: View {
     private var enableWindowSnapping = SettingKey.enableWindowSnapping.defaultBool
     @AppStorage(SettingKey.enableSnapAssist.rawValue)
     private var enableSnapAssist = SettingKey.enableSnapAssist.defaultBool
+    @AppStorage(SettingKey.showSnapPreviews.rawValue)
+    private var showSnapPreviews = SettingKey.showSnapPreviews.defaultBool
+    @State private var canCapture = SnapPreviews.isAllowed
+
+    private static let screenRecordingSettings = URL(
+        string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture"
+    )! // swiftlint:disable:this force_unwrapping
+
+    /// Back from System Settings: Screen Recording may have been turned on.
+    private let appBecameActive = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
 
     var body: some View {
         Form {
@@ -21,6 +31,24 @@ struct WindowsSettingsPane: View {
                     Text("After a snap to a side, pick another window for the free part with its number or a click.")
                 }
                 .disabled(!enableWindowSnapping)
+                Toggle(isOn: $showSnapPreviews) {
+                    Text("Show Window Previews")
+                    Text("Show a picture of each window instead of its app's icon. Needs Screen Recording access.")
+                }
+                .disabled(!enableWindowSnapping || !enableSnapAssist)
+                if showSnapPreviews, !canCapture {
+                    LabeledContent {
+                        Button("Open Privacy Settings") {
+                            NSWorkspace.shared.open(Self.screenRecordingSettings)
+                        }
+                    } label: {
+                        Label(
+                            "Screen Recording is off for MissionStrike, so windows show their app's icon.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .symbolRenderingMode(.multicolor)
+                    }
+                }
             } footer: {
                 Text("Press a side's shortcut again for a third, then two-thirds of the screen.")
                     .foregroundStyle(.secondary)
@@ -43,6 +71,16 @@ struct WindowsSettingsPane: View {
             .disabled(!enableWindowSnapping)
         }
         .formStyle(.grouped)
+        .onChange(of: showSnapPreviews) {
+            // Asks once; after that macOS only changes it in System Settings.
+            if showSnapPreviews, !SnapPreviews.isAllowed {
+                CGRequestScreenCaptureAccess()
+            }
+            canCapture = SnapPreviews.isAllowed
+        }
+        .onReceive(appBecameActive) { _ in
+            canCapture = SnapPreviews.isAllowed
+        }
     }
 }
 
