@@ -7,6 +7,8 @@ struct OnboardingView: View {
     @State private var isMovingForward = true
     @State private var isAccessibilityEnabled = AXIsProcessTrusted()
     @State private var accessibilityRetryTask: Task<Void, Never>?
+    @AppStorage(SettingKey.enableWindowSnapping.rawValue)
+    private var enableWindowSnapping = SettingKey.enableWindowSnapping.defaultBool
 
     /// Called when the user finishes onboarding.
     var onComplete: () -> Void
@@ -53,6 +55,15 @@ struct OnboardingView: View {
                     Button("Skip for Now") {
                         go(to: currentStep + 1)
                     }
+                } else if currentStep == 4 && !enableWindowSnapping {
+                    Button("Not Now") {
+                        go(to: currentStep + 1)
+                    }
+                    Button("Turn On") {
+                        enableWindowSnapping = true
+                        go(to: currentStep + 1)
+                    }
+                    .keyboardShortcut(.defaultAction)
                 } else if currentStep < totalSteps - 1 {
                     Button("Continue") {
                         go(to: currentStep + 1)
@@ -277,71 +288,9 @@ struct OnboardingView: View {
     }
 }
 
-// MARK: - Feature Pages and Layout Helpers
+// MARK: - Layout Helpers
 
 extension OnboardingView {
-    // MARK: - Step 3: Closing Windows
-
-    private var howItWorksStep: some View {
-        stepPage(title: "Closing Windows") {
-            sectionLabel("Triggers")
-            featureRow(
-                icon: "computermouse.fill",
-                title: "Middle-Click",
-                description: "Click any window in Mission Control to close it."
-            )
-            featureRow(
-                icon: "option",
-                title: "Option + Click",
-                description: "No middle button? Hold Option and click. You can change the key in Settings."
-            )
-            featureRow(
-                icon: "square.stack.3d.up",
-                title: "Spaces",
-                description: "The same clicks remove a Space in the bar at the top."
-            )
-
-            sectionLabel("Modifiers").padding(.top, 6)
-            featureRow(
-                icon: "minus.circle",
-                title: "⇧ Shift + Click",
-                description: "Minimize the window to the Dock instead."
-            )
-            featureRow(
-                icon: "xmark.circle.fill",
-                title: "⌘ Command + Click",
-                description: "Close all of that app's windows at once."
-            )
-        }
-    }
-
-    // MARK: - Step 4: More Ways
-
-    private var moreWaysStep: some View {
-        stepPage(title: "More Ways") {
-            featureRow(
-                icon: "xmark.circle",
-                title: "See What a Click Will Do",
-                description: "Hold Option over a window and a close button marks it. Add ⇧ to minimize or ⌘ to close all."
-            )
-            featureRow(
-                icon: "contextualmenu.and.cursorarrow",
-                title: "Right-Click Menu",
-                description: "Right-click a window to close, minimize, hide or quit its app, or the background to quit apps with no windows."
-            )
-            featureRow(
-                icon: "command",
-                title: "Keyboard Shortcuts",
-                description: "Point at a window and press ⌘W to close, ⌘M to minimize, ⌘H to hide or ⌘Q to quit."
-            )
-            featureRow(
-                icon: "dock.rectangle",
-                title: "Dock Middle-Click",
-                description: "Turn it on in Settings to quit an app by middle-clicking its Dock icon."
-            )
-        }
-    }
-
     /// Title plus left-aligned rows, centred vertically on the page.
     func stepPage<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 18) {
@@ -358,7 +307,7 @@ extension OnboardingView {
         .padding(24)
     }
 
-    private func sectionLabel(_ text: String) -> some View {
+    func sectionLabel(_ text: String) -> some View {
         Text(text)
             .font(.caption)
             .foregroundStyle(.tertiary)
