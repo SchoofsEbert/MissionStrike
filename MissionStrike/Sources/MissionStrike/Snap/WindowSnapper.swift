@@ -14,22 +14,25 @@ final class WindowSnapper: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "io.github.schoofsebert.missionstrike.snap", qos: .userInteractive)
     private let titleQueue = DispatchQueue(label: "io.github.schoofsebert.missionstrike.snap-titles", qos: .userInitiated)
-    /// The last snap of each window, so cycling survives switching windows. Only touched on `queue`.
-    private var lastSnaps: [CGWindowID: SnapRecord] = [:]
-    /// Where each window was before MissionStrike first moved it, for Restore. Only touched on `queue`.
-    private var restoreFrames: [CGWindowID: CGRect] = [:]
-    private static let maxRecords = 64
+    /// Each window's last snap and where it was before, for cycling and Restore. Only touched on `queue`.
+    private var memory = SnapMemory()
 
     /// Reads what only the main thread may (the app in front, the screens), then snaps off it.
     @MainActor
     func snap(_ action: SnapAction) {
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
         let areas = Self.visibleAreas()
-        let assist = SettingsStore.shared.current.enableSnapAssist ? SnapAssist.shared.snapStarted() : nil
+        // Only a snap to a side can bring a picker; anything else closes one that's up.
+        let assist = SettingsStore.shared.current.enableSnapAssist && action.leavesRest ? SnapAssist.shared.snapStarted() : nil
+        if assist == nil {
+            SnapAssist.shared.dismiss()
+        }
         // Accessibility calls on our own windows run AppKit on the calling thread, which must
         // be the main one; AppKit can place them directly.
         if pid == ProcessInfo.processInfo.processIdentifier {
-            SnapAssist.shared.dismiss()
+            if assist != nil {
+                SnapAssist.shared.dismiss()
+            }
             // Not inside the tap callback: a relayout of Settings would hold up all input.
             Task { @MainActor in
                 Self.snapOwnWindow(action, areas: areas)
@@ -83,20 +86,20 @@ final class WindowSnapper: @unchecked Sendable {
             return
         }
         let windowID = window.windowID
-        let last = windowID.flatMap { lastSnaps[$0] }
         // Restore, or fill again on a window that already fills its screen: back to where it was.
-        let fillsScreen = SnapLayout.area(for: current, in: areas).map { SnapLayout.isClose($0, current) } == true
-        if action == .restore || (action == .maximize && fillsScreen) {
-            guard let windowID, let frame = restoreFrames.removeValue(forKey: windowID) else { return }
-            Self.move(window, of: app, to: frame, action: .restore, area: frame)
-            lastSnaps[windowID] = nil
+        if let windowID, action == .restore || (action == .maximize && memory.fillRestores(windowID, current: current, areas: areas)) {
+            if let frame = memory.takeRestore(windowID, current: current, areas: areas) {
+                Self.move(window, of: app, to: frame, action: .restore, area: frame)
+            }
+            return
+        }
+        let last = memory.record(for: windowID)
+        guard action != .restore,
+              let plan = SnapLayout.plan(action, windowFrame: current, areas: areas, last: last, windowID: windowID) else {
             return
         }
         if let windowID {
-            remember(current, of: windowID, unlessPlacedBy: last)
-        }
-        guard let plan = SnapLayout.plan(action, windowFrame: current, areas: areas, last: last, windowID: windowID) else {
-            return
+            memory.willMove(windowID, from: current, liveWindows: Self.liveWindowIDs)
         }
         let taken = Self.move(window, of: app, to: plan.frame, action: action, area: plan.area) ?? plan.frame
         if let assist {
@@ -108,23 +111,16 @@ final class WindowSnapper: @unchecked Sendable {
                 generation: assist
             )
         }
-        guard let windowID else { return }
-        if lastSnaps.count >= Self.maxRecords {
-            lastSnaps.removeAll()
+        if let windowID {
+            let record = SnapRecord(action: action, step: action.isDisplayMove ? nil : plan.step, windowID: windowID, frame: taken)
+            memory.didMove(windowID, record, liveWindows: Self.liveWindowIDs)
         }
-        lastSnaps[windowID] = action.isDisplayMove
-            ? nil
-            : SnapRecord(action: action, step: plan.step, windowID: windowID, frame: taken)
     }
 
-    /// Keeps a window's frame for Restore, unless MissionStrike put it there: a window snapped
-    /// again and again restores to where it was before the first snap.
-    private func remember(_ frame: CGRect, of windowID: CGWindowID, unlessPlacedBy last: SnapRecord?) {
-        if let last, SnapLayout.isClose(last.frame, frame), restoreFrames[windowID] != nil { return }
-        if restoreFrames.count >= Self.maxRecords {
-            restoreFrames.removeAll()
-        }
-        restoreFrames[windowID] = frame
+    /// Every window there is, to drop what snapping remembers about windows that are gone.
+    private static func liveWindowIDs() -> Set<CGWindowID> {
+        let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+        return Set(list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
     }
 
     // MARK: - Snap Assist
@@ -200,15 +196,19 @@ final class WindowSnapper: @unchecked Sendable {
             let values = window.attributes([kAXPositionAttribute, kAXSizeAttribute, Self.fullScreenAttribute])
             guard values[Self.fullScreenAttribute] as? Bool != true else { return }
             if let current = AXElement.frame(from: values) {
-                self.remember(current, of: candidate.windowID, unlessPlacedBy: self.lastSnaps[candidate.windowID])
+                self.memory.willMove(candidate.windowID, from: current, liveWindows: Self.liveWindowIDs)
             }
             let taken = Self.move(window, of: app, to: target, action: edge, area: screenArea) ?? target
             window.perform(kAXRaiseAction)
             window.set(kAXMainAttribute, to: kCFBooleanTrue)
             app.set(kAXFrontmostAttribute, to: kCFBooleanTrue)
             // Placed by MissionStrike: a later snap of it keeps its Restore frame, and its edge's
-            // shortcut moves on to a third.
-            self.lastSnaps[candidate.windowID] = SnapRecord(action: edge, step: 0, windowID: candidate.windowID, frame: taken)
+            // shortcut moves on from the step it's at, if it's at one.
+            let step = (0..<SnapLayout.stepCount(for: edge)).first {
+                SnapLayout.isClose(SnapLayout.frame(for: edge, step: $0, in: screenArea), taken)
+            }
+            let record = SnapRecord(action: edge, step: step, windowID: candidate.windowID, frame: taken)
+            self.memory.didMove(candidate.windowID, record, liveWindows: Self.liveWindowIDs)
         }
     }
 

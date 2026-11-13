@@ -369,6 +369,10 @@ private struct LiveTapEnvironment: TapEnvironment {
         SnapAssist.shared.phase
     }
 
+    var snapAssistHoldsKeys: Bool {
+        SnapAssist.shared.holdsKeys
+    }
+
     func snapAssistCard(at point: CGPoint) -> Int? {
         SnapAssist.shared.card(at: point)
     }

@@ -88,6 +88,8 @@ protocol TapEnvironment {
     var isRecordingShortcut: Bool { get }
     /// Whether the Snap Assist picker is up or on its way: keys and clicks go to it first.
     var snapAssistPhase: SnapAssistPhase { get }
+    /// Whether keys typed for a picker still on its way are held back.
+    var snapAssistHoldsKeys: Bool { get }
     /// The picker's card at a point (AppKit space).
     func snapAssistCard(at point: CGPoint) -> Int?
     /// Whether a point (AppKit space) lies on the picker.
@@ -239,11 +241,14 @@ enum TapRouter {
             let input = event.flags.isDisjoint(with: [.maskCommand, .maskAlternate, .maskControl])
                 ? SnapAssistInput(keyCode: event.keyCode)
                 : .dismiss
-            guard phase == .showing || input.waitsForPicker else { return .snapAssist(.dismiss) }
+            guard phase == .showing || input.waitsForPicker else {
+                // Keys held for the picker go back first, so the app gets them all in order.
+                return .snapAssist(environment.snapAssistHoldsKeys ? .giveBack : .dismiss)
+            }
             switch input {
             case .pick, .cancel, .confirm:
                 state.swallowedKeyRepeats = event.keyCode
-            case .move, .dismiss:
+            case .move, .dismiss, .giveBack:
                 // A held arrow keeps moving the ring.
                 break
             }

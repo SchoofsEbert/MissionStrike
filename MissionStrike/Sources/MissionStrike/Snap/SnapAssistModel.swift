@@ -30,6 +30,9 @@ enum SnapAssistInput: Equatable, Sendable {
     case confirm
     /// Swallowed; Esc closes the picker.
     case cancel
+    /// Swallowed; a key that closes a picker still on its way, given back with the keys held
+    /// for it, in the order they were typed.
+    case giveBack
     /// Passes; anything else closes the picker and goes its way.
     case dismiss
 
@@ -51,7 +54,7 @@ enum SnapAssistInput: Equatable, Sendable {
     var waitsForPicker: Bool {
         switch self {
         case .pick, .cancel: true
-        case .move, .confirm, .dismiss: false
+        case .move, .confirm, .dismiss, .giveBack: false
         }
     }
 

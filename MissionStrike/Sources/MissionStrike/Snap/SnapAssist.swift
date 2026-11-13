@@ -61,14 +61,24 @@ final class SnapAssist {
     private var upcoming: Session?
     /// A snap is on its way and hasn't handed over its windows yet.
     private var isPending = false
-    /// A pick typed before its picker showed, with the key to give back if none comes.
-    private var queuedPick: (index: Int, replay: CGEvent?)?
+    /// A pick made before its picker showed: by number, or by window when made on the last
+    /// picker while cycling, so it can't shift with the numbers.
+    private struct QueuedPick {
+        let index: Int
+        let windowID: CGWindowID?
+    }
+    private var queuedPick: QueuedPick?
+    /// Keys held back while no picker shows, given back in order if none comes.
+    private var heldKeys: [CGEvent] = []
     /// Bumped by every snap and every dismissal, so a picker that arrives late doesn't show.
     private var generation = 0
     private var previewTask: Task<Void, Never>?
     /// Installed with the first snap and kept: they also cancel a picker still on its way.
-    private var observers: [NSObjectProtocol] = []
-    private var mouseMonitor: Any?
+    var observers: [NSObjectProtocol] = []
+    var mouseMonitor: Any?
+
+    /// Read by the event tap: a key that would only close the coming picker waits behind these.
+    var holdsKeys: Bool { !heldKeys.isEmpty }
 
     /// Read by the event tap.
     var phase: SnapAssistPhase {
@@ -95,7 +105,7 @@ final class SnapAssist {
         isPending = false
         guard let target, !candidates.isEmpty,
               let screen = NSScreen.screens.first(where: { $0.frame.intersects(ScreenCoordinates.yFlipped(target)) }) else {
-            dismiss(givingBackKeys: true)
+            dismiss()
             return
         }
         // Cycling to the next step keeps what the last picker already knew.
@@ -161,15 +171,19 @@ final class SnapAssist {
         session.candidates = Array(session.candidates.prefix(SnapAssistModel.maxCandidates))
         session.cards = SnapAssistModel.cardFrames(count: session.candidates.count, in: session.panel)
         upcoming = nil
+        heldKeys = []
         visible = session
+        // A number typed while waiting picks at once, without drawing a picker for a moment.
+        if let queued = queuedPick {
+            queuedPick = nil
+            let index = queued.windowID.flatMap { id in session.candidates.firstIndex { $0.windowID == id } } ?? queued.index
+            handle(.pick(index))
+            return
+        }
         let pointed = card(at: NSEvent.mouseLocation)
         visible?.selected = pointed
         startTrackingPointer()
         render()
-        if let queued = queuedPick {
-            queuedPick = nil
-            handle(.pick(queued.index))
-        }
     }
 
     /// The pictures arrived; previews fade in over the icons.
@@ -200,7 +214,7 @@ final class SnapAssist {
         if var session = upcoming {
             session.candidates = Self.applying(details, to: session.candidates, keepingUnplaceable: false)
             guard !session.candidates.isEmpty else {
-                dismiss(givingBackKeys: true)
+                dismiss()
                 return
             }
             session.hasDetails = true
@@ -230,23 +244,19 @@ final class SnapAssist {
             return candidate
         }
     }
+}
 
-    /// A key or click for the picker. `replay` is the key itself, given back to the app in front
-    /// if it was a number typed before the picker came and none does.
+// MARK: - Keys and clicks
+
+extension SnapAssist {
+    /// A key or click for the picker. `replay` is the key itself, held back while no picker
+    /// shows and given back if none comes.
     func handle(_ input: SnapAssistInput, replay: CGEvent? = nil) {
-        // Between pickers, or before the first: a number waits for the next one.
         if upcoming != nil || isPending {
-            switch input {
-            case .pick(let index):
-                queuedPick = (index, visible == nil ? replay : nil)
-            case .cancel, .dismiss:
-                dismiss()
-            case .move, .confirm:
-                break
-            }
+            handleWhileWaiting(input, replay: replay)
             return
         }
-        guard var session = visible else {
+        guard let session = visible else {
             dismiss()
             return
         }
@@ -262,36 +272,84 @@ final class SnapAssist {
                 within: session.screenArea
             )
         case .move(let direction):
-            session.selected = SnapAssistModel.card(from: session.selected, moving: direction, in: session.cards)
-            visible = session
-            render()
+            moveSelection(direction)
         case .confirm:
             if let selected = session.selected {
                 handle(.pick(selected))
             }
-        case .cancel, .dismiss:
+        case .cancel, .dismiss, .giveBack:
             dismiss()
         }
     }
 
-    /// Closes the picker and any on its way. The windows go a moment later, outside the event
-    /// tap's callback, and with them the pictures of other apps' windows.
-    func dismiss(givingBackKeys: Bool = false) {
+    /// Between pickers, or before the first: a number waits for the next one.
+    private func handleWhileWaiting(_ input: SnapAssistInput, replay: CGEvent?) {
+        switch input {
+        case .pick(let index):
+            if let visible {
+                // Typed at the picker on screen: the same window in the next one.
+                queuedPick = QueuedPick(index: index, windowID: visible.candidates[safe: index]?.windowID)
+            } else {
+                queuedPick = queuedPick ?? QueuedPick(index: index, windowID: nil)
+                if let replay { heldKeys.append(replay) }
+            }
+        case .confirm:
+            if let selected = visible?.selected {
+                queuedPick = QueuedPick(index: selected, windowID: visible?.candidates[safe: selected]?.windowID)
+            }
+        case .move(let direction):
+            moveSelection(direction)
+        case .giveBack:
+            if let replay { heldKeys.append(replay) }
+            dismiss()
+        case .cancel:
+            dismiss(givingBackKeys: false)
+        case .dismiss:
+            dismiss()
+        }
+    }
+
+    /// Only a card the pointer moves onto takes the ring: moving off one keeps the ring where the
+    /// arrows may want it.
+    func pointerMoved() {
+        guard var session = visible, let pointed = card(at: NSEvent.mouseLocation), pointed != session.selected else { return }
+        session.selected = pointed
+        visible = session
+        render()
+    }
+
+    private func moveSelection(_ direction: HintDirection) {
+        guard var session = visible else { return }
+        session.selected = SnapAssistModel.card(from: session.selected, moving: direction, in: session.cards)
+        visible = session
+        render()
+    }
+
+    /// Closes the picker and any on its way, giving back keys held for it unless they were for it
+    /// (Esc). The windows go a moment later, outside the event tap's callback, and with them the
+    /// pictures of other apps' windows.
+    func dismiss(givingBackKeys: Bool = true) {
         generation += 1
         isPending = false
         previewTask?.cancel()
         previewTask = nil
         upcoming = nil
-        if givingBackKeys, let replay = queuedPick?.replay {
-            replay.setIntegerValueField(.eventSourceUserData, value: replayedEventMarker)
-            replay.post(tap: .cgSessionEventTap)
-        }
         queuedPick = nil
+        if givingBackKeys {
+            for key in heldKeys {
+                key.setIntegerValueField(.eventSourceUserData, value: replayedEventMarker)
+                key.post(tap: .cgSessionEventTap)
+            }
+        }
+        heldKeys = []
         guard visible != nil else { return }
         visible = nil
         stopTrackingPointer()
         DispatchQueue.main.async { [canvas] in
-            canvas.tearDown()
+            // Unless a new picker has taken the canvas since.
+            if SnapAssist.shared.visible == nil {
+                canvas.tearDown()
+            }
         }
     }
 }
@@ -326,53 +384,17 @@ extension SnapAssist {
             icons: session.icons,
             previews: session.previews,
             backdrop: session.backdrop,
+            expectsPreviews: SettingsStore.shared.current.showSnapPreviews && ScreenRecordingPermission.shared.isAllowed == true,
             panel: session.panel,
             cards: session.cards,
             selected: session.selected
         )
         canvas.show(on: [screen]) { _ in view }
     }
+}
 
-    // MARK: - Closing on its own
-
-    private func installObservers() {
-        guard observers.isEmpty else { return }
-        let dismiss: @Sendable (Notification) -> Void = { _ in
-            MainActor.assumeIsolated {
-                if SnapAssist.shared.phase != .idle { SnapAssist.shared.dismiss() }
-            }
-        }
-        let workspace = NSWorkspace.shared.notificationCenter
-        observers = [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification].map {
-            workspace.addObserver(forName: $0, object: nil, queue: .main, using: dismiss)
-        }
-        // The session's coordinates are for the screens as they were.
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main, using: dismiss
-        ))
-    }
-
-    /// Only while the picker shows: the cards light up under the pointer.
-    private func startTrackingPointer() {
-        guard mouseMonitor == nil else { return }
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in
-            MainActor.assumeIsolated { SnapAssist.shared.pointerMoved() }
-        }
-    }
-
-    private func stopTrackingPointer() {
-        if let mouseMonitor {
-            NSEvent.removeMonitor(mouseMonitor)
-            self.mouseMonitor = nil
-        }
-    }
-
-    /// Only a card the pointer moves onto takes the ring: moving off one keeps the ring where the
-    /// arrows may want it.
-    private func pointerMoved() {
-        guard var session = visible, let pointed = card(at: NSEvent.mouseLocation), pointed != session.selected else { return }
-        session.selected = pointed
-        visible = session
-        render()
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

@@ -8,6 +8,9 @@ struct SnapAssistView: View {
     let icons: [pid_t: NSImage]
     let previews: [CGWindowID: CGImage]
     let backdrop: SnapAssist.Backdrop
+    /// Pictures are on their way: titles show only on the selected window, like Mission
+    /// Control, rather than showing and vanishing as the pictures come in.
+    let expectsPreviews: Bool
     let panel: CGRect
     let cards: [CGRect]
     let selected: Int?
@@ -37,6 +40,7 @@ struct SnapAssistView: View {
                     preview: previews[candidate.windowID],
                     number: index + 1,
                     isSelected: selected == index,
+                    showsTitle: selected == index || !expectsPreviews,
                     cell: cell.size
                 )
                 .placed(in: cell, alignment: .topLeading)
@@ -65,13 +69,14 @@ private struct SnapAreaOutline: View {
 }
 
 /// One window: its picture (or its app's icon) and a number to type, with Mission Control's blue
-/// ring and title when selected. Without a picture the title always shows: it's all there is.
+/// ring when selected. Without pictures the title always shows: it's all there is.
 struct SnapThumbnailView: View {
     let candidate: SnapCandidate
     let icon: NSImage?
     let preview: CGImage?
     let number: Int
     let isSelected: Bool
+    let showsTitle: Bool
     let cell: CGSize
 
     private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -94,7 +99,7 @@ struct SnapThumbnailView: View {
                 }
                 .offset(x: thumbnail.minX, y: thumbnail.minY)
 
-            if preview == nil || isSelected {
+            if showsTitle {
                 label
                     .frame(width: cell.width)
                     .offset(y: thumbnail.maxY + 8)

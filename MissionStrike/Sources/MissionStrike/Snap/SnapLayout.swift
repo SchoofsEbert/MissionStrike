@@ -28,6 +28,14 @@ enum SnapAction: String, CaseIterable, Sendable {
     var isDisplayMove: Bool {
         self == .nextDisplay || self == .previousDisplay
     }
+
+    /// Leaves part of the screen free, which Snap Assist offers another window for.
+    var leavesRest: Bool {
+        switch self {
+        case .left, .right, .top, .bottom: true
+        case .maximize, .restore, .nextDisplay, .previousDisplay: false
+        }
+    }
 }
 
 /// The frames snapping uses, all in AX space (top-left origin) within a screen's visible area.
@@ -97,8 +105,8 @@ enum SnapLayout {
         windowID: CGWindowID?
     ) -> Int {
         let count = stepCount(for: action)
-        if let last, last.action == action, last.windowID == windowID, isClose(last.frame, windowFrame) {
-            return (last.step + 1) % count
+        if let last, let step = last.step, last.action == action, last.windowID == windowID, isClose(last.frame, windowFrame) {
+            return (step + 1) % count
         }
         if let step = (0..<count).first(where: { isClose(frame(for: action, step: $0, in: area), windowFrame) }) {
             return (step + 1) % count
@@ -174,7 +182,8 @@ enum SnapLayout {
 /// The last snap, to tell a repeated press from a first one.
 struct SnapRecord: Equatable, Sendable {
     let action: SnapAction
-    let step: Int
+    /// Nil when the frame isn't one of the action's steps, as after a display move.
+    let step: Int?
     let windowID: CGWindowID?
     /// The frame the window took, which may differ from the one asked for.
     let frame: CGRect

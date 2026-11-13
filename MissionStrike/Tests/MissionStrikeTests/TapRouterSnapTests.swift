@@ -153,3 +153,50 @@ struct TapRouterSnapAssistTests {
         #expect(decide(TapEvent(type: .leftMouseUp)) == .pass)
     }
 }
+
+@MainActor
+@Suite("Tap Router: Snap Assist keys held back")
+struct TapRouterSnapAssistHeldTests {
+    private var state = TapState()
+    private var settings = Settings.defaults
+    private let environment = FakeTapEnvironment()
+
+    init() {
+        settings.snapShortcuts = SnapShortcuts(SnapShortcuts.defaults)
+        environment.missionControlActive = false
+        environment.snapAssistPhase = .pending
+    }
+
+    private mutating func decide(_ keyCode: Int, _ flags: CGEventFlags = [], isAutorepeat: Bool = false) -> TapDecision {
+        TapRouter.decide(
+            TapEvent(type: .keyDown, flags: flags, keyCode: Int64(keyCode), isAutorepeat: isAutorepeat),
+            state: &state, settings: settings, environment: environment, debounceInterval: 0.3
+        )
+    }
+
+    @Test("A key after held numbers is held too, so the app gets them all in order")
+    mutating func givesBackInOrder() {
+        #expect(decide(kVK_ANSI_1) == .snapAssist(.pick(0)))
+        environment.snapAssistHoldsKeys = true
+        #expect(decide(kVK_ANSI_A) == .snapAssist(.giveBack))
+        #expect(TapDecision.snapAssist(.giveBack).swallows)
+    }
+
+    @Test("Shift doesn't stop a number from picking; ⌘ does")
+    mutating func modifiers() {
+        #expect(decide(kVK_ANSI_3, .maskShift) == .snapAssist(.pick(2)))
+        #expect(decide(kVK_ANSI_3, .maskCommand) == .snapAssist(.dismiss))
+    }
+
+    @Test("Held Esc and Return repeat into nothing once the picker has them")
+    mutating func repeats() {
+        environment.snapAssistPhase = .showing
+        #expect(decide(kVK_Return) == .snapAssist(.confirm))
+        environment.snapAssistPhase = .idle
+        #expect(decide(kVK_Return, isAutorepeat: true) == .swallow)
+        environment.snapAssistPhase = .showing
+        #expect(decide(kVK_Escape) == .snapAssist(.cancel))
+        environment.snapAssistPhase = .idle
+        #expect(decide(kVK_Escape, isAutorepeat: true) == .swallow)
+    }
+}

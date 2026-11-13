@@ -21,7 +21,7 @@ struct WindowsSettingsPane: View {
                 }
                 Toggle(isOn: $enableSnapAssist) {
                     Text("Choose a Window for the Rest")
-                    Text("After a snap to a side, pick another window for the free part with its number or a click.")
+                    Text("After a snap to a side, pick another window for the free part with its number, the arrows or a click.")
                 }
                 .disabled(!enableWindowSnapping)
                 Toggle(isOn: $showSnapPreviews) {

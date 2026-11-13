@@ -15,6 +15,7 @@ final class FakeTapEnvironment: TapEnvironment {
     var isCheatSheetPinned = false
     var isRecordingShortcut = false
     var snapAssistPhase = SnapAssistPhase.idle
+    var snapAssistHoldsKeys = false
     var snapAssistCards: [CGRect] = []
     var snapAssistFrame: CGRect = .null
     private(set) var missionControlChecks = 0
