@@ -1,4 +1,4 @@
-name: Build and Release MissionStrike
+name: Build and Release Vantage
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
 
     - name: Check tag matches app version
       run: |
-        PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" MissionStrike/Info.plist)
+        PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Vantage/Info.plist)
         if [ "v$PLIST_VERSION" != "$GITHUB_REF_NAME" ]; then
           echo "::error::Tag $GITHUB_REF_NAME does not match Info.plist version $PLIST_VERSION"
           exit 1
@@ -59,20 +59,20 @@ jobs:
 
     - name: Run tests
       run: |
-        cd MissionStrike
+        cd Vantage
         swift test
 
     - name: Build unsigned app bundle
       run: |
         scripts/package-app.sh --unsigned
-        cd MissionStrike/dist
-        ditto -c -k --keepParent MissionStrike.app MissionStrike.unsigned.zip
+        cd Vantage/dist
+        ditto -c -k --keepParent Vantage.app Vantage.unsigned.zip
 
     - name: Upload unsigned app bundle
       uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
       with:
-        name: MissionStrike-unsigned
-        path: MissionStrike/dist/MissionStrike.unsigned.zip
+        name: Vantage-unsigned
+        path: Vantage/dist/Vantage.unsigned.zip
         if-no-files-found: error
 
   sign-and-release:
@@ -108,17 +108,18 @@ jobs:
     - name: Download unsigned app bundle
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
-        name: MissionStrike-unsigned
+        name: Vantage-unsigned
         path: ${{ runner.temp }}/unsigned
 
     - name: Unpack unsigned app bundle
       run: |
-        rm -rf MissionStrike/dist
-        mkdir -p MissionStrike/dist
-        ditto -x -k "$RUNNER_TEMP/unsigned/MissionStrike.unsigned.zip" MissionStrike/dist
+        rm -rf Vantage/dist
+        mkdir -p Vantage/dist
+        ditto -x -k "$RUNNER_TEMP/unsigned/Vantage.unsigned.zip" Vantage/dist
 
     # The only step that sees the signing certificate. It signs and zips the bundle from
     # the build job and doesn't compile anything.
+    # The secrets keep their MissionStrike names from before the rename.
     - name: Sign and package
       env:
         MISSIONSTRIKE_P12_BASE64: ${{ secrets.MISSIONSTRIKE_P12_BASE64 }}
@@ -129,7 +130,9 @@ jobs:
     - name: Attest build provenance
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
-        subject-path: MissionStrike/dist/MissionStrike.app.zip
+        subject-path: |
+          Vantage/dist/Vantage.app.zip
+          Vantage/dist/MissionStrike.app.zip
 
     # The in-app update window shows these notes. Changes land on main without pull
     # requests, so GitHub's generated notes would be empty; list the commit subjects instead.
@@ -155,8 +158,9 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         ASSETS=(
-          MissionStrike/dist/MissionStrike.app.zip
-          MissionStrike/dist/MissionStrike.app.zip.sha256
+          Vantage/dist/Vantage.app.zip
+          Vantage/dist/Vantage.app.zip.sha256
+          Vantage/dist/MissionStrike.app.zip
           install.sh
         )
         if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
@@ -192,8 +196,8 @@ jobs:
         fi
         VERSION="${GITHUB_REF_NAME#v}"
         gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-          --pattern MissionStrike.app.zip.sha256 --dir "$RUNNER_TEMP" --clobber
-        SHA=$(cut -d ' ' -f 1 "$RUNNER_TEMP/MissionStrike.app.zip.sha256")
+          --pattern Vantage.app.zip.sha256 --dir "$RUNNER_TEMP" --clobber
+        SHA=$(cut -d ' ' -f 1 "$RUNNER_TEMP/Vantage.app.zip.sha256")
         if ! [[ "$SHA" =~ ^[0-9a-f]{64}$ ]]; then
           echo "::error::The release checksum is malformed: $SHA"
           exit 1
@@ -212,11 +216,11 @@ jobs:
         sed -i '' -E \
           -e "s/^  version \".*\"/  version \"$VERSION\"/" \
           -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" \
-          Casks/missionstrike.rb
-        # MissionStrike is built for Apple silicon only.
-        if ! grep -q '^  depends_on arch: :arm64$' Casks/missionstrike.rb; then
-          perl -0pi -e 's/^(  depends_on macos: .*\n)/$1  depends_on arch: :arm64\n/m' Casks/missionstrike.rb
-          grep -q '^  depends_on arch: :arm64$' Casks/missionstrike.rb
+          Casks/vantage-mac.rb
+        # Vantage is built for Apple silicon only.
+        if ! grep -q '^  depends_on arch: :arm64$' Casks/vantage-mac.rb; then
+          perl -0pi -e 's/^(  depends_on macos: .*\n)/$1  depends_on arch: :arm64\n/m' Casks/vantage-mac.rb
+          grep -q '^  depends_on arch: :arm64$' Casks/vantage-mac.rb
         fi
         if git diff --quiet; then
           echo "The cask is already at $VERSION; nothing to push."
@@ -225,5 +229,5 @@ jobs:
         git diff
         git -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -am "missionstrike $VERSION"
+            commit -am "vantage-mac $VERSION"
         git push

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds MissionStrike.app, signs it with the project's self-signed certificate,
-# and zips it into MissionStrike/dist/. Used by the release workflow and for local builds.
+# Builds Vantage.app, signs it with the project's self-signed certificate,
+# and zips it into Vantage/dist/. Used by the release workflow and for local builds.
 #
 #   scripts/package-app.sh                  build, sign and zip
 #   scripts/package-app.sh --unsigned       build the app bundle only
@@ -26,15 +26,15 @@ if [ "$MODE" != "package" ] && [ "$MODE" != "--unsigned" ] && [ "$MODE" != "--si
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PACKAGE_DIR="$REPO_ROOT/MissionStrike"
+PACKAGE_DIR="$REPO_ROOT/Vantage"
 DIST_DIR="$PACKAGE_DIR/dist"
-APP_DIR="$DIST_DIR/MissionStrike.app"
-ZIP_PATH="$DIST_DIR/MissionStrike.app.zip"
+APP_DIR="$DIST_DIR/Vantage.app"
+ZIP_PATH="$DIST_DIR/Vantage.app.zip"
 LOCAL_SIGNING_DIR="$HOME/.missionstrike-signing"
 
 # The requirement every release must satisfy; the updater and install.sh check the same one.
 REQUIREMENT="$(sed -n 's/.*static let requirement = #"\(.*\)"#.*/\1/p' \
-    "$PACKAGE_DIR/Sources/MissionStrike/Services/CodeSigning.swift")"
+    "$PACKAGE_DIR/Sources/Vantage/Services/CodeSigning.swift")"
 if [ -z "$REQUIREMENT" ]; then
     echo "error: could not read the signing requirement from CodeSigning.swift" >&2
     exit 1
@@ -53,10 +53,10 @@ if [ "$MODE" != "--sign-existing" ]; then
     echo "==> Assembling app bundle"
     rm -rf "$DIST_DIR"
     mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-    cp "$PACKAGE_DIR/.build/release/MissionStrike" "$APP_DIR/Contents/MacOS/"
+    cp "$PACKAGE_DIR/.build/release/Vantage" "$APP_DIR/Contents/MacOS/"
     cp "$PACKAGE_DIR/Info.plist" "$APP_DIR/Contents/"
-    # Icon: compiled from MissionStrike/Icon/MissionStrike.icon by scripts/build-icon.sh
-    cp "$PACKAGE_DIR/Icon/Compiled/Assets.car" "$PACKAGE_DIR/Icon/Compiled/MissionStrike.icns" \
+    # Icon: compiled from Vantage/Icon/Vantage.icon by scripts/build-icon.sh
+    cp "$PACKAGE_DIR/Icon/Compiled/Assets.car" "$PACKAGE_DIR/Icon/Compiled/Vantage.icns" \
         "$APP_DIR/Contents/Resources/"
 fi
 
@@ -65,10 +65,10 @@ if [ ! -d "$APP_DIR" ]; then
     exit 1
 fi
 
-# MissionStrike supports Apple silicon only; the cask, install.sh and updater rely on it.
-ARCHITECTURES="$(lipo -archs "$APP_DIR/Contents/MacOS/MissionStrike")"
+# Vantage supports Apple silicon only; the cask, install.sh and updater rely on it.
+ARCHITECTURES="$(lipo -archs "$APP_DIR/Contents/MacOS/Vantage")"
 if ! printf '%s\n' "$ARCHITECTURES" | tr ' ' '\n' | grep -qx 'arm64'; then
-    echo "error: MissionStrike must be built for arm64; found: $ARCHITECTURES" >&2
+    echo "error: Vantage must be built for arm64; found: $ARCHITECTURES" >&2
     exit 1
 fi
 
@@ -101,7 +101,9 @@ elif [ -f "$LOCAL_SIGNING_DIR/MissionStrike-signing.p12" ]; then
 fi
 
 if [ -n "$P12_PATH" ]; then
-    echo "==> Signing with the MissionStrike certificate"
+    # The certificate keeps its MissionStrike name: a new one would cost every user
+    # their Accessibility grant.
+    echo "==> Signing with the MissionStrike Code Signing certificate"
     KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
     security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
     security set-keychain-settings -lut 600 "$KEYCHAIN"
@@ -140,7 +142,15 @@ else
 fi
 
 echo "==> Zipping"
-(cd "$DIST_DIR" && ditto -c -k --keepParent MissionStrike.app MissionStrike.app.zip)
-(cd "$DIST_DIR" && shasum -a 256 MissionStrike.app.zip > MissionStrike.app.zip.sha256)
+(cd "$DIST_DIR" && ditto -c -k --keepParent Vantage.app Vantage.app.zip)
+(cd "$DIST_DIR" && shasum -a 256 Vantage.app.zip > Vantage.app.zip.sha256)
+
+# Copies from before the rename (MissionStrike 2.12.2 and older) update only from an
+# asset named MissionStrike.app.zip holding MissionStrike.app. Same signed bundle, so
+# the signature still holds; the app renames itself to Vantage.app on first launch.
+LEGACY_DIR="$WORK_DIR/legacy"
+mkdir -p "$LEGACY_DIR"
+ditto "$APP_DIR" "$LEGACY_DIR/MissionStrike.app"
+ditto -c -k --keepParent "$LEGACY_DIR/MissionStrike.app" "$DIST_DIR/MissionStrike.app.zip"
 
 echo "==> Done: $ZIP_PATH"

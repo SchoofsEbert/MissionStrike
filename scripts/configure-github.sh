@@ -8,7 +8,7 @@
 # `gh secret set` (see RELEASING.md).
 set -euo pipefail
 
-REPO="${1:-SchoofsEbert/MissionStrike}"
+REPO="${1:-SchoofsEbert/vantage-mac}"
 RULESET_NAME="Release tags"
 
 # Deployments from `v*` tags only, so no branch can run a job in these environments.

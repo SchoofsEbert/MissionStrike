@@ -1,19 +1,19 @@
 <p align="center">
-  <img src="MissionStrike/AppIcon.png" width="128" height="128" alt="MissionStrike Icon">
+  <img src="Vantage/AppIcon.png" width="128" height="128" alt="Vantage Icon">
 </p>
 
-<h1 align="center">MissionStrike</h1>
+<h1 align="center">Vantage</h1>
 
 <p align="center">
-  <strong>Close windows straight from Mission Control.</strong><br>
-  Middle-click a thumbnail and it's gone, like closing a browser tab.
+  <strong>Every window, within reach.</strong><br>
+  Close windows straight from Mission Control and snap them side by side from the keyboard.
 </p>
 
 <p align="center">
   <img src="docs/demo.gif" alt="Closing, minimizing and picking windows with the keyboard in Mission Control, then clearing the Space from the right-click menu" width="800">
 </p>
 
-Mission Control shows every window you have open, but it only lets you look at them. To clean up you have to pick each window, wait for it to come forward and hit ⌘W, then do it all again. MissionStrike lets you close, minimize or quit right from the overview, and put windows side by side from the keyboard.
+Mission Control shows every window you have open, but it only lets you look at them. To clean up you have to pick each window, wait for it to come forward and hit ⌘W, then do it all again. Vantage lets you close, minimize or quit right from the overview, and put windows side by side from the keyboard.
 
 ## In Mission Control
 
@@ -23,7 +23,7 @@ Mission Control shows every window you have open, but it only lets you look at t
 - **Right-click** a window for Close Others, Hide Others and more. Right-click the background to clear the whole Space, or quit apps that have no windows left.
 - **Press F** to put a letter on every window, then type the letter and an action. You never touch the mouse.
 
-Hold ⌥ to see which window a click will hit, and how many windows each app has here. Keep holding for a cheat sheet. If an app asks to save before closing, MissionStrike shows that on the window instead of failing without a word.
+Hold ⌥ to see which window a click will hit, and how many windows each app has here. Keep holding for a cheat sheet. If an app asks to save before closing, Vantage shows that on the window instead of failing without a word.
 
 ## Snapping
 
@@ -38,10 +38,10 @@ Snapping is off until you turn it on, in the setup guide or in Settings → Wind
 ## Install
 
 ```bash
-brew install --cask schoofsebert/tap/missionstrike
+brew install --cask schoofsebert/tap/vantage-mac
 ```
 
-Open it once and follow the setup to grant Accessibility access. MissionStrike runs from the menu bar and keeps itself up to date.
+Open it once and follow the setup to grant Accessibility access. Vantage runs from the menu bar and keeps itself up to date.
 
 Needs a Mac with Apple silicon and macOS 14 Sonoma or later. Keyboard hints and window counts need macOS 27.
 
@@ -51,24 +51,26 @@ Needs a Mac with Apple silicon and macOS 14 Sonoma or later. Keyboard hints and 
 **Install script.** It downloads the latest release, checks its signature and installs it to `/Applications`. No `sudo` needed.
 
 ```bash
-curl -fsSLO https://github.com/SchoofsEbert/MissionStrike/releases/latest/download/install.sh
+curl -fsSLO https://github.com/SchoofsEbert/vantage-mac/releases/latest/download/install.sh
 bash install.sh
 ```
 
-**Manual.** Download `MissionStrike.app.zip` from [Releases](https://github.com/SchoofsEbert/MissionStrike/releases), move the app to `Applications`, and clear the quarantine flag:
+**Manual.** Download `Vantage.app.zip` from [Releases](https://github.com/SchoofsEbert/vantage-mac/releases), move the app to `Applications`, and clear the quarantine flag:
 
 ```bash
-xattr -cr /Applications/MissionStrike.app
+xattr -cr /Applications/Vantage.app
 ```
 
-Releases are signed with MissionStrike's own certificate, not a paid Apple Developer ID. That's why the quarantine flag has to go; Homebrew and the script clear it for you.
+Releases are signed with Vantage's own certificate, not a paid Apple Developer ID. That's why the quarantine flag has to go; Homebrew and the script clear it for you.
 
 </details>
 
 <details>
 <summary>Updating</summary>
 
-MissionStrike checks for updates once a day, or whenever you ask from the menu bar. **Install & Relaunch** downloads the update, verifies its signature and restarts the app. If anything fails, your current version stays. Homebrew leaves updates to the app, so `brew upgrade` only touches MissionStrike with `--greedy`.
+Vantage checks for updates once a day, or whenever you ask from the menu bar. **Install & Relaunch** downloads the update, verifies its signature and restarts the app. If anything fails, your current version stays. Homebrew leaves updates to the app, so `brew upgrade` only touches Vantage with `--greedy`.
+
+Vantage used to be called MissionStrike. A MissionStrike install updates to Vantage like any other update, keeps its settings and Accessibility access, and renames itself to Vantage.app.
 
 </details>
 
@@ -77,12 +79,12 @@ Every gesture can be switched off in Settings, where you can also change the mod
 ## Building from source
 
 ```bash
-git clone https://github.com/SchoofsEbert/MissionStrike.git
-cd MissionStrike
+git clone https://github.com/SchoofsEbert/vantage-mac.git
+cd vantage-mac
 scripts/package-app.sh
 ```
 
-Needs Xcode or the Swift command line tools on an Apple-silicon Mac. The app ends up in `MissionStrike/dist/`. Without the signing certificate the build is signed ad hoc, so macOS asks for Accessibility again after every build. Maintainers: see [RELEASING.md](RELEASING.md).
+Needs Xcode or the Swift command line tools on an Apple-silicon Mac. The app ends up in `Vantage/dist/`. Without the signing certificate the build is signed ad hoc, so macOS asks for Accessibility again after every build. Maintainers: see [RELEASING.md](RELEASING.md).
 
 <details>
 <summary>How it works</summary>
@@ -97,7 +99,7 @@ Needs Xcode or the Swift command line tools on an Apple-silicon Mac. The app end
 5. Window counts and keyboard hints list the thumbnails from WindowManager's Accessibility tree off the main thread, and draw on click-through panels that Accessibility hit-testing looks through.
 6. Snapping moves the window in front through Accessibility, off the main thread. The picker lists the other windows on that Space, and draws them on the wallpaper: captured with ScreenCaptureKit when previews are on, otherwise cut from the wallpaper's file. Pictures are taken when the picker opens and dropped when it closes.
 
-If something doesn't work, **About → Copy Diagnostics** copies what MissionStrike saw (never window titles) for a bug report.
+If something doesn't work, **About → Copy Diagnostics** copies what Vantage saw (never window titles) for a bug report.
 
 </details>
 

@@ -1,7 +1,7 @@
 #!/bin/bash
-# MissionStrike Installer
+# Vantage Installer
 # Usage: download install.sh from the latest GitHub release, then run: bash install.sh
-#   curl -fsSLO https://github.com/SchoofsEbert/MissionStrike/releases/latest/download/install.sh
+#   curl -fsSLO https://github.com/SchoofsEbert/vantage-mac/releases/latest/download/install.sh
 #
 # Downloads the latest release and verifies its signature before touching anything in
 # /Applications. It then swaps the new app in, keeping the previous one until the new
@@ -9,11 +9,14 @@
 
 set -euo pipefail
 
-APP_NAME="MissionStrike"
+APP_NAME="Vantage"
 INSTALL_DIR="/Applications"
-REPO="SchoofsEbert/MissionStrike"
-# Every release is signed with MissionStrike's own certificate; refuse anything else.
-# Keep in sync with MissionStrike/Sources/MissionStrike/Services/CodeSigning.swift.
+REPO="SchoofsEbert/vantage-mac"
+# The name before the rename; an install under it is replaced too.
+LEGACY_APP_NAME="MissionStrike"
+BUNDLE_ID="io.github.schoofsebert.missionstrike"
+# Every release is signed with Vantage's own certificate; refuse anything else.
+# Keep in sync with Vantage/Sources/Vantage/Services/CodeSigning.swift.
 REQUIREMENT='identifier "io.github.schoofsebert.missionstrike" and certificate leaf = H"4db8f2724be711f4ad297925bac86fb1a77e8037"'
 TMP_DIR="$(mktemp -d)"
 STAGE_DIR=""
@@ -51,10 +54,16 @@ if [ -e "$INSTALL_DIR/$APP_NAME.app" ] && [ ! -w "$INSTALL_DIR/$APP_NAME.app" ];
     echo "   Remove it from an account that can, then run this script again." >&2
     exit 1
 fi
+# "Vantage" isn't a unique name; never replace someone else's app.
+if [ -e "$INSTALL_DIR/$APP_NAME.app" ] \
+    && [ "$(defaults read "$INSTALL_DIR/$APP_NAME.app/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$BUNDLE_ID" ]; then
+    echo "❌ $INSTALL_DIR/$APP_NAME.app is a different app. Move it elsewhere, then run this script again." >&2
+    exit 1
+fi
 
 # Fetch the latest release download URL from the GitHub API.
 DOWNLOAD_URL=$(curl -fsSL --proto '=https' --tlsv1.2 "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep '"browser_download_url".*/MissionStrike\.app\.zip"' \
+    | grep '"browser_download_url".*/Vantage\.app\.zip"' \
     | head -1 \
     | cut -d '"' -f 4)
 
@@ -78,7 +87,7 @@ fi
 
 echo "🔏 Verifying signature..."
 if ! codesign --verify --strict --deep -R="$REQUIREMENT" "$DOWNLOADED_APP" 2>/dev/null; then
-    echo "❌ The downloaded app is not signed by MissionStrike. Aborting." >&2
+    echo "❌ The downloaded app is not signed by Vantage. Aborting." >&2
     exit 1
 fi
 
@@ -94,13 +103,14 @@ xattr -cr "$DOWNLOADED_APP"
 # Staging inside /Applications makes the final moves renames on the same volume. This
 # happens before the running app is stopped, so a failed download or check never
 # disrupts the installed version.
-STAGE_DIR=$(mktemp -d "$INSTALL_DIR/.MissionStrike-install.XXXXXX")
+STAGE_DIR=$(mktemp -d "$INSTALL_DIR/.Vantage-install.XXXXXX")
 mv "$DOWNLOADED_APP" "$STAGE_DIR/$APP_NAME.app"
 
-if pgrep -xq "$APP_NAME"; then
+if pgrep -f "/(${APP_NAME}|${LEGACY_APP_NAME})\.app/Contents/MacOS/" >/dev/null; then
     echo "⏹️  Stopping running instance..."
-    killall "$APP_NAME" 2>/dev/null || true
+    osascript -e "quit app id \"$BUNDLE_ID\"" >/dev/null 2>&1 || true
     sleep 1
+    pkill -f "$INSTALL_DIR/(${APP_NAME}|${LEGACY_APP_NAME})\.app/Contents/MacOS/" 2>/dev/null || true
 fi
 
 echo "📲 Installing to $INSTALL_DIR..."
@@ -116,6 +126,11 @@ if [ -n "$BACKUP_APP" ]; then
     PREVIOUS_APP="$BACKUP_APP"
     BACKUP_APP=""
     rm -rf "$PREVIOUS_APP" || echo "⚠️  Could not remove the previous version at $PREVIOUS_APP." >&2
+fi
+if [ -d "$INSTALL_DIR/$LEGACY_APP_NAME.app" ] \
+    && [ "$(defaults read "$INSTALL_DIR/$LEGACY_APP_NAME.app/Contents/Info" CFBundleIdentifier 2>/dev/null)" = "$BUNDLE_ID" ]; then
+    rm -rf "$INSTALL_DIR/$LEGACY_APP_NAME.app" \
+        || echo "⚠️  Could not remove the old $INSTALL_DIR/$LEGACY_APP_NAME.app." >&2
 fi
 
 echo ""
