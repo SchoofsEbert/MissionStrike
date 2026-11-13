@@ -5,7 +5,7 @@
 <h1 align="center">MissionStrike</h1>
 
 <p align="center">
-  <strong>Close windows straight from Mission Control, and snap them into place from the keyboard.</strong><br>
+  <strong>Close windows straight from Mission Control.</strong><br>
   Middle-click a thumbnail and it's gone, like closing a browser tab.
 </p>
 
@@ -13,7 +13,9 @@
   <img src="docs/demo.gif" alt="Closing, minimizing and picking windows with the keyboard in Mission Control, then clearing the Space from the right-click menu" width="800">
 </p>
 
-Mission Control shows every window you have open, but it only lets you look at them. To clean up you have to pick each window, wait for it to come forward and hit ⌘W, then do it all again. MissionStrike lets you close, minimize or quit right from the overview.
+Mission Control shows every window you have open, but it only lets you look at them. To clean up you have to pick each window, wait for it to come forward and hit ⌘W, then do it all again. MissionStrike lets you close, minimize or quit right from the overview, and put windows side by side from the keyboard.
+
+## In Mission Control
 
 - **Middle-click or ⌥-click** a window to close it. Do the same on a Space at the top to close the Space.
 - **Add ⇧** to minimize instead, or **⌘** to close all of that app's windows.
@@ -23,15 +25,15 @@ Mission Control shows every window you have open, but it only lets you look at t
 
 Hold ⌥ to see which window a click will hit, and how many windows each app has here. Keep holding for a cheat sheet. If an app asks to save before closing, MissionStrike shows that on the window instead of failing without a word.
 
-### Snapping windows
+## Snapping
 
-Turn on **Snap with Shortcuts** in Settings → Windows to place the window in front from the keyboard:
+Snap the window in front to one side, and the other side shows your other windows, laid out like Mission Control. Press a number, or click one, and it fills the rest.
 
-- **⌃⌥←** and **⌃⌥→** snap it to a side. Press again for a third, then two-thirds.
+- **⌃⌥←** and **⌃⌥→** snap to a side. Press again for a third, then two-thirds.
 - **⌃⌥↑** fills the screen, **⌃⌥↓** puts the window back where it was.
 - **⇧⌃⌥←** and **⇧⌃⌥→** move it to the previous or next display.
 
-After a snap to a side, the rest of the screen shows your other windows, like Mission Control. Press a window's number, or pick one with the arrows and Return, or click it, and it fills the rest. Any other key closes the picker. Turn on **Show Window Previews** to see each window instead of its app's icon; that needs Screen Recording access, and macOS shows its recording dot briefly each time.
+Snapping is off until you turn it on, in the setup guide or in Settings → Windows. There you can also show a picture of each window instead of its app's icon; that needs Screen Recording access, and macOS shows its recording dot briefly each time.
 
 ## Install
 
