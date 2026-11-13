@@ -5,7 +5,7 @@
 <h1 align="center">MissionStrike</h1>
 
 <p align="center">
-  <strong>Close windows straight from Mission Control.</strong><br>
+  <strong>Close windows straight from Mission Control, and snap them into place from the keyboard.</strong><br>
   Middle-click a thumbnail and it's gone, like closing a browser tab.
 </p>
 
@@ -93,6 +93,7 @@ Needs Xcode or the Swift command line tools on an Apple-silicon Mac. The app end
    - **Older Mission Control** → the classic `AXWindow` close button.
 4. On macOS 27+, click coordinates are flipped vertically to match Accessibility's top-left origin.
 5. Window counts and keyboard hints list the thumbnails from WindowManager's Accessibility tree off the main thread, and draw on click-through panels that Accessibility hit-testing looks through.
+6. Snapping moves the window in front through Accessibility, off the main thread. The picker lists the other windows on that Space, and draws them on the wallpaper: captured with ScreenCaptureKit when previews are on, otherwise cut from the wallpaper's file. Pictures are taken when the picker opens and dropped when it closes.
 
 If something doesn't work, **About → Copy Diagnostics** copies what MissionStrike saw (never window titles) for a bug report.
 

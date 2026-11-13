@@ -15,7 +15,7 @@ struct OnboardingView: View {
     private let accessibilityChanged = DistributedNotificationCenter.default()
         .publisher(for: Notification.Name("com.apple.accessibility.api"))
 
-    private let totalSteps = 5
+    private let totalSteps = 6
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +26,8 @@ struct OnboardingView: View {
                 case 1: accessibilityStep.transition(stepTransition)
                 case 2: howItWorksStep.transition(stepTransition)
                 case 3: moreWaysStep.transition(stepTransition)
-                case 4: readyStep.transition(stepTransition)
+                case 4: snappingStep.transition(stepTransition)
+                case 5: readyStep.transition(stepTransition)
                 default: EmptyView()
                 }
             }
@@ -107,8 +108,8 @@ struct OnboardingView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Close windows and Spaces directly from Mission Control with a single click — "
-                     + "no more hunting for tiny close buttons.")
+                Text("Close windows and Spaces directly from Mission Control with a single click, "
+                     + "and snap windows into place from the keyboard.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .font(.body)
@@ -176,7 +177,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Step 5: Ready
+    // MARK: - Step 6: Ready
 
     private var readyStep: some View {
         VStack(spacing: 20) {
@@ -342,7 +343,7 @@ extension OnboardingView {
     }
 
     /// Title plus left-aligned rows, centred vertically on the page.
-    private func stepPage<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    func stepPage<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 18) {
             Spacer(minLength: 0)
             Text(title)
@@ -367,7 +368,7 @@ extension OnboardingView {
 
     // MARK: - Reusable Rows
 
-    private func featureRow(icon: String, title: String, description: String) -> some View {
+    func featureRow(icon: String, title: String, description: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
                 .font(.body)

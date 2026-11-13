@@ -242,6 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
             window.title = "Welcome to MissionStrike"
             window.contentViewController = hostingController
             window.isReleasedWhenClosed = false
+            window.delegate = self
             self.onboardingWindow = window
         }
 
@@ -268,6 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
             window.title = "About MissionStrike"
             window.contentViewController = hostingController
             window.isReleasedWhenClosed = false
+            window.delegate = self
             self.aboutWindow = window
         }
 
@@ -278,6 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSAlertDelegate {
     @objc func openSettingsWindow() {
         if settingsWindow == nil {
             settingsWindow = SettingsWindow.make()
+            settingsWindow?.delegate = self
         }
 
         settingsWindow?.makeKeyAndOrderFront(nil)
